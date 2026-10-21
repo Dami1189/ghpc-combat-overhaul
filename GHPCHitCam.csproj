@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>GHPCCombatOverhaul</AssemblyName>
+    <RootNamespace>GHPCHitCam</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <Version>1.0.0</Version>
+    <!-- compile against the game's own Mono class libraries, not the .NET Framework targeting pack -->
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NoStdLib>true</NoStdLib>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <DebugType>portable</DebugType>
+    <!-- no local folder names in the built DLL (its debug-file path) -->
+    <PathMap>$(MSBuildProjectDirectory)=/ghpc-combat-overhaul</PathMap>
+    <Deterministic>true</Deterministic>
+    <!-- the game's Bin folder; a library elsewhere: -p:GameDir=... or a Directory.Build.props next to this file -->
+    <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Gunner HEAT PC\Bin</GameDir>
+    <Managed>$(GameDir)\GHPC_Data\Managed</Managed>
+    <MLDir>$(GameDir)\MelonLoader\net35</MLDir>
+    <!-- set to false to build without copying into the game's Mods folder -->
+    <DeployToGame Condition="'$(DeployToGame)' == ''">true</DeployToGame>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(Managed)\mscorlib.dll" Private="false" />
+    <Reference Include="$(Managed)\netstandard.dll" Private="false" />
+    <Reference Include="$(Managed)\System.dll" Private="false" />
+    <Reference Include="$(Managed)\System.Core.dll" Private="false" />
+    <Reference Include="$(Managed)\UnityEngine*.dll" Private="false" />
+    <Reference Include="$(Managed)\Unity.Mathematics.dll" Private="false" />
+    <Reference Include="$(Managed)\Unity.TextMeshPro.dll" Private="false" />
+    <Reference Include="$(Managed)\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(Managed)\Assembly-CSharp-firstpass.dll" Private="false" />
+    <Reference Include="$(Managed)\FMODUnity.dll" Private="false" />
+    <Reference Include="$(Managed)\Eflatun.SceneReference.dll" Private="false" />
+    <Reference Include="$(Managed)\Newtonsoft.Json.dll" Private="false" />
+    <Reference Include="$(MLDir)\MelonLoader.dll" Private="false" />
+    <Reference Include="$(MLDir)\0Harmony.dll" Private="false" />
+  </ItemGroup>
+
+  <Target Name="DeployMod" AfterTargets="Build" Condition="'$(DeployToGame)' == 'true'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameDir)\Mods" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) to $(GameDir)\Mods" />
+  </Target>
+
+</Project>

@@ -1,0 +1,8 @@
+# build output
+bin/
+obj/
+.vs/
+*.user
+
+# a local build setting (where your copy of the game is)
+Directory.Build.props
