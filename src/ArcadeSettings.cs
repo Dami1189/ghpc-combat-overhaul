@@ -41,15 +41,11 @@ namespace GHPCHitCam
         public static MelonPreferences_Entry<string> ConfigKey;
         public static MelonPreferences_Entry<bool> ConfigPauseGame;
 
-        public static KeyCode ArcadeKeyCode = KeyCode.F6;
-        public static KeyCode MinimapZoomInKeyCode = KeyCode.KeypadPlus;
-        public static KeyCode MinimapZoomOutKeyCode = KeyCode.KeypadMinus;
-        public static KeyCode ConfigKeyCode = KeyCode.F12;
 
         static void InitArcade()
         {
             ArcadeHud = Cat.CreateEntry("ArcadeHud", true, description: "War Thunder style aids. Master switch: each aid below has its own.");
-            ArcadeKey = Cat.CreateEntry("ArcadeKey", "F6", description: "Turns the whole arcade HUD on and off.");
+            ArcadeKey = Cat.CreateEntry("ArcadeKey", "H", description: "Turns the whole arcade HUD on and off.");
             ArcadeCallouts = Cat.CreateEntry("ArcadeCallouts", true, description: "Big text after your hits: PENETRATION, CRITICAL HIT and what was damaged.");
             ArcadePenIndicator = Cat.CreateEntry("ArcadePenIndicator", true, description: "Colour at your aim point: green = will penetrate, yellow = maybe, red = no, blue = ricochet.");
             ArcadeMarkers = Cat.CreateEntry("ArcadeMarkers", true, description: "Name, type and distance above spotted enemies; off-screen ones at the screen edge.");
@@ -67,8 +63,8 @@ namespace GHPCHitCam
             MinimapInfantry = Cat.CreateEntry("MinimapInfantry", true, description: "Infantry and anti-tank teams on the minimap too.");
             MinimapObjectives = Cat.CreateEntry("MinimapObjectives", true, description: "Mission objectives with a map marker, lettered A, B, C.");
             MarkerClassIcons = Cat.CreateEntry("MarkerClassIcons", true, description: "The vehicle's class icon (light / medium / heavy tank, IFV, ...) in its marker.");
-            MinimapZoomInKey = Cat.CreateEntry("MinimapZoomInKey", "KeypadPlus", description: "Minimap zoom in.");
-            MinimapZoomOutKey = Cat.CreateEntry("MinimapZoomOutKey", "KeypadMinus", description: "Minimap zoom out.");
+            MinimapZoomInKey = Cat.CreateEntry("MinimapZoomInKey", "KeypadMultiply", description: "Minimap zoom in.");
+            MinimapZoomOutKey = Cat.CreateEntry("MinimapZoomOutKey", "KeypadDivide", description: "Minimap zoom out.");
             ArcadeKillFeed = Cat.CreateEntry("ArcadeKillFeed", true, description: "Messages when your hits damage or kill a vehicle (later too: fire, cook-off, crew bailing out).");
             KillFeedSide = Cat.CreateEntry("KillFeedSide", "Right", description: "Right: small lines above the minimap. Left: above the game's weapon panel.");
             KillCreditSeconds = Cat.CreateEntry("KillCreditSeconds", 60f, description: "A vehicle that dies this long after your last hit (fire, cook-off) still counts as your kill.");
@@ -78,7 +74,7 @@ namespace GHPCHitCam
             HudScaleMarkers = Cat.CreateEntry("HudScaleMarkers", 1f, description: "Size of the enemy markers.");
             HudScaleCross = Cat.CreateEntry("HudScaleCross", 1f, description: "Size of the impact cross, gun ring and lead circle.");
             HudScaleKillFeed = Cat.CreateEntry("HudScaleKillFeed", 1f, description: "Size of the kill feed and kill banner.");
-            ConfigKey = Cat.CreateEntry("ConfigKey", "F12", description: "Opens this window. There is also a gear button in the corner while the mouse cursor is free.");
+            ConfigKey = Cat.CreateEntry("ConfigKey", "F12", description: "Opens this window (it is also the Overhaul tab in the game's Options).");
             ConfigPauseGame = Cat.CreateEntry("ConfigPauseGame", true, description: "Pause the game while this window is open.");
             ArcadePenNumbers = Cat.CreateEntry("ArcadePenNumbers", false, description: "Also show the pen and armour in millimetres next to it.");
             ArcadeLayoutVersion = Cat.CreateEntry("ArcadeLayoutVersion", 0, is_hidden: true);
@@ -94,10 +90,6 @@ namespace GHPCHitCam
                 if (KillFeedSide.Value == "Left") KillFeedSide.Value = "Right";
                 ArcadeLayoutVersion.Value = 3;
             }
-            ConfigKeyCode = ParseKey(ConfigKey.Value, KeyCode.F12);
-            ArcadeKeyCode = ParseKey(ArcadeKey.Value, KeyCode.F6);
-            MinimapZoomInKeyCode = ParseKey(MinimapZoomInKey.Value, KeyCode.KeypadPlus);
-            MinimapZoomOutKeyCode = ParseKey(MinimapZoomOutKey.Value, KeyCode.KeypadMinus);
         }
     }
 }

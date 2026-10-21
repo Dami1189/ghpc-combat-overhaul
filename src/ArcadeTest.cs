@@ -182,7 +182,7 @@ namespace GHPCHitCam
             was = null;
             try
             {
-                var wm = (GHPC.Player.PlayerInput.Instance?.CurrentPlayerCrewBrain as GHPC.Crew.CrewBrain)?.WeaponsModule;
+                var wm = (SceneUtil.Player?.CurrentPlayerCrewBrain as GHPC.Crew.CrewBrain)?.WeaponsModule;
                 if (wm == null || wm.Weapons == null) return false;
                 was = wm.ActiveWeapon;
                 var w = wm.Weapons.FirstOrDefault(x => x != null && x.Weapon != null && pick(x));

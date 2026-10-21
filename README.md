@@ -9,7 +9,7 @@ a War Thunder style HUD, an Armor Sim, a proving ground and an After Action Repo
 
 ![GHPC](https://img.shields.io/badge/GHPC-build%2020261014-556b2f)
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.x-7b5ea7)
-![Version](https://img.shields.io/badge/version-1.0.0-2f6fb3)
+![Version](https://img.shields.io/badge/version-1.1.0-2f6fb3)
 ![Single player](https://img.shields.io/badge/single%20player-yes-777777)
 
 <img src="docs/images/killcam.webp" width="800" alt="Kill cam: 3BM32 through the side of a T-80B, the spall, the crew hit, the charges catching fire and the rack going off">
@@ -38,7 +38,7 @@ What it adds:
 - **[After Action Report](#after-action-report).** Every hit of yours and every one on you, replayed in 3D, with your stats, during or after the mission.
 - **[Tools](#tools-and-quality-of-life).** Settings on F12 with three presets, the Arsenal (your gun fires any round in the game) and a test range for any mission.
 
-Everything that costs frame rate can be switched off, and there are presets for slow and fast PCs.
+Everything that costs frame rate can be switched off, and there are presets for slow and fast PCs. And none of it is made-up numbers: the damage is the game's own simulation, and what the mod adds is built on published physics ([the physics behind it](#the-physics-behind-it)).
 
 ## Install
 
@@ -46,7 +46,7 @@ Everything that costs frame rate can be switched off, and there are presets for 
 
 1. Install MelonLoader into the game with the [MelonLoader installer](https://github.com/LavaGang/MelonLoader.Installer). Point it at `steamapps\common\Gunner HEAT PC\Bin\GHPC.exe` if it doesn't find the game.
 2. Start the game once and close it, so MelonLoader creates its folders.
-3. Download `GHPC-Combat-Overhaul-1.0.0.zip` from [Releases](../../releases/latest) and unzip it into `steamapps\common\Gunner HEAT PC\Bin\Mods` (or put `GHPCCombatOverhaul.dll` there yourself, it's the same file).
+3. Download `GHPC-Combat-Overhaul-1.1.0.zip` from [Releases](../../releases/latest) and unzip it into `steamapps\common\Gunner HEAT PC\Bin\Mods` (or put `GHPCCombatOverhaul.dll` there yourself, it's the same file).
 4. Start the game. If starting through Steam gives you trouble with MelonLoader, start `Bin\GHPC.exe` directly.
 
 To uninstall, delete `Mods\GHPCCombatOverhaul.dll`. Your settings stay in `Bin\UserData\MelonPreferences.cfg` under `[HitCam]` (delete that section to reset them), and any past missions you chose to keep in `Bin\UserData\HitCam`.
@@ -62,6 +62,7 @@ To uninstall, delete `Mods\GHPCCombatOverhaul.dll`. Your settings stay in `Bin\U
 - [Armor Sim](#armor-sim)
 - [After Action Report](#after-action-report)
 - [Tools and quality of life](#tools-and-quality-of-life)
+- [The physics behind it](#the-physics-behind-it)
 - [Performance](#performance)
 - [Settings and presets](#settings-and-presets) · [Keys](#keys) · [Good to know](#good-to-know) · [Current limitations](#current-limitations)
 
@@ -78,12 +79,12 @@ What's real in it:
 - **The round.** Its path, every plate it went through, its speed and remaining penetration at each one. Those are GHPC's own numbers, recorded while the game simulates the shot.
 - **The spall.** Every fragment you see is one the game simulated, on its own path. The ones that did damage are bright, the ones that hit nothing are faint (or hidden, your choice).
 - **Crew and modules** change colour at the moment the game damaged them: white, yellow, orange, red, and black when destroyed or dead.
-- **Fire and cook-offs.** Fires start where the game started them, and burning propellant roars out as a jet. GHPC really heats the charges until the rack goes, often 10 to 25 seconds later. If that happens after the replay ended and the vehicle was still in the fight, a short second replay pops up and shows you the explosion. If your shot had already knocked it out, it leaves you alone.
-- **The crew** the game killed fall as ragdolls, pushed by the momentum of the fragments that hit them and by the blast, and they stay inside the real armour of the vehicle.
+- **Fire and cook-offs.** Fires start where the game started them, and burning propellant roars out as a jet. GHPC really heats the charges until the rack goes, often 10 to 25 seconds later. Turn on **Cook-off replay** and if that happens after the replay ended while the vehicle was still in the fight, a short second replay pops up and shows you the explosion.
+- **The crew** stay in their seats and change colour as they're hit. With ragdolls on (the Cinematic preset), the ones the game killed fall, pushed by the momentum of the fragments that hit them and by the blast, and they stay inside the real armour of the vehicle.
 
 At the end you get the result (PENETRATION, CRITICAL HIT, AMMUNITION EXPLODED, CREW KNOCKED OUT...) and a list of everything that happened, in order.
 
-By default the replay slows right down as the round goes through the first plate and speeds up again for the spall. If you'd rather have it the War Thunder way, set **Hit cam pace** to Constant: one steady slow motion from the round flying in to the last fragment (100x slower than real time, adjustable).
+By default it plays the War Thunder way: a steady camera and one constant slow motion from the round flying in to the last fragment (100x slower than real time, adjustable). If you want it more like a film, turn on **Cinematic x-ray camera** (shake, close-ups, flashes) and set **Hit cam pace** to Cinematic: it slows right down as the round goes through the first plate and speeds up again for the spall.
 
 <br clear="right">
 
@@ -173,13 +174,13 @@ It's all visual, so it never changes what the game decides. (There's one optiona
 
 GHPC plays roughly the same sound for a small HE shell and a whole ammo rack going up, and they barely get quieter with distance. Here every explosion is scaled by the size of its charge, using real blast physics, and it reaches you at the speed of sound: you see the flash first and hear it a moment later, more the further away you are.
 
-A tank blowing its turret off is a huge boom that carries for kilometres. A rack going off with the turret still on is a solid boom, and the rounds cooking off after it are quieter. Close up it's one hard bang; far away you hear it roll off the terrain. The blast wave also gives your view a short kick. The kill cam grades them the same way: only the blast that throws the turret fills the whole hull with fire.
+A tank blowing its turret off is a huge boom that carries for kilometres. A rack going off with the turret still on is a solid boom, and the rounds cooking off after it are much quieter and barely shake the view ("Later ammo blasts" in the settings: 0 mutes them). Close up it's one hard bang; far away you hear it roll off the terrain. The blast wave also gives your view a short kick ("Shockwave shake" in the settings turns it off). The kill cam grades them the same way: only the blast that throws the turret fills the whole hull with fire.
 
 **One optional change to the game itself:** when an ammo rack goes off inside a vehicle, the crew near it die. GHPC sometimes leaves a crewman unhurt after a 13 kg detonation right next to him. It's on by default and you can turn it off.
 
 ## War Thunder style HUD
 
-Sometimes I want GHPC to feel a bit more arcade, so there's an optional HUD inspired by War Thunder. Every part can be switched on and off on its own, and F6 turns the whole thing off at once.
+Sometimes I want GHPC to feel a bit more arcade, so there's an optional HUD inspired by War Thunder. Every part can be switched on and off on its own, and H turns the whole thing off at once.
 
 <img src="docs/images/hud.jpg" alt="Arcade HUD: hit callout, enemy markers, pen indicator and minimap">
 
@@ -199,20 +200,22 @@ Sometimes I want GHPC to feel a bit more arcade, so there's an optional HUD insp
 
 Testing rounds in a normal mission was a pain: find a target, get to the right range, hope the AI doesn't drive off or shoot back. So I built a proving ground, like the VR range in Arma 3 or War Thunder's test drive.
 
-Click **PROVING GROUND** in the main menu (you can tell the modded game by the red COMBAT OVERHAUL under the title). It loads a quiet mission and builds a huge flat grid floating above the map, far from everything. Rows of real enemy vehicles stand every 100 m out to 1 km (T-72M1, T-80B, M1IP, Leopard 2A3, BMP-2, BTR-70, M113 and BRDM-2), some facing you, some side-on, some at three-quarters, and two helicopters hover at 400 and 800 m. Off to the left, clear of the rows, stand soft targets from 120 to 380 m: jeeps (UAZ-469, M151) and trucks (Ural 375D, M923), for the HE and the machine guns. Their AI is switched off, so they just sit there and take it. The ranges are painted on the deck and on boards you can read through the sight.
+Click **PROVING GROUND** in the main menu (you can tell the modded game by the red COMBAT OVERHAUL under the title). It loads the game's M1 Abrams training range, which is almost empty, and builds a huge flat grid floating above it, far from everything. Only the grid and the vehicles on it are drawn, not the map underneath, so it looks like a VR range and runs a lot faster ("Empty map" in the settings brings the map back). Rows of real enemy vehicles stand every 100 m out to 500 m (T-72M1, T-80B, M1IP, Leopard 2A3, BMP-2, BTR-70, M113 and BRDM-2), some facing you, some side-on, some at three-quarters, two tanks wait further out at 1 km and 1.5 km for long shots, and two helicopters hover at 400 and 500 m. Off to the left, clear of the rows, stand soft targets from 120 to 380 m: jeeps (UAZ-469, M151) and trucks (Ural 375D, M923), for the HE and the machine guns. Their AI is switched off, so they just sit there and take it, engines idling. The ranges are painted on the deck and on boards you can read through the sight. Want more rows? "Proving ground rows" in the settings, each row costs a little frame rate.
+
+Knock a target out (destroyed, its crew dead, or bailed out after your hit) and it comes back by itself 20 seconds later. Change the time or turn it off with "Targets come back after" in the settings.
 
 <img src="docs/images/proving_ground_sight.jpg" alt="Through the gunner's sight on the proving ground">
 
-You start in your vehicle on the firing line, free to drive and shoot. **F4** opens the tools:
+You start in your vehicle on the firing line, with the vehicle list open in case you want another one, and a short briefing on the keys. **Home** opens the tools:
 
 - **You.** Pick your vehicle from every ground vehicle in the game (tanks, IFVs, APCs, scout cars, trucks, jeeps) and where you start: on the firing line or anywhere down range, facing either way.
 - **Targets.** Respawn the ones you've wrecked, or all of them, and place your own: any vehicle, at any range out to 2 km, left or right, facing you, side-on, three-quarter or away.
 - **Shot lab.** Pick any round in the game, any target, the direction (front, side, rear, top, three-quarter, or exact angles), the part to hit (hull, turret, lower hull, turret ring) and the range, from 0 to 4 km. The round arrives with the speed and penetration it would have at that range. Bombs fall straight onto the target, as dropped from 300 m.
 - **Rod cam** and a bigger kill cam window for close-ups.
 
-Building it takes a little while (usually 20 to 40 s, a note on screen counts it). Restart Mission brings the proving ground back as you left it: your vehicle, where you started and the targets you placed. Tab only lists your own vehicle there; change it in the tools.
+Building it takes a little while (about 20 s, a note on screen counts it). Restart Mission brings the proving ground back as you left it: your vehicle, where you started and the targets you placed. Tab only lists your own vehicle there; change it in the tools.
 
-You can also build one inside any mission with Ctrl+F4.
+You can also build one inside any mission with **Alt+Home**.
 
 ## Armor Sim
 
@@ -225,7 +228,7 @@ You can also build one inside any mission with Ctrl+F4.
 
 The protection analysis from War Thunder, for GHPC, made only from the game's own armour data. Pick any of the game's 73 ground vehicles and any round at any range, and the vehicle is coloured by where that round gets through (green), might (yellow), doesn't (red) or bounces off (blue). Point at a spot to see the plate, its thickness, the impact angle and all the armour along that line. Click to actually fire the round there and watch the hit in a full-screen kill cam.
 
-Open it from the main menu (**ARMOR SIM**) or with F5 in a mission.
+Open it from the main menu (**ARMOR SIM**, it loads the same quiet training range) or with **Insert** in a mission. It starts on the M1IP. Drag with the right mouse button to turn around the vehicle, with the middle one to move the view (double-click to centre it again), and scroll to zoom.
 
 ## After Action Report
 
@@ -233,7 +236,7 @@ Open it from the main menu (**ARMOR SIM**) or with F5 in a mission.
 
 <img src="docs/images/aar_replay.jpg" alt="A hit replayed in 3D with the free camera and the timeline">
 
-Press **F11** during or after a mission.
+Press **F2** during or after a mission.
 
 GHPC has its own AAR when a mission is over, and it's good at something else: the whole battle, shot by shot, frozen at the moment of each hit. This report replays your hits in motion, and you can open it while you play. They go well together:
 
@@ -254,11 +257,25 @@ How detailed each hit is in this report: every plate the round went through (its
 <img src="docs/images/settings.jpg" width="560" align="right" alt="The settings window with the three presets">
 
 - **Settings window** (F12) with three presets and a short line on what every option does. The options that cost frame rate say how much and why. It's also in the game's own Options as an **Overhaul** tab.
-- **Arsenal** (F8): your main gun fires any round in the game, including generated shells from 20 to 203 mm and bombs (a bomb falls from 300 m onto whatever your sight is on). Perfect for "what if".
-- **Test range** (F7): drops targets and circling helicopters around you in any mission.
+- **What's new and updates.** The main menu shows what changed in each version, and tells you when a new one is out: one click installs it, then the game offers to restart. It checks this project's GitHub releases once per start; set "Check for updates" to Auto, Ask or Off.
+- **Arsenal** (U): your main gun fires any round in the game, including generated shells from 20 to 203 mm and bombs (a bomb falls from 300 m onto whatever your sight is on). Perfect for "what if".
+- **Test range** (Alt+K): drops targets and circling helicopters around you in any mission.
 - **Debug log** with a frame profiler, for when something goes wrong.
 
 <br clear="right">
+
+## The physics behind it
+
+No made-up numbers. The damage itself (penetration, armour, spall, which modules and crew get hit) is GHPC's own simulation, recorded as the game runs your shot. Everything the mod adds on top of that is built on published physics, not on numbers picked to look good:
+
+| What | Model | Source |
+|---|---|---|
+| A long rod wearing down as it pushes through armour | Tate-Alekseevskii penetration, with target strength | A. Tate, *A theory for the deceleration of long rods after impact* (1967); V. P. Alekseevskii, *Penetration of a rod into a target at high velocity* (1966); RHA strength values from C. E. Anderson Jr. et al. |
+| How a struck plate fails (petals, plug, dishing, crater, groove) | the classic failure modes of perforation | M. E. Backman, W. Goldsmith, *The mechanics of penetration of projectiles into targets* (1978) |
+| How strong a blast is at a distance, how loud it is and how far it carries | Kingery-Bulmash airblast curves, Hopkinson-Cranz cube-root scaling | C. N. Kingery, G. Bulmash, *Airblast Parameters from TNT Spherical Air Burst and Hemispherical Surface Burst* (1984), simplified by M. M. Swisdak (1994) |
+| How fast a shell case's fragments fly | Gurney equations | R. W. Gurney, *The Initial Velocities of Fragments from Bombs, Shells and Grenades* (1943) |
+
+And the extra layers never overrule the game: if GHPC says the round bounced, the kill cam shows a bounce. (The one optional exception is "Ammo explosion kills crew", above.) Automated tests fire known rounds at known targets and angles and check that it all lines up with what the game reports.
 
 ## Performance
 
@@ -268,7 +285,8 @@ If your PC struggles, pick the **Performance** preset in the settings.
 
 | | Performance | Balanced (default) | Cinematic |
 |---|---|---|---|
-| Crew ragdolls | off | on | on |
+| Crew ragdolls, burning crew thrashing | off | off | on |
+| Second replay when the ammo cooks off later | off | off | on |
 | Real crew models | off | on | on |
 | Bending, breaking rods | off | on | on |
 | Holes cut into the models | off | on | on |
@@ -277,26 +295,26 @@ If your PC struggles, pick the **Performance** preset in the settings.
 | Shrapnel on the ground | off | up to 120 pieces | up to 220 pieces |
 | 3D holes kept on vehicles | 12 | 24 | 48 |
 
-What it costs, measured on my PC (RTX 5080, Ryzen 7 7800X3D, 3440x1440) on the proving ground. To leave the game's own explosions, fire and smoke out of it, one recorded hit (3BM32 into a T-72M1's side: a fire, crew hit, the rack going off) was replayed again and again with each preset and setting, so the numbers are only what the kill cam adds while it plays:
+What it costs, measured on my PC (RTX 5080, Ryzen 7 7800X3D, 3440x1440) on the proving ground, with the default calm kill cam. To leave the game's own explosions, fire and smoke out of it, one recorded hit (3BM32 into a T-72M1's side: a fire, crew hit, the rack going off) was replayed again and again with each preset and setting, so the numbers are only what the kill cam adds while it plays:
 
 | Preset | without the kill cam | while it plays | the kill cam adds |
 |---|---|---|---|
-| Performance | 77 fps | 59 fps | about 4 ms a frame |
-| Balanced | 82 fps | 56 fps | about 5.7 ms a frame |
-| Cinematic | 81 fps | 55 fps | about 5.7 ms a frame |
+| Performance | 131 fps | 87 fps | about 3.8 ms a frame |
+| Balanced | 130 fps | 84 fps | about 4.2 ms a frame |
+| Cinematic | 130 fps | 77 fps | about 5.2 ms a frame |
 
-The milliseconds are what carries over to your PC: at 100 fps, 4 ms more is about 70 fps while the kill cam plays, 5.7 ms about 64. When it closes you're back where you were.
+The milliseconds are what carries over to your PC: at 100 fps, 4.2 ms more is about 70 fps while the kill cam plays, 5.2 ms about 66. When it closes you're back where you were.
 
 Single settings, each changed on its own from Balanced:
 
 | Setting | while the kill cam plays |
 |---|---|
-| Ragdolls and physics off | about 3 ms a frame less (the biggest one) |
+| Ragdolls and physics on (as in Cinematic) | about 0.3 ms a frame more |
 | Anti-aliasing 8x instead of 2x | 1 to 3 ms more |
 | Anti-aliasing off | under 0.5 ms less |
 | Every spall fragment drawn | under 0.5 ms more |
 | Real crew models, bending rod, cut-open models | no difference I could measure (their work is done when the round hits, off the main thread) |
-| Constant pace | about 2 ms more on average, but the replay is over sooner |
+| Cinematic pace instead of Constant | about 2 ms less on average, but the replay lasts longer |
 
 The moment of the hit itself is one frame of 40 to 140 ms on my PC, the game's own explosion included. The damage left on the vehicles afterwards (holes, flames out of them, broken tracks) costs under 0.5 ms a frame.
 
@@ -304,13 +322,15 @@ The moment of the hit itself is one frame of 40 to 140 ms on my PC, the game's o
 
 ## Settings and presets
 
-Press **F12** in game, click the gear in the corner while the mouse cursor is free, or open the **Overhaul** tab in the game's Options. The **Quick setup** tab has the presets:
+Press **F12** in game or open the **Overhaul** tab in the game's Options. The **Quick setup** tab has the presets:
 
-- **Performance:** the kill cam without ragdolls, real crew models, bending rods and cut-open models, and less shrapnel. For older PCs and big battles.
-- **Balanced** (default): everything on, at sensible amounts.
-- **Cinematic:** everything at full detail. For strong PCs, replays and screenshots.
+- **Performance:** the kill cam without real crew models, bending rods and cut-open models, and less shrapnel. For older PCs and big battles.
+- **Balanced** (default): calm, the War Thunder way. Real crew models that stay in their seats, the bending rod, cut-open models.
+- **Cinematic:** everything at full detail, crew ragdolls and cook-off replays included. For strong PCs, replays and screenshots.
 
-A preset only changes the settings marked with an FPS cost. Your sizes, keys and HUD choices stay as they are.
+A preset only changes the settings marked with an FPS cost. Your sizes, keys and HUD choices stay as they are. The look of the kill cam is up to you too: **Cinematic x-ray camera** (shake, close-ups, flashes) and **Hit cam pace** are in the Hit cam tab, both off / Constant by default.
+
+Coming from 1.0.0 with the settings untouched? They move to the new calmer defaults by themselves. Anything you had changed yourself stays.
 
 ## Keys
 
@@ -319,21 +339,23 @@ A preset only changes the settings marked with an FPS cost. Your sizes, keys and
 | F12 | Settings |
 | F9 | Kill cam on / off |
 | F10 | Replay your last hit |
-| F11 | After Action Report |
-| F6 | Arcade HUD on / off |
-| F5 | Armor Sim |
-| F4 | Proving ground tools (Ctrl+F4 builds a proving ground in any mission) |
-| F7 | Test range |
-| F8 | Arsenal ([ and ] to pick a round, B to fire it at once) |
+| F2 | After Action Report |
+| H | Arcade HUD on / off |
+| Insert | Armor Sim |
+| Home | Proving ground tools (on the proving ground) |
+| Alt+Home | Build a proving ground in the mission you're in |
+| Alt+K | Test range (spawns targets around you) |
+| U | Arsenal (9 and 0 pick a round, J fires it at once) |
+| Num * / Num / | Minimap zoom in / out |
 
-All of them can be changed in the Keys tab. If another mod uses the same key, change it in one of them.
+None of them are keys the game uses itself, and the ones that change the mission you're in need Alt, so you won't hit them by accident. They do nothing while the game's own After Action Report is open. Change any of them in the settings' **Keys** tab: click it and press the new key, with Alt, Ctrl or Shift if you like, or set it to none. The tab tells you if the game (or another of these) already uses a key. Coming from 1.0.0, your keys move to these by themselves, unless you had set your own.
 
 ## Good to know
 
 - Single player only, like the game.
 - The kill cam needs a moment to copy the vehicle when your round hits. On a slow PC you may feel a short hitch on hits; the Performance preset makes it smaller.
 - Nothing is written to disk by default: the report shows the mission you're in and the one before it from memory. To look at older missions, set "Past missions kept" in the Tools tab; their hits then go to `Bin\UserData\HitCam`, and anything older than that is deleted when you close the report or start a mission.
-- Tested together with Gunner Mod PC. Vehicle mods should work too, since the mod reads whatever the game has loaded.
+- Tested together with Gunner Mod PC, Fulda Expansion Pack and Pact Increased Lethality, and on the plain game. The vehicles the proving ground and the Armor Sim spawn get those mods' conversions too (a Leopard 2K comes as one of its variants, a T-80B as a T-80U if you set PIL up for it), the vehicle lists tag them ("[PIL > T-80U]"), and the kill cam sees their ERA and armour. Other vehicle mods built the same way should work too; if one doesn't, tell me. On the proving ground the modded targets' ERA bricks share their materials: every brick had its own copy (a modded range has about 1900 bricks on 800+ copies), so each was its own draw call, and sharing the identical ones is about 45 fps on my PC with the same picture.
 - Found a bug? Turn on "Debug log" in the Advanced tab, play until it happens, and open an issue with `Bin\MelonLoader\Latest.log` attached.
 
 ## Current limitations
@@ -342,10 +364,10 @@ All of them can be changed in the Keys tab. If another mod uses the same key, ch
 - **A short hitch on hits on slow PCs.** The kill cam copies the vehicle the moment your round hits. Most of the work is done ahead or in the background, but some has to happen in that frame. The Performance preset makes it smaller.
 - **See-through holes only where the model allows it.** Some of the game's models can be cut open, others can't. Where they can't, the 3D hole is drawn on the hull, so it looks the same from outside but you can't see through it.
 - **No full interiors.** GHPC's vehicles don't have modelled interiors, so an opened hull shows the game's own x-ray models of what's inside (seats, breech, engine and so on), not a detailed crew compartment.
-- **Ragdolls, not gore.** Crew the game kills fall as ragdolls in the kill cam. There's no dismemberment.
+- **Ragdolls, not gore.** With ragdolls on, crew the game kills fall as ragdolls in the kill cam. There's no dismemberment.
 - **The world damage is visual.** It's worked out from the real hit, but it doesn't feed back into the game's damage model (except the optional "Ammo explosion kills crew").
 - **Kept past missions replay on a simple model.** The game's meshes can't be saved, so hits from older missions (if you keep them) replay on a box model of the vehicle. Everything that happens is the same, it just looks plainer.
-- **Autocannon bursts get short replays.** Rounds under 40 mm join the replay already playing instead of getting their own slow motion.
+- **Autocannons get a lighter kill cam.** A 20-30 mm burst plays the War Thunder way: one x-ray for the whole burst, the camera holding still and every round arriving into it, with simple holes instead of the deforming plates (a full replay for every round of a burst costs a lot of frames on any PC). You can turn that off ("Light hit cam for autocannons"), at your own frame rate's risk.
 - **Tested on GHPC build 20261014 with MelonLoader 0.7.1.** A game update can break parts of it until the mod is updated.
 
 ## Credits

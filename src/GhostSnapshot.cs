@@ -557,6 +557,16 @@ namespace GHPCHitCam
             _bakes.Clear();
         }
 
+        /// What was found on one unit, dropped: another mod rebuilt it (new parts, armour, models), so look again.
+        public static void Forget(Unit u)
+        {
+            if (u == null) return;
+            _followerCache.Remove(u);
+            _scanned.Remove(u);
+            _aarOf.Remove(u);
+            _plans.Remove(u);
+        }
+
         // ------------------------------------------------------------------ crew bakes made ahead (Warmup)
 
         /// A crew model baked before the hit, in the pose it had then (its bones in the renderer's space). The next

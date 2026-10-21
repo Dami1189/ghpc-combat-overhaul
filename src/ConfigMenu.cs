@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Reflection;
 using GHPC.Player;
@@ -9,7 +10,7 @@ using UnityEngine.EventSystems;
 
 namespace GHPCHitCam
 {
-    /// In-game settings window (ConfigKey, default F12, the gear button while the mouse cursor is visible, or the HitCam tab
+    /// In-game settings window (ConfigKey, default F12, or the Overhaul tab
     /// in the game's own Options, OptionsHook): every MelonPreferences entry of the mod's categories, in tabs and sections
     /// (Layout), each with what it does in plain words (Help) and, for the ones that cost frame rate, how much (Cost); a
     /// Quick setup tab with the quality presets (Presets) and the main switches. Toggles / sliders / choices / key capture.
@@ -25,6 +26,8 @@ namespace GHPCHitCam
         static CursorLockMode _cursorLock;
         static int _tab;
         internal static int Tab { get => _tab; set => _tab = value; }
+        /// Self-test: a tab by its name.
+        internal static void TestTab(string name) { int i = Array.IndexOf(Tabs, name); if (i >= 0) { _tab = i; _scroll = Vector2.zero; } }
         static Vector2 _scroll;
         static MelonPreferences_Entry _capturing;
         static string _status = "";
@@ -37,7 +40,7 @@ namespace GHPCHitCam
         static readonly (string tab, string title, string[] ids)[] Layout =
         {
             ("Hit cam", "Window", new[] { "Enabled", "PipSize", "PipCorner", "Style", "HullTexture", "HitCamAntiAliasing" }),
-            ("Hit cam", "Which hits", new[] { "PlayerShotsOnly", "MinCaliberMm", "BurstCaliberMm", "QueueHits" }),
+            ("Hit cam", "Which hits", new[] { "PlayerShotsOnly", "MinCaliberMm", "BurstCaliberMm", "LightAutocannonCam", "QueueHits" }),
             ("Hit cam", "Timing", new[] { "HitCamPace", "ConstantSlowMo", "ApproachSeconds", "InteriorSeconds", "AftermathSeconds", "ImpactSlowMo" }),
             ("Hit cam", "Ammunition fires and cook-offs", new[] { "CookOffWait", "CookOffReplay" }),
             ("X-ray", "Camera", new[] { "CinematicXray", "RodCam" }),
@@ -45,17 +48,18 @@ namespace GHPCHitCam
             ("X-ray", "Round and armour", new[] { "RodSoftBody", "ShowAllSpall", "ArmorHoles" }),
             ("World & sound", "Damage on the real vehicles", new[] { "WorldDamage", "CutModels", "MaxWorldPlates", "WorldVentJets" }),
             ("World & sound", "Shrapnel", new[] { "WorldShrapnel", "MaxDebris", "DebrisSeconds" }),
-            ("World & sound", "Explosions", new[] { "ExplosionSound", "ExplosionLoudness", "ShockwaveShake" }),
+            ("World & sound", "Explosions", new[] { "ExplosionSound", "ExplosionLoudness", "ExplosionFollowUps", "ShockwaveShake" }),
             ("HUD", "Arcade HUD", new[] { "ArcadeHud", "ArcadeCallouts", "ArcadeKillFeed", "KillFeedSide", "KillCreditSeconds", "ArcadeSfx", "ArcadeSfxVolume" }),
             ("HUD", "Aiming aids", new[] { "ArcadePenIndicator", "ArcadePenNumbers", "ArcadeImpactMarker", "ArcadeLeadMarker" }),
             ("HUD", "Enemy markers", new[] { "ArcadeMarkers", "MarkerSource", "MarkerRange", "MarkerMemorySeconds", "MarkerClassIcons" }),
             ("HUD", "Minimap", new[] { "ArcadeMinimap", "MinimapSize", "MinimapCorner", "MinimapPlayerUp", "MinimapTerrain", "MinimapEnemies", "MinimapInfantry", "MinimapObjectives" }),
             ("HUD", "Sizes", new[] { "HudScaleCallouts", "HudScaleMarkers", "HudScaleCross", "HudScaleKillFeed" }),
             ("Tools", "After Action Report", new[] { "AarEnabled", "AarPauseGame", "AarFullModels", "SaveRecords", "PastMissionsKept" }),
-            ("Tools", "Proving ground", new[] { "ProvingGroundMenuButton", "ProvingGroundRows", "ProvingGroundPerRow", "ProvingGroundBigCam" }),
+            ("Tools", "Proving ground", new[] { "ProvingGroundMenuButton", "ProvingGroundMission", "ProvingGroundBriefing", "ProvingGroundRows", "ProvingGroundPerRow", "ProvingGroundRespawnSeconds", "ProvingGroundEmptyMap", "ProvingGroundBigCam" }),
             ("Tools", "Armor Sim", new[] { "ArmorSimMenuButton", "ArmorSimMission", "ArmorSimMapBudgetMs" }),
+            ("Tools", "Updates", new[] { "UpdateCheck" }),
             ("Keys", "Hit cam", new[] { "ToggleKey", "ReplayKey", "ConfigKey" }),
-            ("Keys", "Tools", new[] { "AarKey", "ArmorSimKey", "ProvingGroundKey", "RangeKey", "ArsenalKey", "FireNowKey" }),
+            ("Keys", "Tools", new[] { "AarKey", "ArmorSimKey", "ProvingGroundKey", "ProvingGroundBuildKey", "RangeKey", "ArsenalKey", "ArsenalPrevKey", "ArsenalNextKey", "FireNowKey" }),
             ("Keys", "HUD", new[] { "ArcadeKey", "MinimapZoomInKey", "MinimapZoomOutKey" }),
             ("Advanced", "Settings window", new[] { "ConfigPauseGame" }),
             ("Advanced", "Troubleshooting", new[] { "DebugLog" }),
@@ -120,7 +124,7 @@ namespace GHPCHitCam
             { "DebrisSeconds", new Vector2(0f, 120f) }, { "MaxDebris", new Vector2(0f, 600f) }, { "PastMissionsKept", new Vector2(0f, 20f) }, { "MaxWorldPlates", new Vector2(0f, 200f) },
             { "MarkerRange", new Vector2(200f, 6000f) }, { "MarkerMemorySeconds", new Vector2(0f, 60f) }, { "MinimapSize", new Vector2(0.1f, 0.6f) },
             { "KillCreditSeconds", new Vector2(5f, 180f) }, { "ArcadeSfxVolume", new Vector2(0f, 1f) }, { "ArmorSimMapBudgetMs", new Vector2(1f, 20f) },
-            { "AarFullModels", new Vector2(0f, 300f) }, { "CookOffWait", new Vector2(0f, 30f) }, { "ExplosionLoudness", new Vector2(1f, 3f) }, { "ProvingGroundRows", new Vector2(1f, 20f) }, { "ProvingGroundPerRow", new Vector2(1f, 5f) },
+            { "AarFullModels", new Vector2(0f, 300f) }, { "CookOffWait", new Vector2(0f, 30f) }, { "ExplosionLoudness", new Vector2(1f, 3f) }, { "ExplosionFollowUps", new Vector2(0f, 1f) }, { "ProvingGroundRows", new Vector2(1f, 20f) }, { "ProvingGroundPerRow", new Vector2(1f, 5f) }, { "ProvingGroundRespawnSeconds", new Vector2(0f, 120f) },
         };
 
         static readonly Dictionary<string, string[]> Options = new Dictionary<string, string[]>
@@ -133,6 +137,7 @@ namespace GHPCHitCam
             { "MinimapEnemies", new[] { "Spotted", "Always", "Off" } },
             { "HitCamAntiAliasing", new[] { "Off", "2x", "4x", "8x" } },
             { "HitCamPace", new[] { "Cinematic", "Constant" } },
+            { "UpdateCheck", new[] { "Ask", "Auto", "Off" } },
         };
 
         /// The mod's entries (its own category, and any other category whose name says HitCam).
@@ -156,17 +161,27 @@ namespace GHPCHitCam
             try
             {
                 OptionsHook.Update();
-                if (_capturing == null && Input.GetKeyDown(Settings.ConfigKeyCode)) { if (IsOpen) Close(); else Open(); }
+                if (_capturing == null && Hotkeys.Down(Settings.ConfigKey, evenInGameAar: true)) { if (IsOpen) Close(); else Open(); }
                 else if (IsOpen && _capturing == null && Input.GetKeyDown(KeyCode.Escape)) Close();
                 if (IsOpen)
                 {
                     Cursor.visible = true;
                     Cursor.lockState = CursorLockMode.None;
-                    var pi = PlayerInput.Instance;
+                    var pi = SceneUtil.Player;
                     if (pi != null) pi.BlockKeyboardInput = true;
                 }
             }
             catch (Exception e) { HitCamMod.Log.Warning("Settings window: " + e.Message); }
+        }
+
+        /// The first install's welcome: Quick setup with a few words on top.
+        public static bool Welcome;
+
+        public static void OpenWelcome()
+        {
+            Welcome = true;
+            _tab = 0;
+            Open();
         }
 
         public static void Open()
@@ -177,7 +192,7 @@ namespace GHPCHitCam
             _capturing = null;
             _cursorVisible = Cursor.visible;
             _cursorLock = Cursor.lockState;
-            var pi = PlayerInput.Instance;
+            var pi = SceneUtil.Player;
             if (pi != null) _blockKb = pi.BlockKeyboardInput;
             PausedByMenu = false;
             try
@@ -204,7 +219,7 @@ namespace GHPCHitCam
             PausedByMenu = false;
             if (_uiOff != null) _uiOff.enabled = true;
             _uiOff = null;
-            var pi = PlayerInput.Instance;
+            var pi = SceneUtil.Player;
             if (pi != null) pi.BlockKeyboardInput = _blockKb;
             Cursor.visible = _cursorVisible;
             Cursor.lockState = _cursorLock;
@@ -218,29 +233,12 @@ namespace GHPCHitCam
 
         static void Say(string m) { _status = m; _statusAt = Time.unscaledTime; }
 
-        /// Keys are parsed once at start in several places: re-read them all after a key setting changes.
-        static void RefreshKeys()
-        {
-            foreach (var e in _entries)
-            {
-                if (!(e is MelonPreferences_Entry<string> se) || !e.Identifier.EndsWith("Key")) continue;
-                KeyCode k;
-                try { k = (KeyCode)Enum.Parse(typeof(KeyCode), se.Value, true); } catch { continue; }
-                SetKeyField(typeof(Settings), e.Identifier + "Code", k);
-                if (e.Identifier == "AarKey") SetKeyField(Type.GetType("GHPCHitCam.AfterAction"), "KeyCode", k);
-                if (e.Identifier == "ArmorSimKey") SetKeyField(Type.GetType("GHPCHitCam.ArmorSim"), "_key", k);
-            }
-        }
-
-        static void SetKeyField(Type t, string name, KeyCode k)
-        {
-            var f = t?.GetField(name, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-            if (f != null && f.FieldType == typeof(KeyCode)) f.SetValue(null, k);
-        }
+        /// (The keys are read from their settings each time they're checked: Hotkeys.)
+        static void RefreshKeys() { }
 
         // ------------------------------------------------------------------ drawing
 
-        static GUIStyle _bg, _head, _label, _value, _tip, _gear, _section, _sub, _presetOn, _presetOff;
+        static GUIStyle _bg, _head, _label, _value, _tip, _section, _sub, _presetOn, _presetOff;
         static readonly GUIStyle[] _cost = new GUIStyle[4];
         static Texture2D _dark;
 
@@ -260,7 +258,6 @@ namespace GHPCHitCam
             _value.normal.textColor = new Color(1f, 0.9f, 0.6f);
             _tip = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true };
             _tip.normal.textColor = new Color(0.7f, 0.75f, 0.8f);
-            _gear = new GUIStyle(GUI.skin.button) { alignment = TextAnchor.MiddleCenter, padding = new RectOffset(4, 4, 4, 4) };
             _section = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold };
             _section.normal.textColor = new Color(0.55f, 0.8f, 1f);
             _sub = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.LowerLeft };
@@ -288,23 +285,18 @@ namespace GHPCHitCam
                 float W = Screen.width / s, H = Screen.height / s;
                 try
                 {
-                    if (!IsOpen) { Gear(W, H, s); return; }
+                    if (!IsOpen) return;
+                    // over everything else of the mod's (drawn last): the rest dimmed, and what's under it hidden and
+                    // taking no clicks (the Armor Sim fired a round through it)
+                    var dim = GUI.color;
+                    GUI.color = new Color(0f, 0f, 0f, 0.55f);
+                    GUI.DrawTexture(new Rect(0f, 0f, W, H), Texture2D.whiteTexture);
+                    GUI.color = dim;
                     Window(W, H);
                 }
                 finally { GUI.matrix = old; }
             }
             catch (Exception e) { HitCamMod.Log.Warning("Settings window draw: " + e.Message); }
-        }
-
-        /// A gear button above the minimap corner, only while the mouse cursor is free (map, pause, menus).
-        static void Gear(float W, float H, float s)
-        {
-            if (!Cursor.visible || PlayerInput.Instance == null || PlayerInput.Instance.CurrentPlayerUnit == null) return;
-            float size = 34f;
-            float mm = Settings.ArcadeHud.Value && Settings.ArcadeMinimap.Value ? Mathf.Clamp(Settings.MinimapSize.Value, 0.1f, 0.6f) * Screen.height / s + 18f : 0f;
-            var r = new Rect(W - size - 14f, H - size - 14f - mm, size, size);
-            HudGfx.Init();
-            if (GUI.Button(r, new GUIContent(HudGfx.GearTex, "Combat Overhaul settings (" + Settings.ConfigKey.Value + ")"), _gear)) Open();
         }
 
         static void Window(float W, float H)
@@ -319,7 +311,7 @@ namespace GHPCHitCam
             GUILayout.Label("preset: " + Presets.Current(), _sub, GUILayout.Height(28));
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("Save", GUILayout.Width(80), GUILayout.Height(26))) Save();
-            if (GUILayout.Button("Close  (" + Settings.ConfigKey.Value + ")", GUILayout.Width(130), GUILayout.Height(26))) { GUILayout.EndHorizontal(); GUILayout.EndArea(); Close(); return; }
+            if (GUILayout.Button("Close  (" + Hotkeys.Label(Settings.ConfigKey) + ")", GUILayout.Width(130), GUILayout.Height(26))) { GUILayout.EndHorizontal(); GUILayout.EndArea(); Close(); return; }
             GUILayout.EndHorizontal();
             GUILayout.Space(4);
             int nt = GUILayout.Toolbar(_tab, Tabs, GUILayout.Height(28));
@@ -357,6 +349,15 @@ namespace GHPCHitCam
         /// First tab: the presets, the main switches, the hit cam window, the keys.
         static void QuickSetup()
         {
+            if (Welcome)
+            {
+                // a first install: what this is and where things are, before the choices
+                Section("Welcome to GHPC Combat Overhaul");
+                GUILayout.Label("Pick how much of it you want: a quality preset and the main switches below. Everything else is in the other tabs, "
+                    + $"and this window is always on {Hotkeys.Label(Settings.ConfigKey)}. ARMOR SIM and PROVING GROUND in the main menu are the mod's too. "
+                    + "New versions are offered in the main menu's top right corner.", _tip);
+                if (GUILayout.Button("Done: let's play", GUILayout.Height(32))) { Welcome = false; Close(); return; }
+            }
             Section("Quality preset");
             string cur = Presets.Current();
             GUILayout.BeginHorizontal();
@@ -377,7 +378,7 @@ namespace GHPCHitCam
             GUILayout.Label("A preset sets only the settings marked with an FPS cost (in the other tabs). Sizes, keys, the HUD and timings stay as they are.", _tip);
 
             Section("Main switches");
-            foreach (var id in new[] { "Enabled", "ArcadeHud", "WorldDamage", "ExplosionSound", "AarEnabled", "AmmoExplosionKillsCrew" })
+            foreach (var id in new[] { "Enabled", "ArcadeHud", "WorldDamage", "ExplosionSound", "AarEnabled", "AmmoExplosionKillsCrew", "UpdateCheck" })
                 if (_byId.TryGetValue(id, out var e)) Row(e);
 
             Section("Hit cam window");
@@ -385,11 +386,14 @@ namespace GHPCHitCam
                 if (_byId.TryGetValue(id, out var e)) Row(e);
 
             Section("Keys");
-            GUILayout.Label($"{Settings.ConfigKey.Value} this window   |   {Settings.ToggleKey.Value} hit cam on/off   |   {Settings.ReplayKey.Value} replay the last hit   |   "
+            GUILayout.Label($"{Hotkeys.Label(Settings.ConfigKey)} this window   |   {Hotkeys.Label(Settings.ToggleKey)} hit cam on/off   |   {Hotkeys.Label(Settings.ReplayKey)} replay the last hit   |   "
                 + $"{KeyOf("AarKey")} After Action Report   |   {KeyOf("ArmorSimKey")} Armor Sim   |   {KeyOf("ProvingGroundKey")} proving ground tools   |   {KeyOf("ArcadeKey")} arcade HUD on/off   (change them in Keys)", _tip);
         }
 
-        static string KeyOf(string id) => _byId.TryGetValue(id, out var e) ? e.GetValueAsString() : "?";
+        static string KeyOf(string id) => _byId.TryGetValue(id, out var e) && e is MelonPreferences_Entry<string> s ? Hotkeys.Label(s) : "?";
+
+        static bool IsModifier(KeyCode k) => k == KeyCode.LeftAlt || k == KeyCode.RightAlt || k == KeyCode.LeftControl || k == KeyCode.RightControl
+            || k == KeyCode.LeftShift || k == KeyCode.RightShift || k == KeyCode.AltGr || k == KeyCode.LeftCommand || k == KeyCode.RightCommand;
 
         static GUIStyle _rich;
         static GUIStyle _richTip => _rich ??= new GUIStyle(_tip) { richText = true };
@@ -434,14 +438,16 @@ namespace GHPCHitCam
                 else if (e.Identifier.EndsWith("Key"))
                 {
                     bool cap = _capturing == e;
-                    if (GUILayout.Button(cap ? "press a key…" : str, GUILayout.Width(180))) _capturing = cap ? null : e;
+                    if (GUILayout.Button(cap ? "press a key…" : Hotkeys.Label(str), GUILayout.Width(180))) _capturing = cap ? null : e;
+                    if (!cap && GUILayout.Button(new GUIContent("none", "No key for this"), GUILayout.Width(52))) nv = "None";
                     GUILayout.FlexibleSpace();
                     if (cap)
                     {
+                        // the key with the modifiers held with it (Alt+K); a modifier on its own waits for the key
                         var ev = Event.current;
-                        if (ev.type == EventType.KeyDown && ev.keyCode != KeyCode.None)
+                        if (ev.type == EventType.KeyDown && ev.keyCode != KeyCode.None && !IsModifier(ev.keyCode))
                         {
-                            if (ev.keyCode != KeyCode.Escape) nv = ev.keyCode.ToString();
+                            if (ev.keyCode != KeyCode.Escape) nv = Hotkeys.Store(new Hotkeys.Combo { Key = ev.keyCode, Alt = ev.alt, Ctrl = ev.control, Shift = ev.shift });
                             _capturing = null;
                             ev.Use();
                         }
@@ -468,6 +474,18 @@ namespace GHPCHitCam
             GUILayout.EndHorizontal();
             // under it: what it does, and what it costs
             string help = e.Description;
+            if (e is MelonPreferences_Entry<string> ke && e.Identifier.EndsWith("Key") && ke.Value != "None")
+            {
+                string game = Hotkeys.GameUse(ke.Value);
+                var twin = _entries.Where(x => x != e && x is MelonPreferences_Entry<string> o && x.Identifier.EndsWith("Key") && Hotkeys.Store(Hotkeys.Parse(o.Value)) == Hotkeys.Store(Hotkeys.Parse(ke.Value))).Select(x => Pretty(x.Identifier)).ToList();
+                if (game != null || twin.Count > 0)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(14);
+                    GUILayout.Label((game != null ? "The game uses this key too: " + game + ". " : "") + (twin.Count > 0 ? "Also set for: " + string.Join(", ", twin) + "." : ""), _cost[3]);
+                    GUILayout.EndHorizontal();
+                }
+            }
             if (!string.IsNullOrEmpty(help))
             {
                 GUILayout.BeginHorizontal();
@@ -503,10 +521,10 @@ namespace GHPCHitCam
             { "HitCamAntiAliasing", "Anti-aliasing" }, { "XrayPhysics", "Ragdolls and physics" }, { "XrayPhysicsSpeed", "Physics speed" },
             { "DetailedCrew", "Real crew models" }, { "RodSoftBody", "Deforming APFSDS rod" }, { "ShowAllSpall", "Show all spall" },
             { "CutModels", "Cut holes into models" }, { "MaxWorldPlates", "Max 3D holes" }, { "WorldVentJets", "Flames out of holes" },
-            { "MaxDebris", "Max loose pieces" }, { "WorldShrapnel", "Shrapnel pieces" }, { "DebrisSeconds", "Shrapnel stays (s)" }, { "ExplosionSound", "Realistic explosion sound" },
+            { "MaxDebris", "Max loose pieces" }, { "WorldShrapnel", "Shrapnel pieces" }, { "DebrisSeconds", "Shrapnel stays (s)" }, { "ExplosionSound", "Realistic explosion sound" }, { "ExplosionFollowUps", "Later ammo blasts" },
             { "AmmoExplosionKillsCrew", "Ammo explosion kills crew" }, { "CookOffReplay", "Cook-off replay" }, { "CookOffWait", "Wait for cook-off (s)" },
             { "RodCam", "Rod cam" }, { "AarEnabled", "After Action Report" }, { "AarFullModels", "Full models kept" }, { "SaveRecords", "Save hits to disk" }, { "PastMissionsKept", "Past missions kept" },
-            { "MinCaliberMm", "Min caliber (mm)" }, { "BurstCaliberMm", "Short replay below (mm)" }, { "ApproachSeconds", "Approach (s)" },
+            { "MinCaliberMm", "Min caliber (mm)" }, { "LightAutocannonCam", "Light hit cam for autocannons" }, { "UpdateCheck", "Check for updates" }, { "ProvingGroundBriefing", "Briefing when it's ready" }, { "ProvingGroundRespawnSeconds", "Targets come back after (s)" }, { "ProvingGroundEmptyMap", "Empty map (only the range)" }, { "ProvingGroundBuildKey", "Proving ground in this mission" }, { "ToggleKey", "Hit cam on / off" }, { "ReplayKey", "Replay the last hit" }, { "ConfigKey", "This window" }, { "AarKey", "After Action Report" }, { "ArmorSimKey", "Armor Sim" }, { "ProvingGroundKey", "Proving ground tools" }, { "ArsenalKey", "Arsenal" }, { "ArcadeKey", "Arcade HUD on / off" }, { "MinimapZoomInKey", "Minimap zoom in" }, { "MinimapZoomOutKey", "Minimap zoom out" }, { "ArsenalPrevKey", "Arsenal: round before" }, { "ArsenalNextKey", "Arsenal: next round" }, { "FireNowKey", "Arsenal: fire it now" }, { "RangeKey", "Test range (spawns enemies)" }, { "BurstCaliberMm", "Short replay below (mm)" }, { "ApproachSeconds", "Approach (s)" },
             { "InteriorSeconds", "Penetration (s)" }, { "AftermathSeconds", "Aftermath (s)" }, { "ImpactSlowMo", "Impact slow motion (s)" }, { "HitCamPace", "Hit cam pace" }, { "ConstantSlowMo", "Constant slow motion (x)" },
             { "DebugLog", "Debug log" }, { "ArmorHoles", "Armour holes" }, { "PlayerShotsOnly", "Only my shots" },
         };

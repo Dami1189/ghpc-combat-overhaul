@@ -73,7 +73,7 @@ namespace GHPCHitCam
 
         public static void Update()
         {
-            if (Input.GetKeyDown(Settings.ArcadeKeyCode))
+            if (Hotkeys.Down(Settings.ArcadeKey))
             {
                 Settings.ArcadeHud.Value = !Settings.ArcadeHud.Value;
                 HitCamMod.Log.Msg("Arcade HUD " + (Settings.ArcadeHud.Value ? "on" : "off"));
@@ -95,7 +95,7 @@ namespace GHPCHitCam
 
         static void RefreshPlayer()
         {
-            var pi = PlayerInput.Instance;
+            var pi = SceneUtil.Player;
             Player = pi != null ? pi.CurrentPlayerUnit : null;
             if (Player == null || Player.Destroyed) { Player = null; Visible = false; return; }
             WeaponSystemInfo wsi = null;
@@ -585,12 +585,13 @@ namespace GHPCHitCam
             if (!ToScreen(c.Center, out Vector2 s)) return;
             float px = Screen.height / (2f * Mathf.Max(c.Distance, 1f) * Mathf.Tan(Cam.fieldOfView * 0.5f * Mathf.Deg2Rad));
             float h = Mathf.Clamp(Mathf.Max(c.HalfHeight * 2.2f, 4f) * px, 9f * k, 42f * k);
-            float len = Mathf.Max(h * 0.4f, 4f * k), t = Mathf.Max(1.3f * k, 1.2f);
-            Color red = new Color(1f, 0.25f, 0.2f, a), dark = new Color(0f, 0f, 0f, 0.45f * a);
+            // hairline thin, as War Thunder draws them, with only a faint dark edge to read against a bright sky
+            float len = Mathf.Max(h * 0.35f, 4f * k), t = Mathf.Max(0.75f * k, 1f);
+            Color red = new Color(1f, 0.25f, 0.2f, a), dark = new Color(0f, 0f, 0f, 0.3f * a);
             for (int pass = 0; pass < 2; pass++)
             {
                 Color cc = pass == 0 ? dark : red;
-                float o = pass == 0 ? 1f : 0f;
+                float o = pass == 0 ? 0.5f : 0f;
                 for (int sx = -1; sx <= 1; sx += 2)
                     for (int sy = -1; sy <= 1; sy += 2)
                     {

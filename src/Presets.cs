@@ -14,10 +14,10 @@ namespace GHPCHitCam
         {
             "For older PCs and big battles. The hit cam keeps the x-ray, holes, spall, fire and explosions, but without ragdoll "
                 + "physics, the real crew models, the bending rod and cut-open vehicle models; less shrapnel and fewer 3D holes in the world.",
-            "The default: everything on at sensible amounts. Ragdolls, real crew models, the deforming rod, cut-open models; "
+            "The default, calm like War Thunder: real crew models that stay in their seats, the deforming rod, cut-open models; "
                 + "spall that hit nothing is hidden; 2x anti-aliasing in the hit cam.",
-            "Everything at full detail: every spall fragment drawn, 4x anti-aliasing, the most shrapnel and 3D holes, debris "
-                + "stays longest. For strong PCs, replays and screenshots.",
+            "Everything at full detail: crew ragdolls, burning crew thrashing, cook-off replays, every spall fragment drawn, "
+                + "4x anti-aliasing, the most shrapnel and 3D holes, debris stays longest. For strong PCs, replays and screenshots.",
         };
 
         static readonly Dictionary<string, object>[] Values =
@@ -30,8 +30,8 @@ namespace GHPCHitCam
             },
             new Dictionary<string, object>
             {
-                { "XrayPhysics", true }, { "DetailedCrew", true }, { "RodSoftBody", true }, { "CrewPanic", true }, { "ShowAllSpall", false },
-                { "CookOffReplay", true }, { "HitCamAntiAliasing", "2x" }, { "CutModels", true }, { "WorldShrapnel", true }, { "MaxDebris", 120 }, { "DebrisSeconds", 15f },
+                { "XrayPhysics", false }, { "DetailedCrew", true }, { "RodSoftBody", true }, { "CrewPanic", false }, { "ShowAllSpall", false },
+                { "CookOffReplay", false }, { "HitCamAntiAliasing", "2x" }, { "CutModels", true }, { "WorldShrapnel", true }, { "MaxDebris", 120 }, { "DebrisSeconds", 15f },
                 { "MaxWorldPlates", 24 }, { "WorldVentJets", true }, { "AarFullModels", 30 },
             },
             new Dictionary<string, object>

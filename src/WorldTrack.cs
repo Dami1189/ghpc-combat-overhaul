@@ -366,6 +366,9 @@ namespace GHPCHitCam
         }
 
         void Update() { using (Perf.T("WorldTrack.Update")) TimedUpdate(); }
+        Vector3[] _drawnX;
+        float _sinceDraw;
+
         void TimedUpdate()
         {
             if (_u == null || _h == null || _mesh == null) { Destroy(gameObject); return; }
@@ -405,11 +408,24 @@ namespace GHPCHitCam
             if (steps == 0) return;
             _awakeFor += steps * Step;
             _quiet = moved < 0.0008f ? _quiet + steps * Step : 0f;
-            Draw();
+            // the mesh (thousands of vertices, sent to the GPU) again only when the track moved where it shows, at most
+            // 30 times a second unless it's moving fast (rounds hitting the vehicle kept it awake: ~4 ms every frame)
+            _sinceDraw += steps * Step;
+            float shown = 0f;
+            if (_drawnX == null || _drawnX.Length != _x.Length) { _drawnX = new Vector3[_x.Length]; shown = float.MaxValue; }
+            else for (int j = 0; j < _x.Length; j++) shown = Mathf.Max(shown, (_x[j] - _drawnX[j]).sqrMagnitude);
+            if (shown > 1e-6f && (_sinceDraw >= 1f / 30f || moved > 0.01f))
+            {
+                Draw();
+                System.Array.Copy(_x, _drawnX, _x.Length);
+                _sinceDraw = 0f;
+            }
             if (_quiet > 1f || _awakeFor > 12f)
             {
                 _asleep = true;
                 _sleepPos = _h.position; _sleepRot = _h.rotation;
+                Draw();   // where it came to rest exactly
+                if (_drawnX != null && _drawnX.Length == _x.Length) System.Array.Copy(_x, _drawnX, _x.Length);
                 for (int j = 0; j < _x.Length; j++) _xp[j] = _x[j];
             }
         }

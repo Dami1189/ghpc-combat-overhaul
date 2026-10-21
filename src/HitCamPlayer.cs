@@ -37,6 +37,7 @@ namespace GHPCHitCam
         {
             if (rec.Snapshot == null) return;
             if (Settings.PlayerShotsOnly.Value && !rec.PlayerShot) return;   // hits on you (recorded for the AAR) aren't shown live
+            if (!BigEnough(rec)) return;   // autocannons: recorded for the HUD and the report, no hit cam
             _last = rec;
             if (!Settings.Enabled.Value && !AutoTest.Active) return;
             if (_build != null && _buildRecs != null && _buildRecs.Contains(rec)) return;   // its hit cam was started at the impact
@@ -48,6 +49,11 @@ namespace GHPCHitCam
             // never fall far behind: keep the newest hits only
             while (_queue.Count > 24) _queue.RemoveAt(0);
         }
+
+        internal static float Cal(HitRecord rec) => rec.Ammo != null ? Mathf.Max(rec.Ammo.Caliber, rec.Ammo.Radius * 2000f) : 999f;
+
+        /// A round the hit cam shows: from MinCaliberMm up (any round in the Armor Sim, which fires one at a time).
+        static bool BigEnough(HitRecord rec) => ArmorSim.Active || Cal(rec) >= Settings.MinCaliberMm.Value;
 
         static readonly HashSet<HitRecord> _cookOffs = new HashSet<HitRecord>();
         static readonly List<HitRecord> _lateBooms = new List<HitRecord>();
@@ -134,6 +140,7 @@ namespace GHPCHitCam
                 if (rec == null || rec.Snapshot == null || Busy || _queue.Count > 0 || AfterAction.IsOpen) return;
                 if (Settings.PlayerShotsOnly.Value && !rec.PlayerShot) return;
                 if (!Settings.Enabled.Value && !AutoTest.Active) return;
+                if (!BigEnough(rec)) return;
                 Begin(new List<HitRecord> { rec });
             }
             catch (Exception e) { HitCamMod.Log.Warning("Hit cam (early start): " + e.Message); }
@@ -293,6 +300,7 @@ namespace GHPCHitCam
         public float SimRate;          // sim seconds per session second right now (the slow motion)
         public readonly List<Playback.SpallVis> Spall = new List<Playback.SpallVis>();
         public readonly List<HoleFx> Holes = new List<HoleFx>();
+        public readonly List<(GameObject go, float wall)> StaticHoles = new List<(GameObject, float)>();
         public readonly HashSet<HoleFx> HoleBurst = new HashSet<HoleFx>();
         public readonly List<(MeshFilter mf, Mesh cut, float wall)> Cuts = new List<(MeshFilter, Mesh, float)>();
         /// The armour hits that got a plate (built now, or waiting in LatePlates), and hull cuts still on their worker.
@@ -603,7 +611,9 @@ namespace GHPCHitCam
             const float a = 0.22f;
             float start = Mathf.Max(T, s0.Start + s0.A + realOffset - a);
             AddSegment(rec, start, false);
-            if (_segs.Count == 2) _orbit = true;   // more than one hit: switch to a continuous orbit around the target
+            // more than one hit: switch to a continuous orbit around the target (an autocannon burst in the light hit cam
+            // keeps its one view instead, the War Thunder way: the rounds keep arriving into it)
+            if (_segs.Count == 2 && !LightRound(rec)) _orbit = true;
             return true;
         }
 
@@ -633,7 +643,7 @@ namespace GHPCHitCam
             if (first != null)
             {
                 float cal = Caliber(rec);
-                float secs = !Settings.CinematicXray.Value ? 0f : full ? Settings.ImpactSlowMo.Value : cal >= 40f ? 0.35f : cal >= 20f ? 0.15f : 0f;
+                float secs = !Settings.CinematicXray.Value || LightRound(rec) ? 0f : full ? Settings.ImpactSlowMo.Value : cal >= 40f ? 0.35f : cal >= 20f ? 0.15f : 0f;
                 float span = HoleFx.DwellSpan(first);
                 if (ProvingGround.RodCam && full)
                 {
@@ -773,6 +783,8 @@ namespace GHPCHitCam
 
         void BuildSpall(Segment s)
         {
+            bool light = LightRound(s.Rec);
+            int lightCount = 0;
             var b = _bounds;
             b.Expand(0.8f);
             foreach (var f in s.Rec.Fragments)
@@ -782,6 +794,8 @@ namespace GHPCHitCam
                 if (!b.Contains(f.StartL)) continue;
                 bool strong = f.HitSomething || f.Damaging;
                 if (!strong && !Settings.ShowAllSpall.Value) continue;
+                // the light hit cam: a few fragments a round (the ones that hit something), however many the game made
+                if (light && (!strong || ++lightCount > 6)) continue;
                 Color c = Vis.SpallColor(f.Power);
                 float w = 0.0025f + 0.005f * Mathf.Clamp01(f.Power / 40f);   // WT: thin lines
                 c.a = strong ? 1f : 0.35f;
@@ -807,6 +821,8 @@ namespace GHPCHitCam
         void BuildHoles(Segment s)
         {
             if (!Settings.ArmorHoles.Value) return;
+            // an autocannon round in the light hit cam: its holes as they are, no deforming plate, no cut model
+            if (LightRound(s.Rec)) { BuildStaticHoles(s); return; }
             long lap = Perf.Now;
             int seed = s.Rec.Id * 31;
             float firstPenWall = float.MaxValue;
@@ -817,6 +833,9 @@ namespace GHPCHitCam
             {
                 if (ah.PreJet) continue;   // the jet's own hit at the same spot shows the plate
                 if (s.PlateHits.Count >= MaxPlatesPerHit || _plates >= MaxPlatesPerSession) break;
+                // an autocannon burst (MinCaliberMm set low): a few plates, not one more for every round of it (each one
+                // deforms and is painted every frame: 20 of them took 30 ms a frame)
+                if (HitCamPlayer.Cal(s.Rec) < BurstPlatesBelowMm && _plates >= MaxBurstPlates) break;
                 // layers of one armor package (face, special array, backing plate) share the outer face's panel
                 bool layer = false;
                 foreach (var o in s.PlateHits)
@@ -984,6 +1003,12 @@ namespace GHPCHitCam
                 Perf.Lap("Tick/round+spall", ref lap);
                 bool inside = local <= s.A + s.B;
                 BuildLatePlates(s);
+                for (int i = 0; i < s.StaticHoles.Count; i++)
+                {
+                    var (go, wall) = s.StaticHoles[i];
+                    bool on = T >= wall;
+                    if (go != null && go.activeSelf != on) go.SetActive(on);
+                }
                 foreach (var h in s.Holes)
                 {
                     h.Step(T, sim, inside, dt);
@@ -1318,6 +1343,72 @@ namespace GHPCHitCam
         /// Torn plate: chunks blown into the vehicle from a fresh hole (HE tears big holes, KE punches a plug).
         // hard caps so a pathological hit (dozens of plates, hundreds of spall) can never stall a frame
         const int MaxPlatesPerHit = 24, MaxPlatesPerSession = 90, MaxPhysicsFragments = 90;
+        const int MaxBurstPlates = 5, MaxStaticHoles = 80;
+        int _staticHoles;
+
+        /// The light hit cam (autocannons, the War Thunder way): one x-ray for the whole burst, each hole a ring that is
+        /// just there from the moment the round reaches it. Nothing in it moves or is painted again (a deforming plate
+        /// per round took 30 ms a frame in a 20-round burst).
+        internal static bool LightRound(HitRecord rec) => Settings.LightAutocannonCam.Value && HitCamPlayer.Cal(rec) < Settings.BurstCaliberMm.Value;
+
+        static Mesh _disc;
+
+        void BuildStaticHoles(Segment s)
+        {
+            int seed = s.Rec.Id * 31;
+            foreach (var ah in s.Rec.ArmorHits)
+            {
+                if (ah.PreJet || ah.IsSpall || _staticHoles >= MaxStaticHoles) continue;
+                Vector3 n = ah.NormalL.sqrMagnitude > 1e-6f ? ah.NormalL.normalized : -ah.DirL.normalized;
+                if (Vector3.Dot(n, ah.DirL) > 0f) n = -n;   // out of the plate, toward where the round came from
+                float r = Mathf.Clamp(Mathf.Max(ah.HoleRadius, ah.Caliber * 0.0005f), 0.004f, 0.03f);
+                bool pen = ah.Penetrated && !ah.Era;
+                var go = new GameObject(pen ? "hole" : "dent");
+                go.layer = Vis.Layer;
+                go.transform.SetParent(_fx, false);
+                go.transform.localPosition = ah.L + n * 0.004f;
+                go.transform.localRotation = Quaternion.LookRotation(-n);
+                Add(go, "rim", ArmorFx.HoleRim(pen ? r : r * 0.6f, 0.5f, seed++), Vis.Unlit);
+                if (pen) Add(go, "dark", Disc(), Vis.Unlit, r * 1.05f);
+                go.SetActive(false);
+                s.StaticHoles.Add((go, s.Start + s.LocalAtSim(ah.Sim)));
+                _staticHoles++;
+            }
+        }
+
+        static void Add(GameObject parent, string name, Mesh mesh, Material mat, float scale = 1f)
+        {
+            var go = new GameObject(name) { layer = parent.layer };
+            go.transform.SetParent(parent.transform, false);
+            go.transform.localScale = Vector3.one * scale;
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+        }
+
+        /// A unit disc, near black (the inside of a hole), shared by every static hole.
+        static Mesh Disc()
+        {
+            if (_disc != null) return _disc;
+            const int n = 14;
+            var v = new Vector3[n + 1];
+            var c = new Color[n + 1];
+            var t = new int[n * 3];
+            v[0] = Vector3.zero; c[0] = new Color(0.02f, 0.02f, 0.02f);
+            for (int i = 0; i < n; i++)
+            {
+                float a = i * Mathf.PI * 2f / n;
+                v[i + 1] = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f);
+                c[i + 1] = new Color(0.08f, 0.05f, 0.04f);
+                t[3 * i] = 0; t[3 * i + 1] = 1 + (i + 1) % n; t[3 * i + 2] = 1 + i;
+            }
+            _disc = new Mesh { name = "static hole", vertices = v, colors = c, triangles = t };
+            _disc.RecalculateBounds();
+            return _disc;
+        }
+        const float BurstPlatesBelowMm = 40f;
         int _plates, _fragments;
 
         void BurstFromHole(Segment s, HoleFx h)
@@ -1437,6 +1528,16 @@ namespace GHPCHitCam
         {
             ExitFrame(e, out var n, out var a, out var b, out float r);
             Vector3 c = e.L + n * 0.08f;
+            if (e.Subject == "the hole" && HoleMouth(e.L, out var mouth, out var outN))
+            {
+                // the round's own hole: the game's exit sits where the round broke into the compartment, behind the
+                // armour (20 cm in on a T-72's glacis), facing the way it went in, and the flames burned on the driver's
+                // legs. They come out of the hole in the outermost plate of that path, outwards.
+                n = outN;
+                a = Vector3.Cross(n, Mathf.Abs(n.y) > 0.9f ? Vector3.forward : Vector3.up).normalized;
+                b = Vector3.Cross(n, a);
+                c = mouth + n * 0.06f;
+            }
             float size = Mathf.Clamp(r * 0.62f, 0.12f, 0.42f) * (e.After > 0.8f ? 1.15f : 1f);
             int ring = Mathf.Clamp(Mathf.RoundToInt(r / 0.11f), 0, 6);
             _fires.Add(new XrayFire(_fx, c, size, e.After > 0.8f, T, _fires.Count * 31 + 7));
@@ -1447,6 +1548,29 @@ namespace GHPCHitCam
                 _fires.Add(new XrayFire(_fx, p, size * 0.8f, false, T + 0.05f * i, _fires.Count * 31 + 7));
             }
             if (AutoTest.Active) HitCamMod.Log.Msg($"x-ray: flames out of {e.Subject} at T={T:0.00}: {1 + ring} fires over {r * 2000f:0} mm");
+        }
+
+        /// Where a round's hole opens to the outside: of the armour plates the round went through near `inside` (the point it
+        /// broke into the compartment), the one furthest back along its path, and that plate's face outwards.
+        bool HoleMouth(Vector3 inside, out Vector3 mouth, out Vector3 outN)
+        {
+            mouth = inside; outN = Vector3.up;
+            ArmorHit best = null;
+            float bestBack = float.MinValue;
+            foreach (var sg in _segs)
+                foreach (var h in sg.Rec.ArmorHits)
+                {
+                    if (h.IsSpall || h.Era || !h.Penetrated || h.DirL.sqrMagnitude < 1e-6f || (h.L - inside).sqrMagnitude > 0.6f * 0.6f) continue;   // (an ERA brick stands off the hull: the hole is in the plate under it)
+                    float back = Vector3.Dot(h.L - inside, -h.DirL.normalized);
+                    if (back > bestBack) { bestBack = back; best = h; }
+                }
+            if (best == null) return false;
+            Vector3 dIn = best.DirL.normalized;
+            outN = best.NormalL.sqrMagnitude > 1e-6f ? best.NormalL.normalized : -dIn;
+            if (Vector3.Dot(outN, dIn) > 0f) outN = -outN;
+            mouth = best.HasSurf ? best.SurfPointL : best.L;
+            if (AutoTest.Active) HitCamMod.Log.Msg($"x-ray: the hole's flames at its mouth in {best.Name}, {bestBack * 100f:0} cm out from where the round broke in");
+            return true;
         }
 
         /// A detonation venting through an exit: its hot products leave the opening and burn with the air outside as a
@@ -1949,10 +2073,12 @@ namespace GHPCHitCam
                 else if (t < k2) { float u = Smooth((t - kd) / Mathf.Max(k2 - kd, 1e-3f)); yaw = Mathf.Lerp(34f, 72f, u); pitch = Mathf.Lerp(22f, 30f, u); dist = Mathf.Lerp(4.4f, 4.9f, u); }
                 else if (t < k3) { float u = Mathf.Clamp01((t - k2) / (k3 - k2)); yaw = Mathf.Lerp(72f, 100f, u); pitch = Mathf.Lerp(30f, 34f, u); dist = Mathf.Lerp(4.9f, 5.6f, u); }
                 else { yaw = 100f + (t - k3) * 8f; pitch = 34f; dist = 5.6f + Mathf.Min(t - k3, 3f) * 0.12f; }   // a fire / cook-off: keep orbiting
+                // an autocannon burst in the light hit cam: once the first round is in, the view holds still on the spot
+                if (LightRound(s0.Rec) && t >= k1) { yaw = 34f; pitch = 22f; dist = 4.4f; }
                 yaw *= _yawSign;
                 pitch += _pitchLift;
                 dist *= s;
-                focus = t < kd ? s0.Rec.EntryL : Vector3.Lerp(s0.Rec.EntryL, s0.FocusEnd, Smooth(Mathf.Clamp01((t - kd) / (s0.B0Public * 0.6f))));
+                focus = t < kd || LightRound(s0.Rec) ? s0.Rec.EntryL : Vector3.Lerp(s0.Rec.EntryL, s0.FocusEnd, Smooth(Mathf.Clamp01((t - kd) / (s0.B0Public * 0.6f))));
                 // impact close-up: swing in front of the struck plate (whatever its obliquity), hold through the slow motion, swing back out
                 _closeW = close ? Smooth((t - k1 * 0.55f) / Mathf.Max(k1 * 0.45f, 0.05f)) * (1f - Smooth((t - kd) / 0.9f)) : 0f;
             }

@@ -13,7 +13,7 @@ namespace GHPCHitCam
 {
     /// Test gun: every projectile the game has loaded, plus generated shells of any calibre (APFSDS / AP / HEAT / HE)
     /// and bombs. While the arsenal is on, the player's main gun fires the selected projectile; bombs are dropped
-    /// onto whatever the gun points at. F8 on/off, [ ] pick, Shift+[ ] jump group, B fire instantly (no reload).
+    /// onto whatever the gun points at. U on/off, 9 / 0 pick, Shift+9 / 0 jump group, J fire instantly (no reload).
     internal static class Arsenal
     {
         internal class Entry
@@ -165,7 +165,7 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ firing
 
-        static Unit Player => PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit : null;
+        static Unit Player => SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
 
         internal static WeaponSystem MainGun(Unit u)
         {
@@ -294,7 +294,7 @@ namespace GHPCHitCam
 
         public static void Update()
         {
-            if (Input.GetKeyDown(Settings.ArsenalKeyCode))
+            if (Hotkeys.Down(Settings.ArsenalKey))
             {
                 if (!_built) Build();
                 On = !On;
@@ -303,9 +303,10 @@ namespace GHPCHitCam
             if (!On) return;
             if (!_built) Build();
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-            if (Input.GetKeyDown(KeyCode.RightBracket)) Move(+1, shift);
-            if (Input.GetKeyDown(KeyCode.LeftBracket)) Move(-1, shift);
-            if (Input.GetKeyDown(Settings.FireNowKeyCode)) FireNow();
+            // (their own Shift: a group at a time)
+            if (Input.GetKeyDown(Hotkeys.Parse(Settings.ArsenalNextKey.Value).Key) && Hotkeys.Parse(Settings.ArsenalNextKey.Value).Key != KeyCode.None) Move(+1, shift);
+            if (Input.GetKeyDown(Hotkeys.Parse(Settings.ArsenalPrevKey.Value).Key) && Hotkeys.Parse(Settings.ArsenalPrevKey.Value).Key != KeyCode.None) Move(-1, shift);
+            if (Hotkeys.Down(Settings.FireNowKey)) FireNow();
         }
 
         static void Move(int d, bool group)
@@ -355,7 +356,7 @@ namespace GHPCHitCam
                     y += 19;
                 }
                 _st.normal.textColor = new Color(0.7f, 0.75f, 0.8f);
-                GUI.Label(new Rect(x, y + 4, w, 19), $"[ ] select   Shift+[ ] group   {Settings.FireNowKey.Value} fire now   {Settings.ArsenalKey.Value} off   (main gun fires it too)", _st);
+                GUI.Label(new Rect(x, y + 4, w, 19), $"{Hotkeys.Label(Settings.ArsenalPrevKey)} / {Hotkeys.Label(Settings.ArsenalNextKey)} select   Shift: group   {Hotkeys.Label(Settings.FireNowKey)} fire now   {Hotkeys.Label(Settings.ArsenalKey)} off   (main gun fires it too)", _st);
             }
             if (Time.unscaledTime < _msgUntil)
             {

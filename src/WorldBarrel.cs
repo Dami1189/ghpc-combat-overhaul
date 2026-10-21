@@ -370,8 +370,8 @@ namespace GHPCHitCam
                 float depth = Mathf.Min(1f, 2f * Mathf.Sqrt(cut));
                 _feat.Add(new Feature { Kind = FK.Blast, U = u, Phi = phi, Arc = arc, Half = Mathf.Min(half, Mathf.Max(0.04f, arc * ro)), Depth = depth });
                 float rho = Mathf.Clamp(arc * rv * 0.8f, 0.012f, 0.6f);
-                if (depth >= 0.999f) _wounds.Add(new Wound { Kind = WK.Tear, U = u, Phi = phi, Rho = rho, Seed = seed, Born = Time.time });
-                else _wounds.Add(new Wound { Kind = WK.Dent, U = u, Phi = phi, Rho = rho, Depth = depth * t, Seed = seed, Born = Time.time });
+                if (depth >= 0.999f) AddWound(new Wound { Kind = WK.Tear, U = u, Phi = phi, Rho = rho, Seed = seed, Born = Time.time });
+                else AddWound(new Wound { Kind = WK.Dent, U = u, Phi = phi, Rho = rho, Depth = depth * t, Seed = seed, Born = Time.time });
                 what = $"blast {W:0.00} kg TNT: {cut * 100f:0}% of a cutting charge, {arc * Mathf.Rad2Deg * 2f:0} deg of the wall {(depth >= 0.999f ? "torn open" : $"{depth * 100f:0}% deep")}";
                 if (heat && pen) AddPerforation(surf, d, Mathf.Max(holeR, 0.01f), true, WK.Jet, seed + 1, ref what);
             }
@@ -392,7 +392,7 @@ namespace GHPCHitCam
                 float r = Mathf.Max(holeR, 0.01f);
                 float depth = Mathf.Min(0.6f * t, r);
                 _feat.Add(new Feature { Kind = FK.Gouge, P = surf, R = r * 1.4f, Depth = depth });
-                _wounds.Add(new Wound { Kind = WK.Dent, U = u, Phi = phi, Rho = r * 1.4f, Depth = depth, Seed = seed, Born = Time.time });
+                AddWound(new Wound { Kind = WK.Dent, U = u, Phi = phi, Rho = r * 1.4f, Depth = depth, Seed = seed, Born = Time.time });
                 J = -nrm * ammo.Mass * Mathf.Max(speed, 300f) * 2f * Mathf.Sin(graze) * 0.5f;
                 half = r * 2f;
                 what = $"glanced off at {graze * Mathf.Rad2Deg:0} deg: gouge {depth * 1000f:0} mm deep";
@@ -446,6 +446,33 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("World barrel: " + e); }
         }
 
+        /// A new wound, or a bigger one where it overlaps one already there: hits close together on the tube read as one torn
+        /// patch (each its own ragged rim drew a chain of rings around the barrel). The stronger kind wins (dent < hole < tear).
+        void AddWound(Wound w)
+        {
+            float r = Mathf.Max(Rvis(w.U), 0.01f);
+            for (int i = 0; i < _wounds.Count; i++)
+            {
+                var o = _wounds[i];
+                float du = o.U - w.U, ds = Mathf.DeltaAngle(o.Phi * Mathf.Rad2Deg, w.Phi * Mathf.Rad2Deg) * Mathf.Deg2Rad * r;
+                if (du * du + ds * ds > Sq((o.Rho + w.Rho) * 0.75f)) continue;
+                float a = o.Rho * o.Rho, b = w.Rho * w.Rho;
+                o.U = (o.U * a + w.U * b) / (a + b);
+                o.Phi = o.Phi - ds / r * b / (a + b);
+                o.Rho = Mathf.Min(Mathf.Max(o.Rho, w.Rho) + 0.45f * Mathf.Min(o.Rho, w.Rho), 0.6f);
+                if (Rank(w.Kind) > Rank(o.Kind)) o.Kind = w.Kind;
+                o.Depth = Mathf.Max(o.Depth, w.Depth);
+                o.Born = w.Born;
+                o.Cut = false;   // cut again, bigger
+                _wounds[i] = o;
+                return;
+            }
+            _wounds.Add(w);
+        }
+
+        static float Sq(float x) => x * x;
+        static int Rank(WK k) => k == WK.Dent ? 0 : k == WK.Tear ? 2 : 1;
+
         /// A round going through: its hole where it went in, and where it came out of the far wall.
         bool AddPerforation(Vector3 surf, Vector3 d, float r, bool pen, WK kind, int seed, ref string what)
         {
@@ -465,8 +492,8 @@ namespace GHPCHitCam
             float ue = -exit.z;
             if (ue < 0f || ue > Length) through = false;
             _feat.Add(new Feature { Kind = FK.Perf, P = surf, D = d, R = r, Through = through });
-            _wounds.Add(new Wound { Kind = kind, U = u, Phi = phi, Rho = r, Seed = seed, Born = Time.time });
-            if (through) _wounds.Add(new Wound { Kind = kind == WK.Jet ? WK.Jet : WK.Exit, U = ue, Phi = Mathf.Atan2(exit.y, exit.x), Rho = r * (kind == WK.Jet ? 1.1f : 1.35f), Seed = seed + 17, Born = Time.time });
+            AddWound(new Wound { Kind = kind, U = u, Phi = phi, Rho = r, Seed = seed, Born = Time.time });
+            if (through) AddWound(new Wound { Kind = kind == WK.Jet ? WK.Jet : WK.Exit, U = ue, Phi = Mathf.Atan2(exit.y, exit.x), Rho = r * (kind == WK.Jet ? 1.1f : 1.35f), Seed = seed + 17, Born = Time.time });
             what = (what != null ? what + "; " : "") + $"{(kind == WK.Jet ? "jet" : "shot")} hole {r * 2000f:0} mm{(through ? $", out of the far wall {Mathf.Abs(ue - u) * 1000f:0} mm along" : "")}";
             return through;
         }

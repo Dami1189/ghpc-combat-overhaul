@@ -161,7 +161,7 @@ namespace GHPCHitCam
                     Allegiance = f,
                     UnitType = ground ? UnitType.GroundVehicle : UnitType.AirVehicle,
                 };
-                var u = sp.SpawnUnit(key, md, (WaypointHolder)null, (Transform)null) as Unit;
+                var u = ModdedVehicles.Spawn(sp, key, md) as Unit;
                 if (u == null) { HitCamMod.Log.Warning("Test ground: could not spawn " + key); return null; }
                 u.Targetable = true;
                 try { SceneUnitsManager.Instance.Meta?.UnimportantUnits?.Add(u); } catch { }

@@ -81,6 +81,8 @@ namespace GHPCHitCam
             WorldHeli.Reset();
         }
 
+        public static void Forget(Unit u) { if (u != null) _gear.Remove(u); }
+
         /// A big loose part (a barrel's muzzle end, a tail boom): a rigidbody without colliders (the caller adds them),
         /// with its own small cap so the cap on shrapnel never takes it.
         internal static GameObject SpawnBody(string name, Vector3 pos, Quaternion rot, Vector3 vel, Vector3 angVel, float mass, float life)

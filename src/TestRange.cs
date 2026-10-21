@@ -43,7 +43,7 @@ namespace GHPCHitCam
 
         public static void Update()
         {
-            if (Input.GetKeyDown(Settings.RangeKeyCode) && !_busy) MelonCoroutines.Start(SpawnWave());
+            if (Hotkeys.Down(Settings.RangeKey) && !_busy) MelonCoroutines.Start(SpawnWave());
             // helicopters only get their engine forced on for the first seconds; keep them on station afterwards
             for (int i = _flyers.Count - 1; i >= 0; i--)
                 if (_flyers[i].u == null || _flyers[i].u.Destroyed) _flyers.RemoveAt(i);
@@ -53,7 +53,7 @@ namespace GHPCHitCam
         {
             _busy = true;
             try { } finally { }
-            var player = PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit : null;
+            var player = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
             var sp = UnitSpawner.Instance ?? UnityEngine.Object.FindObjectOfType<UnitSpawner>();
             if (player == null || sp == null)
             {
@@ -134,7 +134,7 @@ namespace GHPCHitCam
                     Allegiance = f,
                     UnitType = ground ? UnitType.GroundVehicle : UnitType.AirVehicle,
                 };
-                var iu = sp.SpawnUnit(key, md, (WaypointHolder)null, (Transform)null);
+                var iu = ModdedVehicles.Spawn(sp, key, md);
                 var u = iu as Unit;
                 if (u == null) { HitCamMod.Log.Warning("Test range: could not spawn " + key); return null; }
                 u.Targetable = true;

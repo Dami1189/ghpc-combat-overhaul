@@ -100,10 +100,10 @@ namespace GHPCHitCam
         {
             var cat = Settings.Cat;
             Enabled = cat.CreateEntry("AarEnabled", true, description: "After Action Report: keeps every hit of the mission (yours and the ones on you) for 3D replays and stats.");
-            Key = cat.CreateEntry("AarKey", "F11", description: "Opens and closes the After Action Report.");
+            Key = cat.CreateEntry("AarKey", "F2", description: "Opens and closes the After Action Report.");
             PauseGame = cat.CreateEntry("AarPauseGame", true, description: "Pause the game while the report is open.");
             FullModels = cat.CreateEntry("AarFullModels", 30, description: "How many of the newest hits keep the full x-ray model for the replays; older ones replay on a box model.");
-            try { KeyCode = (KeyCode)Enum.Parse(typeof(KeyCode), Key.Value, true); } catch { KeyCode = KeyCode.F11; }
+
             Application.quitting += () => { try { if (_mission != null) SaveAll(_mission); } catch { } };
         }
 
@@ -132,7 +132,7 @@ namespace GHPCHitCam
 
         static bool IsPlayerUnit(Unit u)
         {
-            try { var pi = PlayerInput.Instance; return u != null && pi != null && pi.CurrentPlayerUnit == u; }
+            try { var pi = SceneUtil.Player; return u != null && pi != null && pi.CurrentPlayerUnit == u; }
             catch { return false; }
         }
 
@@ -145,7 +145,7 @@ namespace GHPCHitCam
                 var shot = __instance.ShotInfo;
                 var ammo = __instance.Info;
                 if (shot == null || ammo == null) return;
-                if (Mathf.Max(ammo.Caliber, ammo.Radius * 2000f) < Settings.MinCaliberMm.Value) return;
+                if (Mathf.Max(ammo.Caliber, ammo.Radius * 2000f) < Settings.RecordMinCaliberMm) return;
                 var m = Current();
                 if (m == null) return;
                 if (shot.IsPlayerShot)
@@ -173,7 +173,7 @@ namespace GHPCHitCam
                     MissionTime = rec.FirstImpactReal - m.StartTime, OnPlayer = IsPlayerUnit(rec.Target),
                     Schem = Schematic.Capture(rec.Snapshot),
                 };
-                try { var pu = PlayerInput.Instance?.CurrentPlayerUnit; e.Friendly = rec.PlayerShot && rec.Target != null && pu != null && rec.Target != pu && rec.Target.Allegiance == pu.Allegiance; } catch { }
+                try { var pu = SceneUtil.Player?.CurrentPlayerUnit; e.Friendly = rec.PlayerShot && rec.Target != null && pu != null && rec.Target != pu && rec.Target.Allegiance == pu.Allegiance; } catch { }
                 m.Entries.Add(e);
                 _byRec[rec] = e;
                 ReleaseOld(m);
@@ -200,11 +200,17 @@ namespace GHPCHitCam
             var full = m.Entries.Where(x => x.Full != null).ToList();
             if (full.Count <= cap) return;
             var playing = HitCamPlayer.Current?.Records.ToList() ?? new List<HitRecord>();
-            foreach (var e in full.Take(full.Count - cap))
+            var old = full.Take(full.Count - cap).ToList();
+            // an autocannon burst's hits share one copy of the target: it's freed only when none that keeps it uses it
+            var kept = new HashSet<GhostSnapshot>(full.Skip(full.Count - cap).Select(x => x.Full));
+            foreach (var e in old)
+                if (Time.unscaledTime - e.Added < 60f || playing.Contains(e.Rec) || (_replay != null && _replay.Entry == e)) kept.Add(e.Full);
+            foreach (var e in old)
             {
-                if (Time.unscaledTime - e.Added < 60f || playing.Contains(e.Rec) || (_replay != null && _replay.Entry == e)) continue;
-                int v = Schematic.Release(e.Full);
-                e.Full = null;
+                if (e.Full == null || kept.Contains(e.Full)) continue;   // (already let go with another hit of its burst)
+                var snap = e.Full;
+                foreach (var o in old) if (o.Full == snap) o.Full = null;
+                int v = Schematic.Release(snap);
                 if (!_releaseLogged) { _releaseLogged = true; HitCamMod.Log.Msg($"AAR: hit #{e.Rec.Id} now replays on its box model (freed {v} baked vertices); AarFullModels = {cap}"); }
             }
         }
@@ -347,7 +353,7 @@ namespace GHPCHitCam
             {
                 var m = Current();
                 if (m == null || m.Result != null) return;
-                var pu = PlayerInput.Instance?.CurrentPlayerUnit;
+                var pu = SceneUtil.Player?.CurrentPlayerUnit;
                 if (pu != null) m.Faction = pu.Allegiance;
                 m.Result = winningFaction == m.Faction ? "VICTORY" : "DEFEAT";
                 m.EndTime = Time.time;
@@ -415,7 +421,7 @@ namespace GHPCHitCam
             _open = false;
             // the hits of finished missions it showed go (Past missions kept); a running mission keeps its own
             bool running = false;
-            try { var m = Current(); running = m != null && m.Result == null && PlayerInput.Instance != null && PlayerInput.Instance.CurrentPlayerUnit != null; } catch { }
+            try { var m = Current(); running = m != null && m.Result == null && SceneUtil.Player != null && SceneUtil.Player.CurrentPlayerUnit != null; } catch { }
             Archive.Prune(running);
             if (_wePaused)
             {
@@ -444,10 +450,10 @@ namespace GHPCHitCam
                 if (m != null && Time.unscaledTime > _factionCheck)
                 {
                     _factionCheck = Time.unscaledTime + 1f;
-                    var pu = PlayerInput.Instance?.CurrentPlayerUnit;
+                    var pu = SceneUtil.Player?.CurrentPlayerUnit;
                     if (pu != null) { m.Faction = pu.Allegiance; m.PlayerName = Recorder.SafeName(pu); }
                 }
-                if (Input.GetKeyDown(KeyCode)) { if (_open) Close(); else Open(); }
+                if (Hotkeys.Down(Key)) { if (_open) Close(); else Open(); }
                 if (!_open) return;
                 Cursor.visible = true;
                 Cursor.lockState = CursorLockMode.None;
@@ -594,7 +600,7 @@ namespace GHPCHitCam
             foreach (var e in m.Entries.Where(x => x.Full != null))
                 HitCamMod.Log.Msg($"AAR TEST: hit #{e.Rec.Id} {e.Rec.TargetName}: {e.Full.Exterior.Count} hull meshes ({e.Full.Exterior.Count(p => p.Mesh != null && p.Mesh.name.Contains("Instance"))} per-instance, {e.Full.Exterior.Count(p => p.OwnsMesh)} baked), target destroyed: {e.Rec.Target == null || e.Rec.Target.Destroyed}, broken now: {Schematic.Broken(e.Full)}");
             // a round at the player from the nearest enemy (damage taken; must not pop up in the hit cam with PlayerShotsOnly)
-            var player = PlayerInput.Instance?.CurrentPlayerUnit;
+            var player = SceneUtil.Player?.CurrentPlayerUnit;
             var enemy = SceneUnitsManager.Instance?.AllUnitsInScene.Where(u => u != null && player != null && u != player && !u.Destroyed && u.Allegiance != player.Allegiance && u.Type != UnitType.Infantry)
                 .OrderBy(u => (u.transform.position - player.transform.position).sqrMagnitude).FirstOrDefault();
             var incoming = Arsenal.Find("HEAT 100 mm");

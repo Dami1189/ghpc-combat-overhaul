@@ -85,7 +85,7 @@ namespace GHPCHitCam
 
         static bool Active => Settings.ArcadeHud.Value && (Settings.ArcadeKillFeed.Value || Settings.ArcadeSfx.Value);
 
-        static Unit Player => PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit : null;
+        static Unit Player => SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
 
         static Credit Get(Unit u)
         {
@@ -124,7 +124,7 @@ namespace GHPCHitCam
                     bool newRound = Time.time - c.LastHit > 0.15f;   // one round strikes several plates
                     c.LastHit = Time.time;
                     float cal = ammoType != null ? Mathf.Max(ammoType.Caliber, ammoType.Radius * 2000f) : 0f;
-                    if (newRound && cal >= Settings.MinCaliberMm.Value && !c.Dead && !c.Out) HudSfx.Hit();
+                    if (newRound && cal >= Settings.RecordMinCaliberMm && !c.Dead && !c.Out) HudSfx.Hit();
                 }
                 else if (shooter != null && _credit.TryGetValue(__instance, out var c2))
                     c2.LastOther = Time.time;
@@ -269,7 +269,7 @@ namespace GHPCHitCam
                 var me = Player;
                 if (me == null || __instance == null || (object)__instance.Shooter != me || __instance.ShotInfo == null) return;
                 var a = __instance.Info;
-                if (a == null || Mathf.Max(a.Caliber, a.Radius * 2000f) < Settings.MinCaliberMm.Value) return;
+                if (a == null || Mathf.Max(a.Caliber, a.Radius * 2000f) < Settings.RecordMinCaliberMm) return;
                 // what you're shooting at: under the crosshair, under the impact cross, or the marker nearest the crosshair (a lob)
                 var u = ArcadeHud.AimedEnemy(out Vector3 at);
                 if (u == null) { if (AutoTest.Active) HitCamMod.Log.Msg("Miss tracking: no enemy under the crosshair / cross / within 3 deg of the sight"); return; }

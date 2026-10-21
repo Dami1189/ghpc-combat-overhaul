@@ -40,8 +40,8 @@ namespace GHPCHitCam
 
         public static void Update()
         {
-            if (Input.GetKeyDown(Settings.MinimapZoomInKeyCode)) _zoom = Mathf.Max(0, _zoom - 1);
-            if (Input.GetKeyDown(Settings.MinimapZoomOutKeyCode)) _zoom = Mathf.Min(Zooms.Length - 1, _zoom + 1);
+            if (Hotkeys.Down(Settings.MinimapZoomInKey)) _zoom = Mathf.Max(0, _zoom - 1);
+            if (Hotkeys.Down(Settings.MinimapZoomOutKey)) _zoom = Mathf.Min(Zooms.Length - 1, _zoom + 1);
             // the proving ground's deck appears (or goes): picture the map again so the deck is on it
             if (ProvingGround.Active != _pg) { _pg = ProvingGround.Active; Reset(); }
             if (!_mapTried) { _mapTried = true; FindMap(); }
@@ -535,7 +535,7 @@ namespace GHPCHitCam
             {
                 _scaleFor = _zoom;
                 float g = HalfWidth <= 300f ? 100f : HalfWidth <= 600f ? 250f : HalfWidth <= 1200f ? 500f : 1000f;
-                _scale = $"grid {(g >= 1000f ? (g / 1000f).ToString("0") + " km" : g.ToString("0") + " m")}   ·   {Settings.MinimapZoomInKey.Value}/{Settings.MinimapZoomOutKey.Value}";
+                _scale = $"grid {(g >= 1000f ? (g / 1000f).ToString("0") + " km" : g.ToString("0") + " m")}   ·   {Hotkeys.Label(Settings.MinimapZoomInKey)} / {Hotkeys.Label(Settings.MinimapZoomOutKey)}";
             }
             string sqName = SquareName(_c);
             if (sqName != _sqShown) { _sqShown = sqName; _sqText = sqName.Length > 0 ? sqName + "   ·   " : ""; }

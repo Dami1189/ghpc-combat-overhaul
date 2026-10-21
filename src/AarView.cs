@@ -606,7 +606,7 @@ namespace GHPCHitCam
             void Head(Rect c, string t) { Label(new Rect(c.x + 14f * k, y, c.width, 22f * k), t, _h2, Accent); y += 26f * k; }
             void Row(Rect c, string l, string v, Color vc) { Label(new Rect(c.x + 14f * k, y, c.width * 0.62f, lh), l, _txt, Grey); Label(new Rect(c.x + c.width * 0.62f, y, c.width * 0.36f, lh), v, _bold, vc); y += lh; }
             Head(c1, "YOUR GUNNERY");
-            Row(c1, "Rounds fired (≥ " + Settings.MinCaliberMm.Value.ToString("0") + " mm)", s.Shots.ToString(), Text1);
+            Row(c1, "Rounds fired (≥ " + Settings.RecordMinCaliberMm.ToString("0") + " mm)", s.Shots.ToString(), Text1);
             Row(c1, "Hits on vehicles", s.Hits.ToString(), Text1);
             Row(c1, "Accuracy", Pct(s.Accuracy), Text1);
             Row(c1, "Penetrations", s.Pens.ToString(), Accent);

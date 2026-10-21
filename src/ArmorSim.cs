@@ -19,7 +19,7 @@ using Camera = UnityEngine.Camera;
 
 namespace GHPCHitCam
 {
-    /// Protection analysis mode (F5), in the spirit of War Thunder's: any vehicle the game has, spawned passive on an empty
+    /// Protection analysis mode (Insert), in the spirit of War Thunder's: any vehicle the game has, spawned passive on an empty
     /// patch of the map, an orbit camera around its x-ray copy, a pen map of the whole visible armour for the chosen round
     /// and range (PenProbe: the game's own LOS thickness and pen rules), and click to fire a real game round at that spot
     /// from that direction. The hit cam then plays the result full screen; afterwards the vehicle respawns undamaged.
@@ -34,7 +34,7 @@ namespace GHPCHitCam
 
         static MelonPreferences_Entry<string> _keyPref;
         static MelonPreferences_Entry<float> _budgetPref;
-        static KeyCode _key = KeyCode.F5;   // F6 is the arcade HUD
+        internal static MelonPreferences_Entry<string> KeyPref => _keyPref;
 
         class VehicleEntry { public string Key, Name, Army; public UnitClass Class; }
         static readonly List<VehicleEntry> _vehicles = new List<VehicleEntry>();
@@ -87,9 +87,9 @@ namespace GHPCHitCam
 
         public static void Init(HarmonyLib.Harmony h)
         {
-            _keyPref = Settings.Cat.CreateEntry("ArmorSimKey", "F5", description: "Opens the Armor Sim: pick a vehicle and a round, see where it gets through, click to fire.");
+            _keyPref = Settings.Cat.CreateEntry("ArmorSimKey", "Insert", description: "Opens the Armor Sim: pick a vehicle and a round, see where it gets through, click to fire.");
             _budgetPref = Settings.Cat.CreateEntry("ArmorSimMapBudgetMs", 6f, description: "Armor Sim: time per frame spent drawing the pen map (higher = the map is ready sooner, but frames are slower while it draws).");
-            try { _key = (KeyCode)Enum.Parse(typeof(KeyCode), _keyPref.Value, true); } catch { _key = KeyCode.F5; }
+
             try
             {
                 _trueInitRef = AccessTools.FieldRefAccess<LiveRound, Vector3>("_trueInitialPosition");
@@ -135,7 +135,7 @@ namespace GHPCHitCam
             _litCache.Clear();
         }
 
-        static Unit PlayerUnit => PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit : null;
+        static Unit PlayerUnit => SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
         static UnitSpawner Spawner() => UnitSpawner.Instance ?? UnityEngine.Object.FindObjectOfType<UnitSpawner>();
         static IReadOnlyList<Arsenal.Entry> Ammo => Arsenal.Entries;
         static Arsenal.Entry SelAmmo => Ammo.Count > 0 ? Ammo[Mathf.Clamp(_ammoSel, 0, Ammo.Count - 1)] : null;
@@ -148,13 +148,18 @@ namespace GHPCHitCam
         static void Enter()
         {
             if (Active) return;
-            if (SceneUtil.IsGameplayGone() || PlayerInput.Instance == null) { Say("start a mission first"); return; }
+            if (SceneUtil.IsGameplayGone() || SceneUtil.Player == null) { Say("start a mission first"); return; }
             var sp = Spawner();
             if (sp == null) { Say("this mission has no unit spawner"); return; }
             Vis.Init();
             if (_vehicles.Count == 0) BuildVehicleList(sp);
             if (Ammo.Count == 0) { Say("no projectiles found"); return; }
-            if (_vehSel < 0 || _vehSel >= _vehicles.Count) _vehSel = Mathf.Max(0, _vehicles.FindIndex(v => v.Key == "T72M1"));
+            // first: the M1IP, a vehicle of the game every install has and the vehicle mods leave alone
+            if (_vehSel < 0 || _vehSel >= _vehicles.Count)
+            {
+                _vehSel = _vehicles.FindIndex(v => v.Key == "M1IP");
+                if (_vehSel < 0) _vehSel = Mathf.Max(0, _vehicles.FindIndex(v => v.Key == "T72M1"));
+            }
             if (_ammoSel < 0 || _ammoSel >= Ammo.Count) _ammoSel = DefaultAmmo();
             HitCamPlayer.StopCurrent();
             _lastTitle = null;
@@ -209,7 +214,7 @@ namespace GHPCHitCam
 
         static void TakeOverGame()
         {
-            var pi = PlayerInput.Instance;
+            var pi = SceneUtil.Player;
             _haveSaved = pi != null;
             if (pi != null) { _savedGun = pi.SuspendGunnerInputs; _savedCam = pi.SuspendCameraInputs; _savedKb = pi.BlockKeyboardInput; }
             _savedCursor = Cursor.visible;
@@ -225,14 +230,14 @@ namespace GHPCHitCam
         /// The game's pause menu is up: the sim steps aside (no drawing, no input) until it closes.
         static bool MenuOpen()
         {
-            try { var pi = PlayerInput.Instance; return pi != null && pi.IsMainMenuActive; }
+            try { var pi = SceneUtil.Player; return pi != null && pi.IsMainMenuActive; }
             catch { return false; }
         }
 
         /// Every frame: the tank's own gun / camera / driving inputs stay off and the cursor stays free.
         static void HoldGame()
         {
-            var pi = PlayerInput.Instance;
+            var pi = SceneUtil.Player;
             if (pi != null)
             {
                 try
@@ -249,7 +254,7 @@ namespace GHPCHitCam
 
         static void RestoreGame()
         {
-            var pi = PlayerInput.Instance;
+            var pi = SceneUtil.Player;
             if (pi != null && _haveSaved)
             {
                 try { _setGun?.Invoke(pi, new object[] { _savedGun }); _setCam?.Invoke(pi, new object[] { _savedCam }); } catch { }
@@ -281,6 +286,7 @@ namespace GHPCHitCam
                     {
                         if (m == null || string.IsNullOrEmpty(m.Name) || !IsVehicleClass(m.Class)) continue;
                         if (m.Name == "TC") continue;   // the easter-egg cheese
+                        if (!ModdedVehicles.Spawnable(m)) continue;   // a lookup-only entry (no prefab), e.g. FEP's binocular fix
                         string army = "";
                         try { army = m.Army != null && m.Army.Info != null ? m.Army.Info.Abbreviation ?? "" : ""; } catch { }
                         _vehicles.Add(new VehicleEntry { Key = m.Name, Name = string.IsNullOrEmpty(m.FriendlyName) ? m.Name : m.FriendlyName, Army = army, Class = m.Class });
@@ -340,6 +346,13 @@ namespace GHPCHitCam
             yield return null;
             yield return null;
             if (gen != _gen || !Active) yield break;
+            // what vehicle mods make of it at a mission's start (their variants, ERA, armour)
+            string stock = v.Name;
+            yield return ModdedVehicles.Convert(u);
+            if (gen != _gen || !Active || u == null) yield break;
+            string now = Recorder.SafeName(u);
+            if (ModdedVehicles.LastFailures.Count > 0) Say($"{now}: {string.Join(", ", ModdedVehicles.LastFailures)} couldn't convert it here (that mod gets ready only for the mission's own vehicle types)", 8f);
+            else if (ModdedVehicles.Any && now != stock && !string.IsNullOrEmpty(now)) Say($"{stock} -> {now} (a vehicle mod's conversion)", 6f);
             MakePassive(u);
             // settle on the suspension (the x-ray copy and the colliders must agree)
             var rb = u.GetComponent<Rigidbody>() ?? u.GetComponentInChildren<Rigidbody>();
@@ -371,7 +384,7 @@ namespace GHPCHitCam
                     Allegiance = Faction.Neutral,
                     UnitType = UnitType.GroundVehicle,
                 };
-                var u = sp.SpawnUnit(key, md, (GHPC.AI.WaypointHolder)null, (Transform)null) as Unit;
+                var u = ModdedVehicles.Spawn(sp, key, md) as Unit;
                 if (u == null) return null;
                 u.Targetable = true;
                 try { SceneUnitsManager.Instance.Meta?.UnimportantUnits?.Add(u); } catch { }   // never decides the mission
@@ -648,9 +661,13 @@ namespace GHPCHitCam
             _pitch = pitch;
             float size = _snap != null ? _snap.LocalBounds.size.magnitude : 8f;
             _dist = Mathf.Clamp(size * 1.25f, 4f, 30f);
+            _pan = Vector3.zero;
         }
 
-        static Vector3 Focus => _origin + (_snap != null ? _snap.LocalBounds.center : Vector3.up);
+        static Vector3 Focus => _origin + (_snap != null ? _snap.LocalBounds.center : Vector3.up) + _pan;
+        static Vector3 _pan;          // the middle mouse button moves the view off the vehicle's middle
+        static bool _panning;
+        static float _lastMiddle = -9f;
 
         static void PlaceCamera()
         {
@@ -809,7 +826,7 @@ namespace GHPCHitCam
 
         public static void Update()
         {
-            if (Input.GetKeyDown(_key))
+            if (Hotkeys.Down(_keyPref))
             {
                 if (_askLeave) _askLeave = false;
                 else if (Active) RequestClose();
@@ -830,7 +847,7 @@ namespace GHPCHitCam
                     if (cur != null && _unit != null && cur.Rec.Target == _unit) BeginReplay(cur);
                     else if (Time.unscaledTime - _fireAt > 6f)
                     {
-                        Say("no hit recorded (a miss, or a round under the hit cam's MinCaliberMm)");
+                        Say("no hit recorded (a miss, or a machine-gun round, under 15 mm)");
                         var last = Recorder.LastRecord;
                         HitCamMod.Log.Warning($"Armor Sim: no hit cam for the shot; round at {(_round != null ? _round.transform.position.ToString() : "-")} (destroyed {(_round == null || _round.IsDestroyed)}), "
                             + $"last record: {(last != null ? last.TargetName + " '" + last.Title + "' ready " + last.Ready + (last.Target == _unit ? " (ours)" : "") : "none")}, hit cam playing: {HitCamPlayer.Current != null}");
@@ -856,13 +873,29 @@ namespace GHPCHitCam
         {
             // the self-test drives the camera and fires on its own: a wheel or a click over the windowed game must not
             // zoom its screenshots or fire an extra round
-            if (AutoTest.Active || _askLeave) return;
+            if (AutoTest.Active || _askLeave || ConfigMenu.IsOpen) { _dragging = _panning = false; return; }
             Vector2 mouse = Input.mousePosition;
             Vector2 d = mouse - _lastMouse;
             _lastMouse = mouse;
             if (Input.GetMouseButtonDown(1) && !OverUi(mouse)) _dragging = true;
             if (!Input.GetMouseButton(1)) _dragging = false;
+            if (Input.GetMouseButtonDown(2) && !OverUi(mouse))
+            {
+                _panning = true;
+                if (Time.unscaledTime - _lastMiddle < 0.3f) _pan = Vector3.zero;   // a double click: back to the vehicle's middle
+                _lastMiddle = Time.unscaledTime;
+            }
+            if (!Input.GetMouseButton(2)) _panning = false;
+            // the game may hold the cursor still while a button is down: then the mouse's own movement
+            if ((_dragging || _panning) && d.sqrMagnitude < 0.01f)
+                try { d = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * 14f; } catch { }
             if (_dragging) { _yaw += d.x * 0.3f; _pitch -= d.y * 0.25f; }
+            if (_panning && _cam != null)
+            {
+                float size = _snap != null ? _snap.LocalBounds.size.magnitude : 8f;
+                _pan -= (_cam.transform.right * d.x + _cam.transform.up * d.y) * (_dist * 0.0016f);
+                _pan = Vector3.ClampMagnitude(_pan, size * 0.6f);
+            }
             float dt = Time.unscaledDeltaTime;
             if (Input.GetKey(KeyCode.LeftArrow)) _yaw -= 70f * dt;
             if (Input.GetKey(KeyCode.RightArrow)) _yaw += 70f * dt;
@@ -997,6 +1030,17 @@ namespace GHPCHitCam
         static Texture2D _white, _ring, _boxTex;
         static readonly List<Rect> _uiRects = new List<Rect>();
         static int _picker;          // 0 none, 1 vehicles, 2 projectiles
+
+        /// Self-test: the vehicle list open (its mod tags), and the view moved off the middle as the middle button does.
+        internal static void TestPicker(bool on)
+        {
+            _picker = on ? 1 : 0;
+            if (!on) return;
+            int lookupOnly = _vehicles.Count(v => v.Key.IndexOf("BINOCULAR", StringComparison.OrdinalIgnoreCase) >= 0);
+            var tagged = _vehicles.Where(v => ModdedVehicles.IsModded(v.Key)).Select(v => v.Name + ModdedVehicles.Tag(v.Key)).ToList();
+            HitCamMod.Log.Msg($"ARMORSIM TEST: vehicle list {_vehicles.Count} entries, {lookupOnly} lookup-only, {tagged.Count} tagged: " + string.Join(", ", tagged));
+        }
+        internal static void TestPan(float right, float up) { if (_cam != null) _pan = _cam.transform.right * right + _cam.transform.up * up; }
         static Vector2 _scroll;
 
         static void Styles()
@@ -1061,6 +1105,8 @@ namespace GHPCHitCam
             if (_penMap && _penTex != null && _phase == Phase.View && _ghost != null)
                 GUI.DrawTexture(new Rect(0, 0, _penW * _penCell / K, _penH * _penCell / K), _penTex, ScaleMode.StretchToFill, true);
 
+            // the settings window open: only the view under it (its own panels would sit under the window)
+            if (ConfigMenu.IsOpen) { _uiRects.Add(new Rect(0, 0, W, H)); return; }
             if (_aimOk && _phase == Phase.View) DrawAim();
             DrawPanel();
             if (_picker != 0) DrawPicker();
@@ -1125,7 +1171,7 @@ namespace GHPCHitCam
             GUILayout.BeginHorizontal();
             GUILayout.Label("ARMOR SIM", _hd);
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button(ArmorSimMenu.FromMenu ? "Leave (" + _key + ")" : "Close (" + _key + ")", GUILayout.Width(100))) RequestClose();
+            if (GUILayout.Button(ArmorSimMenu.FromMenu ? "Leave (" + Hotkeys.Label(_keyPref) + ")" : "Close (" + Hotkeys.Label(_keyPref) + ")", GUILayout.Width(100))) RequestClose();
             GUILayout.EndHorizontal();
 
             bool idle = _phase == Phase.View;
@@ -1134,7 +1180,7 @@ namespace GHPCHitCam
             GUILayout.BeginHorizontal();
             GUI.enabled = idle;
             if (GUILayout.Button("<", GUILayout.Width(26))) PickVehicle((_vehSel - 1 + _vehicles.Count) % _vehicles.Count);
-            if (GUILayout.Button(v != null ? $"{v.Name}   ({v.Army} {v.Class})" : "?", _picker == 1 ? _sel : _btn)) _picker = _picker == 1 ? 0 : 1;
+            if (GUILayout.Button(v != null ? $"{v.Name}{ModdedVehicles.Tag(v.Key)}   ({v.Army} {v.Class})" : "?", _picker == 1 ? _sel : _btn)) _picker = _picker == 1 ? 0 : 1;
             if (GUILayout.Button(">", GUILayout.Width(26))) PickVehicle((_vehSel + 1) % _vehicles.Count);
             GUI.enabled = true;
             GUILayout.EndHorizontal();
@@ -1177,7 +1223,7 @@ namespace GHPCHitCam
             Legend(PenVerdict.Pen, "pen"); Legend(PenVerdict.Maybe, "marginal"); Legend(PenVerdict.NoPen, "no pen"); Legend(PenVerdict.Ricochet, "ricochet");
             GUILayout.EndHorizontal();
             if (_penMap && !PenMapDone && _phase == Phase.View) GUILayout.Label($"pen map {100f * _penPos / Mathf.Max(1, _penOrder?.Length ?? 1):0} %", _small);
-            GUILayout.Label("LMB fire at the cursor   RMB drag / arrows orbit   wheel zoom   Space skip replay", _small);
+            GUILayout.Label("LMB fire at the cursor   RMB drag / arrows orbit   MMB drag move (double click: centre)   wheel zoom   Space skip replay", _small);
             GUILayout.Label("The test vehicle is neutral and passive, far from the fight. The battle keeps running.", _small);
             GUILayout.EndVertical();
             if (Event.current.type == EventType.Repaint)
@@ -1226,7 +1272,11 @@ namespace GHPCHitCam
                 {
                     var v = _vehicles[i];
                     if (v.Army != army) { army = v.Army; GUILayout.Label(string.IsNullOrEmpty(army) ? "-" : army, _small); }
-                    if (GUILayout.Button($"{v.Name}   {v.Class}   [{v.Key}]", i == _vehSel ? _sel : _btn) && _phase == Phase.View) { _picker = 0; PickVehicle(i); }
+                    var oc = GUI.contentColor;
+                    if (ModdedVehicles.IsModded(v.Key)) GUI.contentColor = ModdedVehicles.TagColor;
+                    bool hit = GUILayout.Button($"{v.Name}{ModdedVehicles.Tag(v.Key)}   {v.Class}   [{v.Key}]", i == _vehSel ? _sel : _btn);
+                    GUI.contentColor = oc;
+                    if (hit && _phase == Phase.View) { _picker = 0; PickVehicle(i); }
                 }
             }
             else

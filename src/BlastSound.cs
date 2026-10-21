@@ -73,7 +73,8 @@ namespace GHPCHitCam
         /// going off after it are a fraction of it (most of the charge has gone), so they come out this much quieter.
         static readonly List<(Vector3 p, float t)> _racks = new List<(Vector3, float)>();
         const float FollowUpWindow = 60f;
-        internal const float FollowUpGain = 0.35f;
+        /// How loud a follow-up is next to the first blast, and how hard it shakes the camera (the player's setting).
+        internal static float FollowUps => Mathf.Clamp01(Settings.ExplosionFollowUps.Value);
         /// Parts the game threw off (turrets): where, when. The blast that does it is the vehicle's catastrophic explosion.
         static readonly List<(Vector3 p, float t)> _detaches = new List<(Vector3, float)>();
         /// A rack's sound waits this long at least, so a turret thrown off in the frames after the detonation is known.
@@ -86,7 +87,7 @@ namespace GHPCHitCam
         internal static (float cap, float gain, float kMax, float boom, float tail) Grade(Det d)
         {
             if (!d.Rack || d.TurretOff) return (8f, 1f, 6f, 1f, 1f);
-            if (d.FollowUp) return (1.5f, FollowUpGain, 1.5f, FollowUpGain, 0.6f);
+            if (d.FollowUp) return (1.5f, FollowUps, 1.5f, FollowUps, 0.6f);
             return (2.2f, 1f, 1.8f, 0.5f, 0.7f);
         }
 
@@ -303,11 +304,13 @@ namespace GHPCHitCam
             float dist = Vector3.Distance(cam, d.Pos);
             float w = EffKg(d);
             float p = BlastPhysics.PeakPa(w, dist), tp = BlastPhysics.PositiveSeconds(w, dist), imp = BlastPhysics.Impulse(w, dist);
-            string kick = Settings.ShockwaveShake.Value ? ShockKick.Add(d.Pos, cam, p, imp, w, tp) : "shake off";
+            // a follow-up shakes the camera as much as it's heard (none at all at 0)
+            float fu = d.FollowUp ? FollowUps : 1f;
+            string kick = !Settings.ShockwaveShake.Value ? "shake off" : fu < 0.01f ? "follow-up, no shake" : ShockKick.Add(d.Pos, cam, p * fu, imp * fu, w, tp);
             bool big = d.Rack || d.Tnt >= BoomMinKg;
             string own = "", boom = "";
             if (d.Rack && d.GameEvents == 0) own = PlayOwnEvent(d, w, dist);
-            if (big) boom = BoomPlayer.Play(d, w, dist, p, cam);
+            if (big && fu >= 0.01f) boom = BoomPlayer.Play(d, w, dist, p, cam);
             if (!big && !AutoTest.Active) return;
             if (!big && d.Tnt < 0.1f) return;
             float shell = BlastPhysics.PeakPa(0.75f, dist);
@@ -1088,12 +1091,14 @@ namespace GHPCHitCam
     {
         public static MelonPreferences_Entry<bool> ExplosionSound;
         public static MelonPreferences_Entry<float> ExplosionLoudness;
+        public static MelonPreferences_Entry<float> ExplosionFollowUps;
         public static MelonPreferences_Entry<bool> ShockwaveShake;
 
         internal static void InitBlast()
         {
             ExplosionSound = Cat.CreateEntry("ExplosionSound", true, description: "Explosions as loud as their size: an ammo rack going off is a huge boom you hear from far away, arriving at the speed of sound. A vehicle's later blasts are quieter. Off: the game's own sounds.");
             ExplosionLoudness = Cat.CreateEntry("ExplosionLoudness", 1f, description: "Extra volume for the explosions on top of that (1 = as computed).");
+            ExplosionFollowUps = Cat.CreateEntry("ExplosionFollowUps", 0.15f, description: "A vehicle's later ammo blasts (the rest of its rounds going off after the first big one): how loud they are and how hard they shake the camera, next to the first (0 = silent, 1 = as loud as their size).");
             ShockwaveShake = Cat.CreateEntry("ShockwaveShake", true, description: "A short camera kick when a blast wave reaches you.");
         }
     }

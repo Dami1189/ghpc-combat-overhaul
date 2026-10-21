@@ -6,7 +6,7 @@
     <RootNamespace>GHPCHitCam</RootNamespace>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <!-- compile against the game's own Mono class libraries, not the .NET Framework targeting pack -->
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
     <NoStdLib>true</NoStdLib>
@@ -31,6 +31,9 @@
     <Reference Include="$(Managed)\UnityEngine*.dll" Private="false" />
     <Reference Include="$(Managed)\Unity.Mathematics.dll" Private="false" />
     <Reference Include="$(Managed)\Unity.TextMeshPro.dll" Private="false" />
+    <Reference Include="$(Managed)\Unity.Addressables.dll" Private="false" />
+    <Reference Include="$(Managed)\Rewired_Core.dll" Private="false" />
+    <Reference Include="$(Managed)\Unity.ResourceManager.dll" Private="false" />
     <Reference Include="$(Managed)\Assembly-CSharp.dll" Private="false" />
     <Reference Include="$(Managed)\Assembly-CSharp-firstpass.dll" Private="false" />
     <Reference Include="$(Managed)\FMODUnity.dll" Private="false" />

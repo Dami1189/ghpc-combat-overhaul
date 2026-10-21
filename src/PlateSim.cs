@@ -427,8 +427,9 @@ namespace GHPCHitCam
                      : Mathf.Clamp(1f / Mathf.Sin(Mathf.Max(ImpactAngle(ah), GrazeAngle) * Mathf.Deg2Rad), 1f, 2.4f);
             if (Mode == PlateMode.Trench)
             {
-                // the panel follows the groove: from just before the impact to past its end
-                float m = Mathf.Clamp(Mathf.Max(1.1f * _R, 6f * _tr.HalfW), 0.1f, 0.9f);
+                // the panel follows the groove: from just before the impact to past its end, a strip either side of it
+                // (on a big casting a wider one drew half the turret, its terraces and all, like a sheet thrown over it)
+                float m = Mathf.Clamp(Mathf.Max(1.1f * _R, 6f * _tr.HalfW), 0.1f, 0.25f);
                 _tx0 = -m;
                 _tx1 = _tr.Len + m;
                 _ty = m;
@@ -1011,6 +1012,12 @@ namespace GHPCHitCam
                 }
             }
             normal = cn[pick].normalized;
+            // a hollow part (a fuel tank on the fender) has its far wall in the same cluster, turned to face the round: the
+            // panel then followed both walls and stretched back half a metre. The plate is the sheet the round struck, and
+            // what lies in its layer (the stacked slabs of a cast turret aren't joined, but sit within a few cm of it)
+            var sheet = Sheet(t, tn, cl[pick], ah.L, Mathf.Max(tmax, 0.06f), out int dropped);
+            if (dropped > 0 && AutoTest.Active) HitCamMod.Log.Msg($"  plate {ah.Name}: {dropped} of {cl[pick].Count} face triangles left out (a far wall of the part, {Mathf.Max(tmax, 0.06f) * 100f:0} cm+ behind the struck sheet)");
+            cl[pick] = sheet;
             // the hit, moved onto that face along its normal
             float off = float.MaxValue;
             foreach (int i in cl[pick])
@@ -1023,6 +1030,50 @@ namespace GHPCHitCam
             var res = new List<Vector3>(cl[pick].Count * 3);
             foreach (int i in cl[pick]) { res.Add(t[3 * i]); res.Add(t[3 * i + 1]); res.Add(t[3 * i + 2]); }
             return res;
+        }
+
+        /// The face triangles joined (by shared corners) to the one nearest the hit, and any other joined piece whose plane
+        /// passes within `layer` of the hit.
+        static List<int> Sheet(Vector3[] t, Vector3[] tn, List<int> tris, Vector3 hit, float layer, out int dropped)
+        {
+            dropped = 0;
+            int n = tris.Count;
+            if (n < 2) return tris;
+            var parent = new int[n];
+            for (int i = 0; i < n; i++) parent[i] = i;
+            int Find(int x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+            long Key(Vector3 p) => ((long)Mathf.RoundToInt(p.x * 500f) * 73856093L) ^ ((long)Mathf.RoundToInt(p.y * 500f) * 19349663L) ^ ((long)Mathf.RoundToInt(p.z * 500f) * 83492791L);
+            var byCorner = new Dictionary<long, int>();
+            int nearest = 0;
+            float nearestD = float.MaxValue;
+            for (int k = 0; k < n; k++)
+            {
+                int i = tris[k];
+                for (int e = 0; e < 3; e++)
+                {
+                    long key = Key(t[3 * i + e]);
+                    if (byCorner.TryGetValue(key, out int other)) { int a = Find(k), b = Find(other); if (a != b) parent[a] = b; }
+                    else byCorner[key] = k;
+                }
+                float d = (ClosestOnTri(hit, t[3 * i], t[3 * i + 1], t[3 * i + 2]) - hit).sqrMagnitude;
+                if (d < nearestD) { nearestD = d; nearest = k; }
+            }
+            int root = Find(nearest);
+            var depth = new Dictionary<int, float>();
+            for (int k = 0; k < n; k++)
+            {
+                int i = tris[k], c = Find(k);
+                float dz = Mathf.Abs(Vector3.Dot(hit - t[3 * i], tn[i]));
+                depth[c] = depth.TryGetValue(c, out float cur) ? Mathf.Min(cur, dz) : dz;
+            }
+            var keep = new List<int>(n);
+            for (int k = 0; k < n; k++)
+            {
+                int c = Find(k);
+                if (c == root || depth[c] <= layer) keep.Add(tris[k]);
+                else dropped++;
+            }
+            return keep;
         }
 
         /// Everything about where and how the round met the plate, before any timing is planned: the drawn surface, then the
@@ -1118,7 +1169,7 @@ namespace GHPCHitCam
             {
                 // the groove ends where the plate does
                 float edge = RayToOutline(Vector2.zero, _g);
-                if (edge < float.MaxValue) _tr.Len = Mathf.Clamp(Mathf.Min(_tr.Len, edge), 2f * _tr.HalfW, 1.6f);
+                if (edge < float.MaxValue) _tr.Len = Mathf.Clamp(Mathf.Min(_tr.Len, edge), 2f * _tr.HalfW, 1.2f);
                 _tx1 = Mathf.Min(_tx1, Mathf.Max(_tr.Len + 0.05f, maxX + 0.02f));
                 return;
             }

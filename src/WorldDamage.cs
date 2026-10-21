@@ -264,6 +264,9 @@ namespace GHPCHitCam
                 bool heat = ammo.Category == AmmoType.AmmoCategory.ShapedCharge;
                 float r = Mathf.Max(holeRadius, 0.012f);
                 bool hole = penetrated;
+                // an autocannon round with the light hit cam: its marks stay the flat ones (no cut into the model, no 3D
+                // plate): each of those cost 5-30 ms, for every round of a burst
+                bool light = Settings.LightAutocannonCam.Value && Mathf.Max(ammo.Caliber, ammo.Radius * 2000f) < Settings.BurstCaliberMm.Value;
                 int layer = VisibleLayer(unit);
                 WorldModules.Dump(unit);
                 if (he || heat) WorldModules.OnBurst(unit, PhysicsToRender(col).MultiplyPoint3x4(point), ammo);
@@ -333,7 +336,7 @@ namespace GHPCHitCam
                 Perf.Lap("World/surface", ref lap);
                 // real hole in the model where the game left the mesh readable
                 int cutCount = 0;
-                if (hole && !under && Settings.CutModels.Value)
+                if (hole && !under && Settings.CutModels.Value && !light)
                 {
                     float cutR = he ? r : r * 1.15f;
                     foreach (var mf in meshes)
@@ -396,13 +399,16 @@ namespace GHPCHitCam
                 var plate = root.AddComponent<WorldPlate>();
                 plate.Unit = unit; plate.Hole = hole; plate.HoleR = holeRadius; plate.Layer = layer;
                 var ct = col.transform;
-                plate.Wait = new WorldPlate.Pending
+                if (!light)
                 {
-                    Col = col, P = ct.InverseTransformPoint(pointR), N = ct.InverseTransformDirection(normalR), D = ct.InverseTransformDirection(dirR),
-                    Exit = exit, Pen = penetrated, Ric = ricochet, Nominal = nominalMm, Los = losMm, PenMm = penMm, Speed = speed, Energy = energy,
-                    Ammo = ammo, HoleR = holeRadius, Flat = flat.ToArray(), Ring = ring,
-                };
-                _pending.Enqueue(plate);
+                    plate.Wait = new WorldPlate.Pending
+                    {
+                        Col = col, P = ct.InverseTransformPoint(pointR), N = ct.InverseTransformDirection(normalR), D = ct.InverseTransformDirection(dirR),
+                        Exit = exit, Pen = penetrated, Ric = ricochet, Nominal = nominalMm, Los = losMm, PenMm = penMm, Speed = speed, Energy = energy,
+                        Ammo = ammo, HoleR = holeRadius, Flat = flat.ToArray(), Ring = ring,
+                    };
+                    _pending.Enqueue(plate);
+                }
                 root.AddComponent<StickTo>().Bind(col.transform);
 
                 // sparks: ricochets spray along the deflection, everything else bursts back out of the impact
@@ -1597,6 +1603,16 @@ namespace GHPCHitCam
             WorldPlate.All.Clear();
             WorldModules.Reset();
             _sun = null;
+        }
+
+        /// One unit's meshes, renderers and armour colliders, found again on the next look (another mod rebuilt it).
+        public static void Forget(Unit u)
+        {
+            if (u == null) return;
+            _unitMeshes.Remove(u);
+            _hulls.Remove(u);
+            _unitRenderers.Remove(u);
+            WorldModules.Forget(u);
         }
     }
 

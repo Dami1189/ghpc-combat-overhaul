@@ -36,12 +36,24 @@ namespace GHPCHitCam
 
         static bool _missionWarm;
 
+        /// A unit another mod has just rebuilt: what was read off it goes, and it's warmed up again from scratch.
+        public static void Forget(Unit u)
+        {
+            if (u == null) return;
+            GhostSnapshot.Forget(u);
+            WorldDamage.Forget(u);
+            _queued.Remove(u);
+            _light.Remove(u);
+        }
+
         public static void Update()
         {
             if (!Settings.Enabled.Value && !AutoTest.Active) return;
+            // vehicle mods rebuild the mission's vehicles as it starts: nothing is read off them before that's done
+            if (!ModdedVehicles.MissionConverted) return;
             float now = Time.unscaledTime;
             // once a mission: the explosion sound's tables (the game's rounds and events), read on the first blast otherwise
-            if (!_missionWarm && PlayerInput.Instance != null && PlayerInput.Instance.CurrentPlayerUnit != null)
+            if (!_missionWarm && SceneUtil.Player != null && SceneUtil.Player.CurrentPlayerUnit != null)
             {
                 _missionWarm = true;
                 _steps.AddLast(() => { using (Perf.T("Warmup/sound tables")) BlastSound.Prewarm(); });
@@ -63,7 +75,7 @@ namespace GHPCHitCam
                 _nextScan = now + 5f;
                 try
                 {
-                    var me = PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit as Unit : null;
+                    var me = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit as Unit : null;
                     foreach (var x in SceneUnitsManager.Instance.AllUnitsInScene)
                         if (x is Unit unit && unit != me && !unit.Destroyed && unit.Type != UnitType.Infantry) PlanLight(unit);
                 }
@@ -129,7 +141,7 @@ namespace GHPCHitCam
         {
             try
             {
-                var me = PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit as Unit : null;
+                var me = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit as Unit : null;
                 var gun = me != null ? Arsenal.MainGun(me) : null;
                 return gun != null ? gun.CurrentAmmoType : null;
             }
@@ -154,7 +166,7 @@ namespace GHPCHitCam
         static Unit Aimed()
         {
             var cam = GHPC.Camera.CameraManager.MainCam;
-            var me = PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit as Unit : null;
+            var me = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit as Unit : null;
             if (cam == null || me == null) return null;
             if (!Physics.Raycast(cam.transform.position, cam.transform.forward, out var hit, 5000f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)) return null;
             var u = CodeUtils.GetParentUnitFollowAware(hit.collider.transform) as Unit;

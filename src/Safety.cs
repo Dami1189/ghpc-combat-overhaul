@@ -26,8 +26,10 @@ namespace GHPCHitCam
                 if (m != null) h.Patch(m, finalizer: fin);
             // every round, as it starts, records the pose of every unit in the scene; one broken unit there (an infantry
             // squad without its weapons, say) threw, and every round fired after that died at its muzzle
-            var poses = AccessTools.Method(typeof(ShotInfo), "PopulateUnitPoses");
+            // (GHPC.Weapons.ShotInfo: the game also has an old ShotInfo in the global namespace, without this method)
+            var poses = AccessTools.Method(typeof(GHPC.Weapons.ShotInfo), "PopulateUnitPoses");
             if (poses != null) h.Patch(poses, finalizer: new HarmonyMethod(typeof(Safety).GetMethod(nameof(PosesFinalizer), BindingFlags.Static | BindingFlags.NonPublic)));
+            else HitCamMod.Log.Warning("Pose guard not installed: no ShotInfo.PopulateUnitPoses in this game version");
             try
             {
                 _unborn = AccessTools.FieldRefAccess<LiveRoundBatchHandler, List<LiveRound>>("_unbornRounds");

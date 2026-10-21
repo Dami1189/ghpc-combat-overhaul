@@ -87,14 +87,244 @@ namespace GHPCHitCam
             if (!Active) return;
             _lastScene = scene;
             _sceneLoadedAt = Time.realtimeSinceStartup;
-            if (!_menuStarted && scene.IndexOf("MainMenu", StringComparison.OrdinalIgnoreCase) >= 0)
+            bool menu = scene.IndexOf("MainMenu", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (menu && _pgEsc == 1) { _pgEsc = 2; MelonCoroutines.Start(PgEscBack()); return; }
+            if (!_menuStarted && menu)
             {
                 _menuStarted = true;
+                if (Cfg("pg_esc", "false") == "true") MelonCoroutines.Start(PgEscFlow());
+                else if (Cfg("menu_pages", "false") == "true") MelonCoroutines.Start(MenuPages());
+                else if (Cfg("pg_menu", "false") == "true") MelonCoroutines.Start(PgMenuFlow());
+                else if (Cfg("update_test", "false") == "true") MelonCoroutines.Start(UpdateTest());
                 // armorsim_menu=true: the main menu's ARMOR SIM button is the test (it loads the mission itself)
-                if (Cfg("armorsim_menu", "false") == "true") MelonCoroutines.Start(ArmorSimMenu.SelfTest(Cfg, _outDir, () => Finish("armor sim menu self-test done")));
+                else if (Cfg("armorsim_menu", "false") == "true") MelonCoroutines.Start(ArmorSimMenu.SelfTest(Cfg, _outDir, () => Finish("armor sim menu self-test done")));
                 else if (Cfg("menushot", "false") == "true") MelonCoroutines.Start(MenuShot());
+                else if (Cfg("menufps", "false") == "true") MelonCoroutines.Start(MenuFpsOnly());
+                else if (Cfg("menucfg", "false") == "true") MelonCoroutines.Start(MenuCfg());
                 else MelonCoroutines.Start(MenuFlow());
             }
+        }
+
+        static int _pgEsc;
+
+        /// update_test=true: the main menu's update box (updatecheck=true asks GitHub; update_feed=<file:// json> a stand-in
+        /// release), update_install=true clicks Update, whatsnew=true opens What's new; photographs each step.
+        static IEnumerator UpdateTest()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while ((Updater.Now == Updater.State.Idle || Updater.Now == Updater.State.Checking) && Time.realtimeSinceStartup - t0 < 40f) yield return null;
+            HitCamMod.Log.Msg($"UPDATE TEST: check -> {Updater.Now} (current {Updater.CurrentText}, latest '{Updater.Latest}', error '{Updater.Error}')");
+            yield return new WaitForSecondsRealtime(2f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "update0_box.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+            if (Cfg("whatsnew", "false") == "true")
+            {
+                WhatsNew.Open = true;
+                yield return new WaitForSecondsRealtime(1f);
+                ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "update1_whatsnew.png"));
+                yield return new WaitForSecondsRealtime(0.5f);
+            }
+            if (Cfg("update_install", "false") == "true" && Updater.Now == Updater.State.Available)
+            {
+                Updater.StartInstall();
+                t0 = Time.realtimeSinceStartup;
+                while (Updater.Now != Updater.State.Installed && Updater.Now != Updater.State.Failed && Time.realtimeSinceStartup - t0 < 60f) yield return null;
+                string mods = Path.Combine(MelonLoader.Utils.MelonEnvironment.ModsDirectory, "GHPCCombatOverhaul.dll");
+                string ver = "?";
+                try { ver = System.Reflection.AssemblyName.GetAssemblyName(mods).Version.ToString(); } catch (Exception e) { ver = e.Message; }
+                HitCamMod.Log.Msg($"UPDATE TEST: install -> {Updater.Now} ('{Updater.Error}'); Mods DLL is now version {ver}");
+                yield return new WaitForSecondsRealtime(1f);
+                ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "update2_installed.png"));
+                yield return new WaitForSecondsRealtime(0.5f);
+                // restart=true: the Restart now button (the game quits and comes back through Steam on the new version)
+                if (Cfg("restart", "false") == "true" && Updater.Now == Updater.State.Installed)
+                {
+                    HitCamMod.Log.Msg("UPDATE TEST: Restart now");
+                    File.WriteAllText(Path.Combine(HitCamMod.DataDir, "autotest_done.txt"), "update test: restarting " + DateTime.Now.ToString("s"));
+                    Updater.Restart();
+                    yield break;
+                }
+            }
+            Finish("update test done");
+        }
+
+        /// pg_menu=true: the proving ground from its main menu button (as a player starts it), then the shot list there.
+        static IEnumerator PgMenuFlow()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while (ArmorSimMenu.PgButton == null && Time.realtimeSinceStartup - t0 < 45f) yield return null;
+            if (ArmorSimMenu.PgButton == null) { Finish("pg_menu: no PROVING GROUND button in the main menu"); yield break; }
+            yield return new WaitForSecondsRealtime(1f);
+            HitCamMod.Log.Msg("AUTOTEST: PROVING GROUND from the main menu");
+            // loadshots=true: the real screen through the loading and into the mission (nothing of the menu's may stay up)
+            if (Cfg("loadshots", "false") == "true") MelonCoroutines.Start(ScreenFrames("load", 0.5f, 3f, 8f, 16f, 30f, 45f));
+            ArmorSimMenu.PgButton.GetComponentInChildren<UnityEngine.UI.Button>(true).onClick.Invoke();
+            _launched = true;   // the shot list starts once the mission is up (and waits for the range)
+        }
+
+        /// menu_pages=true: the title menu's own pages opened with its own buttons and closed again (the menu's cancel),
+        /// the rows' places written down and photographed each time: ours must move with the game's.
+        static IEnumerator MenuPages()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while ((ArmorSimMenu.Button == null || ArmorSimMenu.PgButton == null) && Time.realtimeSinceStartup - t0 < 45f) yield return null;
+            if (ArmorSimMenu.Button == null) { Finish("menu_pages: no rows"); yield break; }
+            yield return new WaitForSecondsRealtime(2f);
+            var panel = ArmorSimMenu.Button.transform.parent;
+            void Rows(string when) => HitCamMod.Log.Msg($"MENU PAGES {when}: " + string.Join(", ", panel.Cast<Transform>().Where(t => t.gameObject.activeSelf)
+                .Select(t => $"{t.name}@{t.localPosition.y:0}{(t.gameObject.activeInHierarchy ? "" : " (hidden)")}")));
+            Rows("start");
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "mp0_start.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+            var bmc = UnityEngine.Object.FindObjectOfType<GHPC.UI.BuildMenuController>();
+            var cancel = HarmonyLib.AccessTools.Method(typeof(GHPC.UI.BuildMenuController), "OnMenuCancel");
+            int i = 1;
+            foreach (var page in Cfg("menu_pages_list", "InstantAction,Campaign,Settings,Help,Credits,Tutorials").Split(','))
+            {
+                var row = panel.Find(page.Trim());
+                var b = row != null ? row.GetComponentInChildren<UnityEngine.UI.Button>(true) : null;
+                if (b == null) { HitCamMod.Log.Msg("MENU PAGES: no " + page); continue; }
+                b.onClick.Invoke();
+                yield return new WaitForSecondsRealtime(2f);
+                Rows(page + " open");
+                ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, $"mp{i}a_{page.Trim()}_open.png"));
+                yield return new WaitForSecondsRealtime(0.5f);
+                try
+                {
+                    var p = cancel.GetParameters();
+                    cancel.Invoke(bmc, p.Select(x => x.ParameterType.IsValueType ? Activator.CreateInstance(x.ParameterType) : null).ToArray());
+                }
+                catch (Exception e) { HitCamMod.Log.Warning("MENU PAGES: back: " + e.Message); }
+                yield return new WaitForSecondsRealtime(2f);
+                Rows(page + " closed");
+                ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, $"mp{i}b_{page.Trim()}_closed.png"));
+                yield return new WaitForSecondsRealtime(0.5f);
+                i++;
+            }
+            Finish("menu pages done");
+        }
+
+        /// pg_esc=true: PROVING GROUND from the main menu, then out the way a player leaves (ESC, Quit to menu); back in
+        /// the main menu our rows and the badge must be there again, and in the ordinary mission loaded after it
+        /// (mission=..., provingground=false, shots=unitmenu) the unit menu must list the mission's units.
+        static IEnumerator PgEscFlow()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while (ArmorSimMenu.PgButton == null && Time.realtimeSinceStartup - t0 < 45f) yield return null;
+            if (ArmorSimMenu.PgButton == null) { Finish("pg_esc: no PROVING GROUND button in the main menu"); yield break; }
+            yield return new WaitForSecondsRealtime(3f);
+            yield return FpsProbe.MenuFps("at start");
+            HitCamMod.Log.Msg($"PG ESC TEST: menu has its rows (badge {ArmorSimMenu.HasBadge}); clicking PROVING GROUND");
+            yield return new WaitForSecondsRealtime(1.5f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "pgesc0_menu.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+            ArmorSimMenu.PgButton.GetComponentInChildren<UnityEngine.UI.Button>(true).onClick.Invoke();
+            t0 = Time.realtimeSinceStartup;
+            while (!ProvingGround.Active && Time.realtimeSinceStartup - t0 < 240f) yield return null;
+            if (!ProvingGround.Active) { Finish("pg_esc: the proving ground did not come up"); yield break; }
+            yield return new WaitForSecondsRealtime(4f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "pgesc1_range.png"));
+            ProvingGround.TestUnitMenu();
+            yield return new WaitForSecondsRealtime(1f);
+            // pg_esc_shots=<lab spec>,...: hits first (the hit cam's own physics scene comes with the first one)
+            foreach (var shot in Cfg("pg_esc_shots", "").Split(',').Select(x => x.Trim()).Where(x => x.Length > 0))
+            {
+                if (!ProvingGround.LabShot(shot.Split(':'), out _, out _)) { yield return new WaitForSecondsRealtime(3f); ProvingGround.LabShot(shot.Split(':'), out _, out _); }
+                float s0 = Time.realtimeSinceStartup;
+                yield return new WaitForSecondsRealtime(1.5f);
+                while (HitCamPlayer.Current != null && Time.realtimeSinceStartup - s0 < 45f) yield return null;
+                yield return new WaitForSecondsRealtime(2f);
+            }
+            if (Cfg("pg_open_tools", "false") == "true") { ProvingGround.TestOpenTools(); yield return new WaitForSecondsRealtime(1f); HitCamMod.Log.Msg($"PG ESC TEST: tools open, cursor visible {Cursor.visible}, lock {Cursor.lockState}"); }
+            if (Cfg("cfgopen", "false") == "true")
+            {
+                ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "pgesc1b_tools.png"));
+                yield return new WaitForSecondsRealtime(0.5f);
+                ConfigMenu.Open();
+                yield return new WaitForSecondsRealtime(0.8f);
+                ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "pgesc1c_settings_open.png"));
+                yield return new WaitForSecondsRealtime(0.5f);
+                ConfigMenu.Close();
+                yield return new WaitForSecondsRealtime(0.5f);
+            }
+            // ESC: the game's menu stack opens its root menu (what PlayerInput does on the key), then its Quit to menu
+            var mc = UnityEngine.Object.FindObjectOfType<GHPC.UI.MenuController>();
+            bool open = false;
+            try { open = mc != null && mc.ToggleRootMenu(); } catch (Exception e) { HitCamMod.Log.Warning("PG ESC TEST: game menu: " + e.Message); }
+            yield return new WaitForSecondsRealtime(1.5f);
+            HitCamMod.Log.Msg($"PG ESC TEST: game menu open {open}, timeScale {Time.timeScale}");
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "pgesc2_esc_menu.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+            UnityEngine.UI.Button quit = null;
+            try
+            {
+                var panel = mc != null && mc.MainMenu != null ? mc.MainMenu.GetComponent<GHPC.UI.Menu.MainMenuPanel>() : null;
+                quit = panel != null ? HarmonyLib.AccessTools.Field(typeof(GHPC.UI.Menu.MainMenuPanel), "buttonQuitToMenu").GetValue(panel) as UnityEngine.UI.Button : null;
+            }
+            catch (Exception e) { HitCamMod.Log.Warning("PG ESC TEST: quit button: " + e.Message); }
+            if (quit == null) { Finish("pg_esc: no Quit to menu button"); yield break; }
+            _pgEsc = 1;
+            HitCamMod.Log.Msg("PG ESC TEST: Quit to menu");
+            quit.onClick.Invoke();
+        }
+
+        static IEnumerator PgEscBack()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while ((ArmorSimMenu.Button == null || ArmorSimMenu.PgButton == null || !ArmorSimMenu.HasBadge) && Time.realtimeSinceStartup - t0 < 60f) yield return null;
+            HitCamMod.Log.Msg($"PG ESC TEST: back in the main menu after {Time.realtimeSinceStartup - t0:0.0} s: ARMOR SIM {ArmorSimMenu.Button != null}, PROVING GROUND {ArmorSimMenu.PgButton != null}, badge {ArmorSimMenu.HasBadge}, "
+                + $"proving ground still on {ProvingGround.Active}, timeScale {Time.timeScale}, row under {(ArmorSimMenu.Button != null ? ArmorSimMenu.Button.transform.parent.name : "-")}");
+            yield return new WaitForSecondsRealtime(2f);
+            HitCamMod.Log.Msg($"PG ESC TEST: in the menu, cursor visible {Cursor.visible}, lock {Cursor.lockState}; in menu {ArmorSimMenu.InMenu}, menu scene {ArmorSimMenu.MenuLoaded()}, mission gone {SceneUtil.IsGameplayGone()}, what's new box {WhatsNew.Built}; scenes "
+                + string.Join(", ", Enumerable.Range(0, SceneManager.sceneCount).Select(i => SceneManager.GetSceneAt(i).name)));
+            yield return FpsProbe.MenuFps("after the range");
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "pgesc3_back_in_menu.png"));
+            yield return new WaitForSecondsRealtime(1f);
+            if (Cfg("mission", "") == "") { Finish("pg_esc done"); yield break; }
+            yield return MenuFlow();
+        }
+
+        /// menucfg=true: the settings window opened over the title menu and closed again, photographed each time (the
+        /// game's bottom line stepping aside), with its Keys tab.
+        static IEnumerator MenuCfg()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while (ArmorSimMenu.Button == null && Time.realtimeSinceStartup - t0 < 45f) yield return null;
+            yield return new WaitForSecondsRealtime(3f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "menucfg0_menu.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+            HitCamMod.Log.Msg($"MENU CFG: the game's bottom line shown {WhatsNew.NoticeShown}");
+            ConfigMenu.Open();
+            yield return new WaitForSecondsRealtime(1f);
+            HitCamMod.Log.Msg($"MENU CFG: settings open, the game's bottom line shown {WhatsNew.NoticeShown}");
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "menucfg1_open.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+            ConfigMenu.TestTab("Keys");
+            yield return new WaitForSecondsRealtime(0.8f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "menucfg2_keys.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+            ConfigMenu.Close();
+            yield return new WaitForSecondsRealtime(1f);
+            HitCamMod.Log.Msg($"MENU CFG: settings closed, the game's bottom line shown {WhatsNew.NoticeShown}");
+            ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "menucfg3_closed.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+            Finish("menu cfg done");
+        }
+
+        /// menufps=true: the title menu's frame time and the mod's part of it, then quit.
+        static IEnumerator MenuFpsOnly()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while (ArmorSimMenu.Button == null && Time.realtimeSinceStartup - t0 < 45f) yield return null;
+            yield return new WaitForSecondsRealtime(3f);
+            yield return FpsProbe.MenuFps("title menu" + (WhatsNew.Open ? ", what's new open" : ""));
+            if (WhatsNew.Open)
+            {
+                WhatsNew.Open = false;
+                yield return new WaitForSecondsRealtime(1f);
+                yield return FpsProbe.MenuFps("title menu, what's new closed");
+            }
+            Finish("menu fps done");
         }
 
         /// menushot=true: the main menu as it looks with our buttons in it, then quit.
@@ -193,7 +423,7 @@ namespace GHPCHitCam
             if (Active) _maxFrame = Mathf.Max(_maxFrame, Time.unscaledDeltaTime);
             if (!Active || !_launched || _shooting) return;
             if (Time.realtimeSinceStartup - _sceneLoadedAt < 12f) return;
-            var pi = PlayerInput.Instance;
+            var pi = SceneUtil.Player;
             if (pi == null || pi.CurrentPlayerUnit == null) return;
             var sum = SceneUnitsManager.Instance;
             if (sum == null || sum.AllUnitsInScene.Count < 2) return;
@@ -203,7 +433,7 @@ namespace GHPCHitCam
 
         static IEnumerator ShotsFlow()
         {
-            var player = PlayerInput.Instance.CurrentPlayerUnit;
+            var player = SceneUtil.Player.CurrentPlayerUnit;
             var units = SceneUnitsManager.Instance.AllUnitsInScene.Where(u => u != null && u != player && u.Type != UnitType.Infantry && !u.Destroyed && u.gameObject.activeInHierarchy).ToList();
             HitCamMod.Log.Msg($"AUTOTEST: player {Recorder.SafeName(player)} ({player.Allegiance}); vehicles: " + string.Join(", ", units.Select(u => Recorder.SafeName(u) + "/" + u.Allegiance + "/" + Vector3.Distance(u.transform.position, player.transform.position).ToString("0") + "m")));
             var ammos = Resources.FindObjectsOfTypeAll<AmmoCodexScriptable>().Where(a => a != null && a.AmmoType != null).Select(a => a.AmmoType).Distinct().ToList();
@@ -222,7 +452,14 @@ namespace GHPCHitCam
             // the proving ground is where self-tests shoot (its flat deck, rows of targets every 100 m, nothing of the
             // mission in the way; lab:<ammo>:<row>:<col>:<aspect>:<aim>:<range> shots fire there). provingground=false,
             // testground=true or armorsim=... keep the mission's own ground.
-            if (Cfg("provingground", Cfg("testground", "false") == "true" ? "false" : "true") == "true") { yield return ProvingGround.Build(); player = PlayerInput.Instance.CurrentPlayerUnit; }
+            if (Cfg("provingground", Cfg("testground", "false") == "true" ? "false" : "true") == "true")
+            {
+                yield return ProvingGround.Build();
+                // (a range on its way already, from the menu: wait for it)
+                float w0 = Time.realtimeSinceStartup;
+                while (!ProvingGround.Active && Time.realtimeSinceStartup - w0 < 180f) yield return null;
+                player = SceneUtil.Player.CurrentPlayerUnit;
+            }
             ProvingGround.ForceRodCam = Cfg("rodcam", "false") == "true";
             var specs = Cfg("shots", "apfsds:front,heat:side,he:top").Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
             string targetWant = Cfg("target", "enemy");
@@ -248,7 +485,7 @@ namespace GHPCHitCam
                     // pgsetup:<your vehicle>:<your range>:<placed vehicle>:<its range>:<side m>:<facing 0-3>
                     float F(int i, float d) => spec.Length > i && float.TryParse(spec[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v) ? v : d;
                     yield return ProvingGround.TestSetup(spec.Length > 1 ? spec[1] : "", F(2, 0f), spec.Length > 3 ? spec[3] : "", F(4, 300f), F(5, 0f), (int)F(6, 2f));
-                    var me = PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit : null;
+                    var me = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
                     HitCamMod.Log.Msg($"AUTOTEST: proving ground setup: you are in {(me != null ? Recorder.SafeName(me) : "-")} at {(me != null ? me.transform.position.ToString() : "-")}; {ProvingGround.Describe()}");
                     continue;
                 }
@@ -256,7 +493,21 @@ namespace GHPCHitCam
                 if (spec[0] == "unitmenu") { ProvingGround.TestUnitMenu(); continue; }
                 if (spec[0] == "fps") { yield return FpsProbe.Run(spec); continue; }
                 if (spec[0] == "fpsrun") { yield return FpsProbe.RunOne(spec); continue; }
+                if (spec[0] == "fpsburst") { yield return FpsProbe.Burst(spec); continue; }
+                if (spec[0] == "pgclose") { ProvingGround.TestCloseTools(); continue; }
+                if (spec[0] == "briefnever") { ProvingGround.BriefNever(); HitCamMod.Log.Msg($"AUTOTEST: briefing setting now {Settings.Cat.GetEntry<bool>("ProvingGroundBriefing").Value}"); continue; }
+                if (spec[0] == "screenshot") { yield return ScreenFrames(spec.Length > 1 ? spec[1] : "screen", 0f); continue; }
                 if (spec[0] == "replay") { yield return FpsProbe.Replay(spec); continue; }
+                if (spec[0] == "stats") { yield return FpsProbe.Stats(spec); continue; }
+                if (spec[0] == "cost") { yield return FpsProbe.Cost(spec); continue; }
+                if (spec[0] == "respawncycle") { yield return ProvingGround.TestRespawnCycle(spec); continue; }
+                if (spec[0] == "waitwrecks") { float w0 = Time.realtimeSinceStartup; while (ProvingGround.ParkedCount > 0 && Time.realtimeSinceStartup - w0 < 120f) yield return null; HitCamMod.Log.Msg($"AUTOTEST: parked wrecks left {ProvingGround.ParkedCount} after {Time.realtimeSinceStartup - w0:0} s"); continue; }
+                if (spec[0] == "audio") { yield return FpsProbe.Audio(spec); continue; }
+                if (spec[0] == "lookaround") { yield return FpsProbe.LookAround(spec); continue; }
+                if (spec[0] == "erashots") { yield return FpsProbe.EraShots(spec); continue; }
+                if (spec[0] == "layerscan") { yield return FpsProbe.LayerScan(spec); continue; }
+                if (spec[0] == "keydump") { yield return FpsProbe.KeyDump(spec); continue; }
+                if (spec[0] == "costtypes") { yield return FpsProbe.CostTypes(spec); continue; }
                 if (spec[0] == "wait") { yield return new WaitForSecondsRealtime(float.Parse(spec[1], System.Globalization.CultureInfo.InvariantCulture)); continue; }
                 if (spec[0] == "gamefx") { FpsProbe.HideGameFx = spec.Length > 1 && spec[1] == "off"; continue; }
                 if (spec[0] == "preset") { int pi = Array.IndexOf(Presets.Names, spec[1]); if (pi >= 0) Presets.Apply(pi); HitCamMod.Log.Msg($"AUTOTEST preset {spec[1]}: {(pi >= 0 ? "applied" : "unknown")}"); continue; }
@@ -270,7 +521,7 @@ namespace GHPCHitCam
                     float r0 = Time.realtimeSinceStartup;
                     while (ProvingGround.Active && Time.realtimeSinceStartup - r0 < 30f) yield return null;
                     while (!ProvingGround.Active && Time.realtimeSinceStartup - r0 < 180f) yield return null;
-                    var me = PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit : null;
+                    var me = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
                     HitCamMod.Log.Msg($"AUTOTEST: after the restart (+{Time.realtimeSinceStartup - r0:0} s) the proving ground is {(ProvingGround.Active ? "back" : "NOT back")}; you are in {(me != null ? Recorder.SafeName(me) : "-")}; {ProvingGround.Describe()}");
                     player = me;
                     yield return new WaitForSecondsRealtime(3f);
@@ -820,6 +1071,16 @@ namespace GHPCHitCam
         }
 
         /// Capture times: one approach frame, a dense run through the impact slow motion (dense=true), then the interior and aftermath.
+        /// The playing hit cam's frames saved as a shot's are (the burst probe: burstcap=true).
+        internal static void CaptureCurrent()
+        {
+            var p = HitCamPlayer.Current;
+            if (p == null || Cfg("capture", "true") != "true") return;
+            _watchPlayback = p;
+            _watch = p.Rec;
+            Schedule(p);
+        }
+
         static void Schedule(Playback p)
         {
             _captureAt.Clear();

@@ -23,51 +23,103 @@ namespace GHPCHitCam
     /// the mission is up. Leaving the sim from there offers the way back to the main menu.
     internal static class ArmorSimMenu
     {
-        static MelonPreferences_Entry<string> _missionPref;
+        static MelonPreferences_Entry<string> _missionPref, _pgMissionPref;
         static MelonPreferences_Entry<bool> _buttonPref;
         static GameObject _button;
-        static bool _launching;
+        static bool _launching, _preloadSim;
 
         /// This mission was started by the menu button: the sim opens by itself and offers "back to main menu".
         public static bool FromMenu { get; private set; }
+        public static MelonPreferences_Entry<string> MissionPref => _missionPref;
         public static GameObject Button => _button;
 
         public static void Init()
         {
             _buttonPref = Settings.Cat.CreateEntry("ArmorSimMenuButton", true, description: "ARMOR SIM button in the main menu: pick a vehicle and a round, see where it penetrates, fire.");
-            _missionPref = Settings.Cat.CreateEntry("ArmorSimMission", "FG85_GT03,GT03_gunnery_duel", description: "The mission that button loads (advanced: theatre key, mission scene).");
+            _missionPref = Settings.Cat.CreateEntry("ArmorSimMission", "FG85_TR01,TR01_M1_Range", description: "The mission that button loads: the M1 Abrams training range, almost empty, so the game's own units cost next to nothing (advanced: theatre key, mission scene).");
+            _pgMissionPref = Settings.Cat.CreateEntry("ProvingGroundMission", "FG85_TR01,TR01_M1_Range", description: "The mission the PROVING GROUND button loads: the M1 Abrams training range at Grafenwoehr (advanced: theatre key, mission scene).");
         }
 
         static bool IsMenuScene(string scene) => scene != null && scene.IndexOf("MainMenu", StringComparison.OrdinalIgnoreCase) >= 0;
 
+        /// The main menu is up (its scene loaded last, no mission since).
+        public static bool InMenu { get; private set; }
+
         public static void OnSceneLoaded(string scene)
         {
+            // a scene another mod loads next to the menu is no mission: the menu stays the menu (taken for one, it took
+            // the whole menu part away, What's new and the buttons). A mission's own scenes replace the menu's.
+            bool was = InMenu;
+            InMenu = IsMenuScene(scene) || (InMenu && MenuLoaded() && SceneUtil.IsGameplayGone());
+            if (was && InMenu && !IsMenuScene(scene)) HitCamMod.Log.Msg("Main menu: scene " + scene + " loaded next to it, still the menu");
+            // the Armor Sim on its way (its button): the vehicles vehicle mods change load with the mission, so the mods get
+            // them ready as the mission's own (else their conversion fails on a vehicle the mission didn't have)
+            if (!IsMenuScene(scene) && _preloadSim) ModdedVehicles.PreloadForMission(ModdedVehicles.ArmorSimKeys, "Armor Sim");
             if (!IsMenuScene(scene)) return;
+            _preloadSim = false;
+            MelonCoroutines.Start(FreeCursor());
             FromMenu = false;
             _launching = false;
             if (_buttonPref.Value) MelonCoroutines.Start(AddButton());
         }
 
+        public static void OnSceneUnloaded(string scene)
+        {
+            if (InMenu && IsMenuScene(scene) && !MenuLoaded()) InMenu = false;
+        }
+
+        /// The main menu needs the mouse: leaving a mission with one of our windows open (the proving ground's tools, the
+        /// Armor Sim) put back the mission's hidden, locked cursor as the window closed, and the menu had none.
+        static IEnumerator FreeCursor()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - t0 < 4f && InMenu)
+            {
+                if (!Cursor.visible || Cursor.lockState != CursorLockMode.None)
+                {
+                    Cursor.visible = true;
+                    Cursor.lockState = CursorLockMode.None;
+                }
+                yield return null;
+            }
+        }
+
         // ------------------------------------------------------------------ the button
+
+        static bool _leftSaid;
+
+        static string Leftover()
+        {
+            try { var s = GHPC.World.SceneUnitsManager.Instance; return s == null ? "gone now" : $"{s.name} in scene {s.gameObject.scene.name}"; }
+            catch (Exception e) { return e.Message; }
+        }
 
         static IEnumerator AddButton()
         {
-            float t0 = Time.realtimeSinceStartup;
-            bool dumped = false;
-            while (Time.realtimeSinceStartup - t0 < 40f)
+            bool dumped = false, waitSaid = false;
+            int tries = 0;
+            // until the title menu shows: the game may come back to another of its pages first (one with more buttons
+            // than the title list), and only the title list gets our rows
+            while (true)
             {
-                yield return new WaitForSecondsRealtime(0.5f);
-                if (_button != null || !SceneUtil.IsGameplayGone()) yield break;
+                yield return new WaitForSecondsRealtime(tries++ < 80 ? 0.5f : 1.5f);
+                // (the menu scene is the test: a mission's unit manager left behind kept the whole menu part away)
+                if (_button != null || !InMenu || !MenuLoaded()) yield break;
+                if (!SceneUtil.IsGameplayGone() && !_leftSaid) { _leftSaid = true; HitCamMod.Log.Warning("Main menu: a mission's unit manager is still around (" + Leftover() + ")"); }
                 List<Button> buttons;
                 try { buttons = Object.FindObjectsOfType<Button>().Where(b => b != null && b.isActiveAndEnabled && Label(b) != null).ToList(); }
                 catch { continue; }
                 if (buttons.Count == 0) continue;
                 if (!dumped) { dumped = true; Dump(buttons); }
-                // the main list: the container with the most labelled buttons (one level up if each button sits in a wrapper)
+                // the title list (one level up if each button sits in a wrapper)
                 int up = 1;
                 var list = MainList(buttons, 1);
-                if (list == null || list.Count < 3) { up = 2; list = MainList(buttons, 2); }
-                if (list == null || list.Count < 3) continue;
+                if (list == null) { up = 2; list = MainList(buttons, 2); }
+                if (list == null)
+                {
+                    if (!waitSaid && tries > 6) { waitSaid = true; HitCamMod.Log.Msg("Main menu: another page is showing, waiting for the title menu"); }
+                    continue;
+                }
                 var layout = Original(list, up);
                 try { _button = Insert(list, up, "ARMOR SIM", "Armor Sim", Launch, "ArmorSim menu button"); }
                 catch (Exception e) { HitCamMod.Log.Warning("Armor Sim: menu button failed: " + e); yield break; }
@@ -79,7 +131,7 @@ namespace GHPCHitCam
                         // the list again, with the ARMOR SIM copy in it: the new row goes between it and OPTIONS
                         var again = Object.FindObjectsOfType<Button>().Where(b => b != null && b.isActiveAndEnabled && Label(b) != null).ToList();
                         var list2 = MainList(again, up);
-                        if (list2 != null && list2.Count >= 3) PgButton = Insert(list2, up, "PROVING GROUND", "Proving Ground", LaunchProvingGround, "ProvingGround menu button");
+                        if (list2 != null) PgButton = Insert(list2, up, "PROVING GROUND", "Proving Ground", LaunchProvingGround, "ProvingGround menu button");
                     }
                     catch (Exception e) { HitCamMod.Log.Warning("Proving ground: menu button failed: " + e); }
                 }
@@ -88,12 +140,33 @@ namespace GHPCHitCam
             }
         }
 
-        /// Buttons grouped by their ancestor `up` levels up; the biggest group, in screen order.
+        /// Buttons grouped by their ancestor `up` levels up: the title menu's list (the one with Settings and Exit in
+        /// it), in screen order; null while it isn't showing.
         static List<Button> MainList(List<Button> buttons, int up)
         {
             Transform Anc(Button b) { var t = b.transform; for (int i = 0; i < up && t != null; i++) t = t.parent; return t; }
-            var g = buttons.Where(b => Anc(b) != null).GroupBy(Anc).OrderByDescending(x => x.Count()).FirstOrDefault();
-            return g?.OrderBy(b => Row(b, up)).ToList();
+            foreach (var g in buttons.Where(b => Anc(b) != null).GroupBy(Anc).OrderByDescending(x => x.Count()))
+            {
+                if (g.Count() < 3) break;
+                if (g.Any(b => Is(b, up, "OPTIONS", "SETTINGS")) && g.Any(b => Is(b, up, "QUIT", "EXIT"))) return g.OrderBy(b => Row(b, up)).ToList();
+            }
+            return null;
+        }
+
+        /// The button's label or its object's name starts with one of the words (the names hold in any language).
+        static bool Is(Button b, int up, params string[] words)
+        {
+            var l = Label(b)?.text?.Trim().ToUpperInvariant() ?? "";
+            var n = (RowOf(b, up)?.name ?? "").ToUpperInvariant();
+            var own = b.name.ToUpperInvariant();
+            return words.Any(w => l.StartsWith(w) || n.StartsWith(w) || own.StartsWith(w));
+        }
+
+        internal static bool MenuLoaded()
+        {
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+                if (IsMenuScene(SceneManager.GetSceneAt(i).name)) return true;
+            return false;
         }
 
         static Transform RowOf(Button b, int up) { var t = b.transform; for (int i = 1; i < up; i++) t = t.parent; return t; }
@@ -104,9 +177,8 @@ namespace GHPCHitCam
 
         static GameObject Insert(List<Button> list, int up, string upper, string title, UnityEngine.Events.UnityAction click, string goName)
         {
-            bool Is(Button b, params string[] words) { var l = Label(b)?.text?.Trim().ToUpperInvariant() ?? ""; return words.Any(w => l.StartsWith(w)); }
             // goes just above OPTIONS / SETTINGS (else above QUIT / EXIT, else at the end); copies an ordinary entry
-            var before = list.FirstOrDefault(b => Is(b, "OPTIONS", "SETTINGS")) ?? list.FirstOrDefault(b => Is(b, "QUIT", "EXIT")) ?? null;
+            var before = list.FirstOrDefault(b => Is(b, up, "OPTIONS", "SETTINGS")) ?? list.FirstOrDefault(b => Is(b, up, "QUIT", "EXIT")) ?? null;
             var template = before ?? list[list.Count - 1];
             // when each button sits in its own wrapper, the row to copy is the wrapper
             Transform row = template.transform;
@@ -156,7 +228,20 @@ namespace GHPCHitCam
             btn.interactable = true;
             var label = Label(btn);
             string old = label != null ? label.text ?? "" : "";
-            if (label != null) label.text = old.Length > 0 && old == old.ToUpperInvariant() ? upper : title;
+            if (label != null)
+            {
+                label.text = old.Length > 0 && old == old.ToUpperInvariant() ? upper : title;
+                // one line, never wider than the game's widest entry: the menu narrows while one of its pages is open
+                // (a longer name broke onto two small lines then), and a sub-menu opens right beside the entries
+                float widest = 0f;
+                foreach (var b in list) { var l = Label(b); if (l != null) widest = Mathf.Max(widest, l.preferredWidth); }
+                label.enableWordWrapping = false;
+                label.ForceMeshUpdate();
+                float size = label.fontSize, mine = label.preferredWidth;
+                label.enableAutoSizing = true;
+                label.fontSizeMax = mine > widest && widest > 1f ? size * widest / mine : size;
+                label.fontSizeMin = label.fontSizeMax * 0.6f;
+            }
             HitCamMod.Log.Msg($"{title}: menu button added after copying '{old.Trim()}' ({Path(row)}), above '{(before != null ? Label(before)?.text?.Trim() : "(end)")}'"
                 + (removed.Count > 0 ? "; dropped from the copy: " + string.Join(", ", removed.Distinct()) : ""));
             return go;
@@ -167,7 +252,7 @@ namespace GHPCHitCam
 
         static MenuLayout Original(List<Button> list, int up)
         {
-            bool IsExit(Button b) { var l = Label(b)?.text?.Trim().ToUpperInvariant() ?? ""; return l.StartsWith("QUIT") || l.StartsWith("EXIT"); }
+            bool IsExit(Button b) => Is(b, up, "QUIT", "EXIT");
             var rows = list.Where(b => !IsExit(b)).Select(b => RowOf(b, up)).Distinct().ToList();
             var m = new MenuLayout { Panel = rows.Count > 0 ? rows[0].parent : null };
             if (m.Panel == null) return m;
@@ -208,6 +293,7 @@ namespace GHPCHitCam
         }
 
         static GameObject _badge;
+        public static bool HasBadge => _badge != null;
 
         /// "COMBAT OVERHAUL" under the game's title, so a modded game is told apart at a glance: a copy of the title's own
         /// subtitle text, smaller, in the GHPC logo's red.
@@ -234,10 +320,14 @@ namespace GHPCHitCam
             txt.text = "COMBAT OVERHAUL";
             txt.fontSize = sub.fontSize * 0.62f;
             txt.enableAutoSizing = false;
+            txt.enableWordWrapping = false;
+            txt.overflowMode = TextOverflowModes.Overflow;
             txt.color = new Color(0.86f, 0.22f, 0.16f, 1f);
             var rt = (RectTransform)go.transform;
             var srt = (RectTransform)sub.transform;
             rt.anchoredPosition = srt.anchoredPosition - new Vector2(0f, Mathf.Max(sub.preferredHeight, sub.fontSize) * 0.95f);
+            // the title breaks onto two lines while the menu is narrowed (a page open): the line stays under its last line
+            go.AddComponent<UnderText>().Init(sub, txt);
             _badge = go;
             HitCamMod.Log.Msg($"Main menu: COMBAT OVERHAUL badge under '{sub.text.Trim()}'");
         }
@@ -281,7 +371,8 @@ namespace GHPCHitCam
                 var theaters = Resources.FindObjectsOfTypeAll<MissionTheaterScriptable>();
                 MissionTheaterScriptable theater = null;
                 MissionMetaData mission = null;
-                var parts = (_missionPref.Value ?? "").Split(',');
+                var pref = provingGround ? _pgMissionPref : _missionPref;
+                var parts = (pref.Value ?? "").Split(',');
                 if (parts.Length == 2)
                 {
                     theater = theaters.FirstOrDefault(t => t.Key == parts[0].Trim());
@@ -289,7 +380,7 @@ namespace GHPCHitCam
                 }
                 if (mission == null)
                 {
-                    HitCamMod.Log.Warning("Armor Sim: mission '" + _missionPref.Value + "' not found, taking the first one in the build");
+                    HitCamMod.Log.Warning("Armor Sim: mission '" + pref.Value + "' not found, taking the first one in the build");
                     foreach (var th in theaters)
                     {
                         mission = th.Missions?.FirstOrDefault(m => m != null && !m.IsCategory && InBuild(m));
@@ -311,6 +402,7 @@ namespace GHPCHitCam
                 DynamicMissionComposer.CurrentMissionNameKey = SceneName(mission);
                 _launching = true;
                 FromMenu = !provingGround;
+                _preloadSim = !provingGround;
                 ProvingGround.FromMenu = provingGround;
                 if (provingGround) ProvingGround.NoteLoading();
                 HitCamMod.Log.Msg($"{(provingGround ? "Proving ground" : "Armor Sim")}: menu button -> loading {theater.Key},{SceneName(mission)} \"{mission.MissionName}\"");
@@ -345,7 +437,7 @@ namespace GHPCHitCam
             {
                 yield return null;
                 if (SceneUtil.IsGameplayGone()) continue;
-                var pi = PlayerInput.Instance;
+                var pi = SceneUtil.Player;
                 if (pi == null || pi.CurrentPlayerUnit == null) continue;
                 if (UnitSpawner.Instance == null && Object.FindObjectOfType<UnitSpawner>() == null) continue;
                 ready = true;
@@ -405,6 +497,29 @@ namespace GHPCHitCam
             while (!ArmorSim.PenMapDone && Time.realtimeSinceStartup - t0 < 20f) yield return null;
             yield return null;
             Capture(outDir, "menu1_sim_opened.png");
+            if (cfg("aspicker", "false") == "true")
+            {
+                ArmorSim.TestPicker(true);
+                yield return new WaitForSecondsRealtime(0.6f);
+                Capture(outDir, "menu1b_vehicle_list.png");
+                yield return new WaitForSecondsRealtime(0.4f);
+                ArmorSim.TestPicker(false);
+                ArmorSim.TestPan(1.2f, 0.4f);
+                yield return new WaitForSecondsRealtime(0.8f);
+                Capture(outDir, "menu1c_view_moved.png");
+                yield return new WaitForSecondsRealtime(0.4f);
+                ArmorSim.TestPan(0f, 0f);
+            }
+            if (cfg("cfgopen", "false") == "true")
+            {
+                // the settings window over the sim: alone, the sim's panels out of the way
+                ConfigMenu.Open();
+                yield return new WaitForSecondsRealtime(0.8f);
+                Capture(outDir, "menu1d_settings_open.png");
+                yield return new WaitForSecondsRealtime(0.4f);
+                ConfigMenu.Close();
+                yield return new WaitForSecondsRealtime(0.5f);
+            }
             yield return new WaitForSecondsRealtime(0.5f);
 
             string veh = cfg("armorsim", "");
@@ -430,6 +545,32 @@ namespace GHPCHitCam
         {
             try { ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, name)); HitCamMod.Log.Msg("ARMORSIM MENU TEST: captured " + name); }
             catch (Exception e) { HitCamMod.Log.Warning("capture failed: " + e.Message); }
+        }
+    }
+
+    /// Keeps a text centred just under another one's last drawn line (the title wraps when its panel narrows).
+    internal class UnderText : MonoBehaviour
+    {
+        TMP_Text _above, _me;
+        float _size;
+
+        public void Init(TMP_Text above, TMP_Text me) { _above = above; _me = me; _size = me.fontSize; }
+
+        void LateUpdate()
+        {
+            if (_above == null || _me == null || !_above.isActiveAndEnabled) return;
+            var a = _above.textBounds;
+            var m = _me.textBounds;
+            if (a.size.y <= 0f || m.size.y <= 0f) return;
+            // never wider than the title's widest line (its own size again once the title is wide)
+            float full = m.size.x * _size / Mathf.Max(_me.fontSize, 0.01f);
+            float fit = Mathf.Clamp(_size * a.size.x / Mathf.Max(full, 0.01f), _size * 0.5f, _size);
+            if (Mathf.Abs(fit - _me.fontSize) > 0.05f) { _me.fontSize = fit; return; }
+            float gap = 0.12f * m.size.y;
+            Vector3 want = _above.transform.TransformPoint(new Vector3(a.center.x, a.min.y - gap, 0f));
+            Vector3 have = _me.transform.TransformPoint(new Vector3(m.center.x, m.max.y, 0f));
+            Vector3 d = want - have;
+            if (d.sqrMagnitude > 1e-6f) transform.position += d;
         }
     }
 }

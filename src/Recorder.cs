@@ -163,6 +163,10 @@ namespace GHPCHitCam
 
         static Vector3 EventPos() => _inPenCheck ? _penPoint : (_currentRound != null ? _currentRound.transform.position : Vector3.zero);
 
+        /// The last autocannon hit's copy of its target, shared by the burst's next rounds on it (see SetTarget).
+        static (Unit unit, GhostSnapshot snap, float at) _burstSnap;
+        const float BurstSnapshotSeconds = 1.5f;
+
         static void SetTarget(HitRecord rec, Unit u)
         {
             if (!AfterAction.Accept(rec, u)) { _records.Remove(rec.RootShot); return; }   // someone else's round that didn't hit you
@@ -181,11 +185,22 @@ namespace GHPCHitCam
                     f.HasStart = true;
                 }
             }
-            try { using (Perf.T("Recorder/snapshot")) rec.Snapshot = GhostSnapshot.Capture(u); }
-            catch (Exception e) { HitCamMod.Log.Error("Snapshot failed for " + rec.TargetName + ": " + e); }
-            // a hit the hit cam will show: its crew skin is worked out in the background from now on
-            if (rec.Snapshot != null && (rec.PlayerShot || !Settings.PlayerShotsOnly.Value) && (Settings.Enabled.Value || AutoTest.Active))
-                using (Perf.T("Recorder/skin prepare")) { CrewBuilder.Prepare(rec.Snapshot); GhostPhysics.Prebake(rec.Snapshot); }
+            // an autocannon burst: the rounds that follow on the same vehicle within a moment share the first one's copy of
+            // it (a fresh copy of the model, the crew and their skins took 3-25 ms, for every round, every 75 ms). The light
+            // hit cam shows the whole burst on one copy anyway.
+            float cal = rec.Ammo != null ? Mathf.Max(rec.Ammo.Caliber, rec.Ammo.Radius * 2000f) : 999f;
+            bool burst = cal < Settings.BurstCaliberMm.Value;
+            if (burst && _burstSnap.unit == u && _burstSnap.snap != null && Time.time - _burstSnap.at < BurstSnapshotSeconds)
+                rec.Snapshot = _burstSnap.snap;
+            else
+            {
+                try { using (Perf.T("Recorder/snapshot")) rec.Snapshot = GhostSnapshot.Capture(u); }
+                catch (Exception e) { HitCamMod.Log.Error("Snapshot failed for " + rec.TargetName + ": " + e); }
+                // a hit the hit cam will show: its crew skin is worked out in the background from now on
+                if (rec.Snapshot != null && (rec.PlayerShot || !Settings.PlayerShotsOnly.Value) && (Settings.Enabled.Value || AutoTest.Active))
+                    using (Perf.T("Recorder/skin prepare")) { CrewBuilder.Prepare(rec.Snapshot); GhostPhysics.Prebake(rec.Snapshot); }
+                _burstSnap = burst && rec.Snapshot != null ? (u, rec.Snapshot, Time.time) : (null, null, 0f);
+            }
             HitCamPlayer.OnFirstImpact(rec);
             _recent.Add(rec);
             if (_recent.Count > 40) _recent.RemoveAt(0);
@@ -221,7 +236,7 @@ namespace GHPCHitCam
                     if (!Settings.Enabled.Value && !AutoTest.Active && !ArcadeHud.WantsRecords && !AfterAction.Recording) return;
                     var ammo = __instance.Info;
                     float cal = Mathf.Max(ammo.Caliber, ammo.Radius * 2000f);
-                    if (cal < Settings.MinCaliberMm.Value) return;
+                    if (cal < Settings.RecordMinCaliberMm) return;
                     if (Settings.PlayerShotsOnly.Value && !shot.IsPlayerShot && !AfterAction.Recording) return;   // the AAR keeps hits on you too (SetTarget drops the rest)
                     var rec = new HitRecord
                     {
@@ -341,7 +356,7 @@ namespace GHPCHitCam
                 {
                     // the world damage draws some modules from outside (a holed / bent barrel, a chewed track, a helicopter's tail)
                     Unit mu = armor.Unit as Unit ?? targetStruck?.Owner;
-                    if (IsVehicle(mu) && Mathf.Max(__instance.Info.Caliber, __instance.Info.Radius * 2000f) >= Settings.MinCaliberMm.Value && WorldModules.Wants(mu, moduleDc))
+                    if (IsVehicle(mu) && Mathf.Max(__instance.Info.Caliber, __instance.Info.Radius * 2000f) >= Settings.RecordMinCaliberMm && WorldModules.Wants(mu, moduleDc))
                         __state = new PenState { Unit = mu, Col = cObject, Armor = armor, Module = moduleDc, Point = impactPoint, Normal = surfaceNormal, Dir = roundPath.normalized,
                                                  Speed = __instance.CurrentSpeed, Pen = __instance.CurrentPenRating };
                     return;
@@ -349,7 +364,7 @@ namespace GHPCHitCam
                 Unit unit = armor.Unit as Unit ?? targetStruck?.Owner;
                 if (!IsVehicle(unit)) return;
                 bool forRecord = rec != null && rec.Target != null && unit == rec.Target;
-                bool forWorld = Settings.WorldDamage.Value && Mathf.Max(__instance.Info.Caliber, __instance.Info.Radius * 2000f) >= Settings.MinCaliberMm.Value;
+                bool forWorld = Settings.WorldDamage.Value && Mathf.Max(__instance.Info.Caliber, __instance.Info.Radius * 2000f) >= Settings.RecordMinCaliberMm;
                 if (!forRecord && !forWorld) return;
 
                 var st = new PenState { Rec = forRecord ? rec : null, Unit = unit, Col = cObject, Armor = armor, Point = impactPoint, Normal = surfaceNormal, Dir = roundPath.normalized, WasSpall = __instance.IsSpall };
@@ -387,6 +402,7 @@ namespace GHPCHitCam
                     return;
                 }
                 if (!__state.Armor.IsEra)
+                    ProvingGround.NoteHit(__state.Unit);
                     using (Perf.T("Recorder/world damage")) WorldDamage.OnArmorHit(__instance.ID, __state.Unit, __state.Col, __state.Point, __state.Normal, __state.Dir, pen, ric, __state.PreJet,
                         __state.Nominal, __state.Los, __state.Pen, __state.Speed, ImpactEnergy(__instance, __state.PreJet), __instance.Info, HoleRadius(__instance.Info, __state.Nominal));
                 if (rec == null) return;
@@ -1046,10 +1062,21 @@ namespace GHPCHitCam
             if (rec != null && rec.OutAt < 0f) rec.OutAt = Time.time;
         }
 
+        static readonly string[] PartWords = { "oil tank", "fuel tank", "fuel cell", "water tank", "hydraulic", "transmission", "gearbox", "engine", "battery", "radio", "propellant", "ammunition", "ammo", "fuel", "oil" };
+
         internal static string Pretty(string goName)
         {
             if (string.IsNullOrEmpty(goName)) return "?";
             string s = goName.Replace("_", " ").Replace("(Clone)", "").Trim();
+            // a developer's note left as the part's name (the BMP-2's oil tank is "In Manual, this is labeled as oil tank,
+            // the cap on top IS oil cap, but this thing is huge, ..."): what it names
+            if (s.Length > 32 || s.Contains(","))
+            {
+                string low = s.ToLowerInvariant();
+                foreach (var w in PartWords) if (low.Contains(w)) return char.ToUpperInvariant(w[0]) + w.Substring(1);
+                int c = s.IndexOf(',');
+                if (c >= 6) s = s.Substring(0, c).Trim();
+            }
             return s.Length > 32 ? s.Substring(0, 32) : s;
         }
 
@@ -1060,6 +1087,9 @@ namespace GHPCHitCam
             if (_records.Count == 0) return;
             float now = Time.time;
             List<ShotInfo> drop = null;
+            // two hits a frame at most join the hit cam (a burst's rounds finishing together each built their part of the
+            // x-ray, its timeline, spall and round, all in one frame); the rest a frame later
+            int readied = 0;
             foreach (var kv in _records)
             {
                 var rec = kv.Value;
@@ -1074,8 +1104,9 @@ namespace GHPCHitCam
                     // nothing more at the target for a few frames (the round stopped, or flew on out of it): the hit cam
                     // (already being built since the impact) can play
                     float sinceImpact = now - rec.FirstImpactReal;
-                    if ((now - rec.LastActivityReal > 0.12f && sinceImpact > 0.2f) || sinceImpact > 1.0f)
+                    if (((now - rec.LastActivityReal > 0.12f && sinceImpact > 0.2f) || sinceImpact > 1.0f) && readied < 2)
                     {
+                        readied++;
                         rec.Ready = true;
                         Timeline.Build(rec);
                         HitCamPlayer.Enqueue(rec);

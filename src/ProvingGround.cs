@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// PROVING GROUND (main menu button, or Ctrl+F4 in any mission): Arma 3's VR showcase meets War Thunder's test drive.
+    /// PROVING GROUND (main menu button, or Alt+Home in any mission): Arma 3's VR showcase meets War Thunder's test drive.
     /// A flat grey grid deck floating above the map (nothing of the mission on it), rows of target vehicles every 100 m
     /// down range (front-on, side-on, three-quarter), two hovering helicopters, the player in a vehicle of their choice
     /// on the firing line, and a tools window (F4): respawn targets, and a shot lab that fires any round at any target
@@ -28,7 +28,12 @@ namespace GHPCHitCam
         public static MelonPreferences_Entry<bool> MenuButton, RodCamPref, BigCamPref;
         static MelonPreferences_Entry<string> _keyPref;
         static MelonPreferences_Entry<int> _rowsPref, _perRowPref;
-        static KeyCode _key = KeyCode.F4;
+        static MelonPreferences_Entry<float> _respawnPref;
+        static MelonPreferences_Entry<bool> _emptyPref;
+        static MelonPreferences_Entry<bool> _briefPref;
+        public static MelonPreferences_Entry<int> RowsPref => _rowsPref;
+        static bool _autoOpened;              // the tools opened by themselves on the range's start (the vehicle list)
+        static MelonPreferences_Entry<string> _buildPref;
 
         public static bool Active { get; private set; }
         public static bool FromMenu;
@@ -45,9 +50,10 @@ namespace GHPCHitCam
         static Unit _vehicle, _missionVehicle;
 
         const float Spacing = 40f, RowStep = 100f;
-        class Slot { public string Key; public int Row, Col; public Vector3 Pos; public Quaternion Rot; public Unit U; public string Facing; public bool Air, Troops; }
+        class Slot { public string Key; public int Row, Col; public Vector3 Pos; public Quaternion Rot; public Unit U; public string Facing; public bool Air, Troops; public float DownAt = -1f; }
         static readonly List<Slot> _slots = new List<Slot>();
         static readonly string[] Targets = { "T72M1", "T80B", "M1IP", "LEO2A3", "BMP2", "BTR70", "M113", "BRDM2" };
+        public static IEnumerable<string> TargetKeys => Targets;
         static readonly string[] Helis = { "Mi24", "AH1" };
         // your own vehicle and where it starts, the targets you placed: kept when the mission restarts
         static string _myKey;
@@ -62,7 +68,8 @@ namespace GHPCHitCam
         static List<(string key, string name, string army)> _units;   // every ground vehicle in the game's unit table
         static bool _rebuild;                 // the mission is restarting with a proving ground in it: it's built again
         static float _hintUntil;
-        static float _loadingSince = -1f;     // the range is on its way (menu button, restart, Ctrl+key): a note says so
+        static float _briefUntil;             // the briefing is up (the range is new: until the tools are opened)
+        static float _loadingSince = -1f;    // the range is on its way (menu button, restart, Ctrl+key): a note says so
 
         /// The proving ground is being loaded / built: a note on screen until it's ready.
         public static void NoteLoading() => _loadingSince = Time.unscaledTime;
@@ -72,7 +79,7 @@ namespace GHPCHitCam
         // shot lab
         static int _target, _ammoSel = -1, _aimMode, _aspect = 2;
         static float _yaw = 30f, _pitch, _range = 1000f;
-        static readonly string[] AimModes = { "Hull", "Turret", "Lower hull", "Turret ring" };
+        static readonly string[] AimModes = { "Hull", "Turret", "Lower hull", "Turret ring", "Gun barrel" };
         static readonly string[] Aspects = { "Front", "3/4", "Side", "Rear", "Top", "Custom" };
         static string _status = "";
         static Rect _win = new Rect(24f, 140f, 430f, 600f);
@@ -83,12 +90,16 @@ namespace GHPCHitCam
         public static void Init()
         {
             MenuButton = Settings.Cat.CreateEntry("ProvingGroundMenuButton", true, description: "PROVING GROUND button in the main menu: a flat test range with targets every 100 m and a shot lab.");
-            _keyPref = Settings.Cat.CreateEntry("ProvingGroundKey", "F4", description: "On the proving ground: shows or hides its tools window. Ctrl + this key builds a proving ground in any mission.");
-            _rowsPref = Settings.Cat.CreateEntry("ProvingGroundRows", 10, description: "Rows of targets, one every 100 m down range.");
+            _keyPref = Settings.Cat.CreateEntry("ProvingGroundKey", "Home", description: "On the proving ground: shows or hides its tools window.");
+            _buildPref = Settings.Cat.CreateEntry("ProvingGroundBuildKey", "Alt+Home", description: "Builds a proving ground in the mission you're in (its units hold still, a deck with targets far from them).");
+            _rowsPref = Settings.Cat.CreateEntry("ProvingGroundRows", 5, description: "Rows of targets, one every 100 m down range (each row three vehicles: more rows, more frames lost).");
+            _respawnPref = Settings.Cat.CreateEntry("ProvingGroundRespawnSeconds", 20f, description: "A knocked-out target (destroyed, or no crew left in it) comes back by itself this many seconds later. 0: never (respawn them from the tools window).");
             _perRowPref = Settings.Cat.CreateEntry("ProvingGroundPerRow", 3, description: "Targets in each row.");
+            _emptyPref = Settings.Cat.CreateEntry("ProvingGroundEmptyMap", true, description: "Only the deck and the vehicles on it are drawn, not the map under the range: it looks like a VR range and runs faster. Off: the map stays.");
+            _briefPref = Settings.Cat.CreateEntry("ProvingGroundBriefing", true, description: "When the range is ready, a briefing says what's where and what the tools do.");
             BigCamPref = Settings.Cat.CreateEntry("ProvingGroundBigCam", false, description: "A bigger hit cam on the proving ground, for close-ups.");
             RodCamPref = Settings.Cat.CreateEntry("RodCam", false, description: "Follow the round itself through every plate in deep slow motion, from the side (for studying penetration).");
-            try { _key = (KeyCode)Enum.Parse(typeof(KeyCode), _keyPref.Value, true); } catch { _key = KeyCode.F4; }
+
             _setGun = AccessTools.PropertySetter(typeof(PlayerInput), "SuspendGunnerInputs");
             _setCam = AccessTools.PropertySetter(typeof(PlayerInput), "SuspendCameraInputs");
         }
@@ -126,8 +137,9 @@ namespace GHPCHitCam
         {
             try
             {
-                if (!Active || __instance == null || _menuData == null) return;
-                var me = PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit : null;
+                // on the range only (its deck stands in this mission): everywhere else the menu is the game's own
+                if (!Active || _deck == null || __instance == null || _menuData == null) return;
+                var me = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
                 var data = _menuData(__instance);
                 data.Clear();
                 if (me != null) data.Add(new GHPC.UI.UnitMenu.UnitMenuPlatoonData(new List<Unit> { me }));
@@ -141,6 +153,8 @@ namespace GHPCHitCam
         public static void OnSceneLoaded(string scene)
         {
             if (scene != null && scene.IndexOf("MainMenu", StringComparison.OrdinalIgnoreCase) >= 0) { _rebuild = false; _loadingSince = -1f; return; }
+            // a range on its way (menu button, restart): its vehicles load with the mission, for the vehicle mods' sake
+            if (_loadingSince >= 0f) ModdedVehicles.PreloadForMission(PlannedKeys, "proving ground");
             if (_rebuild) { _rebuild = false; MelonCoroutines.Start(BuildWhenReady()); }
         }
 
@@ -154,7 +168,7 @@ namespace GHPCHitCam
             {
                 yield return null;
                 if (SceneUtil.IsGameplayGone()) continue;
-                var pi = PlayerInput.Instance;
+                var pi = SceneUtil.Player;
                 if (pi == null || pi.CurrentPlayerUnit == null) continue;
                 if (UnitSpawner.Instance == null && UnityEngine.Object.FindObjectOfType<UnitSpawner>() == null) continue;
                 ready = true;
@@ -180,6 +194,8 @@ namespace GHPCHitCam
             _busy = false;
             FromMenu = false;
             _slots.Clear();
+            _parked.Clear();
+            _hit.Clear();
             _vehicle = _missionVehicle = null;
             if (_deck != null) UnityEngine.Object.Destroy(_deck);
             _deck = null;
@@ -187,8 +203,25 @@ namespace GHPCHitCam
 
         static void Say(string s) { _status = s; HitCamMod.Log.Msg("Proving ground: " + s); }
 
+        /// Self-test: the tools window open, as a player leaves it when quitting.
+        internal static void TestOpenTools() { _tab = 0; ShowWindow(true); }
+        internal static void TestCloseTools() => ShowWindow(false);
+
+        /// The briefing's "Don't show again" (also the self-test's briefnever step).
+        internal static void BriefNever()
+        {
+            _briefUntil = 0f;
+            _hintUntil = 0f;
+            _briefPref.Value = false;
+            try { Settings.Cat.SaveToFile(false); } catch { }
+            Say($"briefing off for good (back on: {Hotkeys.Label(_keyPref)} > You, or the settings)");
+        }
+
         /// One of the range's targets (the self-test picks its targets from these).
         public static bool IsTarget(Unit u) => u != null && _slots.Any(s => s.U == u);
+        internal static IEnumerable<Unit> TargetUnits => _slots.Select(s => s.U);
+        /// Self-test: targets that ended up well below the deck (fell off it), and the far ones' places.
+        internal static string DeckCheck() => $"{_slots.Count(s => s.U != null && !s.Air && s.U.transform.position.y < _origin.y - 5f)} of {_slots.Count(s => !s.Air)} ground targets below the deck; far: " + string.Join(", ", _slots.Where(s => s.Row > 5 && !s.Air && s.U != null).Select(s => $"{Recorder.SafeName(s.U)} at {Vector3.Distance(s.U.transform.position, _origin):0} m"));
 
         // ------------------------------------------------------------------ building it
 
@@ -197,7 +230,7 @@ namespace GHPCHitCam
             if (_busy || Active) yield break;
             _busy = true;
             if (_loadingSince < 0f) NoteLoading();
-            var pi = PlayerInput.Instance;
+            var pi = SceneUtil.Player;
             var player = pi != null ? pi.CurrentPlayerUnit : null;
             var sp = UnitSpawner.Instance ?? UnityEngine.Object.FindObjectOfType<UnitSpawner>();
             if (player == null || sp == null) { Say("no player vehicle / unit spawner in this mission"); _busy = false; _loadingSince = -1f; yield break; }
@@ -222,7 +255,13 @@ namespace GHPCHitCam
             // wide enough for the outermost bearing at the last row (see TargetX)
             float far = 0f;
             for (int r = 1; r <= rows; r++) for (int c = 0; c < perRow; c++) far = Mathf.Max(far, Mathf.Abs(TargetX(r, c, perRow)));
-            float len = rows * RowStep + 250f, half = Mathf.Max(far + 60f, 240f);   // the soft targets stand out to 170 m left
+            // the long-range tanks beyond the last row, in the gap between the rows' centre and side columns (see FarBearing)
+            var farRanges = FarRanges.Where(r => r > rows * RowStep).ToList();
+            foreach (float r in farRanges) far = Mathf.Max(far, Mathf.Abs(Mathf.Tan(FarBearing * Mathf.Deg2Rad) * r) - 20f);
+            // the soft targets (SoftSpot) stand out to ~250 m left: the deck takes them too (a truck fell off its edge)
+            float softX = 0f;
+            for (int i = 0; i < 4; i++) softX = Mathf.Max(softX, Mathf.Abs(SoftSpot(i).x));
+            float len = Mathf.Max(rows * RowStep, farRanges.Count > 0 ? farRanges.Max() : 0f) + 250f, half = Mathf.Max(Mathf.Max(far + 60f, softX + 30f), 240f);
             Vector3 best = player.transform.position;
             float bestD = -1f;
             for (float x = -3000f; x <= 3000f; x += 200f)
@@ -246,8 +285,9 @@ namespace GHPCHitCam
             if (top == float.MinValue) top = player.transform.position.y;
             top += 30f;
             _origin = new Vector3(best.x, top, z0);
-            _deck = MakeDeck(_origin, -150f, len - 150f, half, rows);
+            _deck = MakeDeck(_origin, -150f, len - 150f, half, rows, farRanges);
             Say($"deck {half * 2f:0} x {len:0} m at {_origin} ({bestD:0} m from the nearest mission unit)");
+            if (_emptyPref.Value) HideMap();
             yield return null;
 
             // the targets: a row every 100 m, the first of each row front-on, then side-on, then three-quarter
@@ -264,6 +304,15 @@ namespace GHPCHitCam
                     SpawnSlot(sp, s);
                     yield return null;
                 }
+            // long range: a tank at 1 km and one at 1.5 km, facing you, on either side of the middle
+            for (int j = 0; j < farRanges.Count; j++)
+            {
+                float r = farRanges[j], bear = (j % 2 == 0 ? 1f : -1f) * FarBearing;
+                var s = new Slot { Key = FarKeys[j % FarKeys.Length], Row = Mathf.RoundToInt(r / RowStep), Col = 0, Pos = _origin + new Vector3(Mathf.Tan(bear * Mathf.Deg2Rad) * r, 0.6f, r), Rot = Quaternion.Euler(0f, 180f, 0f), Facing = "front" };
+                _slots.Add(s);
+                SpawnSlot(sp, s);
+                yield return null;
+            }
             for (int j = 0; j < Helis.Length; j++)
             {
                 int row = Mathf.Min(rows, 4 + j * 4);
@@ -278,10 +327,10 @@ namespace GHPCHitCam
             var soft = SoftTargets(sp);
             for (int i = 0; i < soft.Count; i++)
             {
-                float d = 120f + i * 52f, bear = -(54f - i * 4f);
+                Vector3 spot = SoftSpot(i);
                 string facing = i % 3 == 0 ? "side" : i % 3 == 1 ? "3/4" : "front";
                 float yaw = facing == "front" ? 180f : facing == "side" ? 90f : 135f;
-                var s = new Slot { Key = soft[i].key, Troops = soft[i].troops, Row = 0, Col = i, Pos = _origin + new Vector3(Mathf.Tan(bear * Mathf.Deg2Rad) * d, 0.6f, d), Rot = Quaternion.Euler(0f, yaw, 0f), Facing = soft[i].troops ? "squad" : facing };
+                var s = new Slot { Key = soft[i].key, Troops = soft[i].troops, Row = 0, Col = i, Pos = _origin + spot, Rot = Quaternion.Euler(0f, yaw, 0f), Facing = soft[i].troops ? "squad" : facing };
                 _slots.Add(s);
                 SpawnSlot(sp, s);
                 yield return null;
@@ -307,15 +356,34 @@ namespace GHPCHitCam
             if (_loadingSince >= 0f) HitCamMod.Log.Msg($"Proving ground: ready {Time.unscaledTime - _loadingSince:0.0} s after it was asked for");
             _loadingSince = -1f;
             _target = Mathf.Clamp(_slots.FindIndex(s => s.Row == 3 && s.Facing == "side"), 0, Math.Max(_slots.Count - 1, 0));
-            Say($"ready: {_slots.Count(s => !s.Air && s.Row > 0)} targets in {rows} rows (100-{rows * 100} m), {_slots.Count(s => s.Row == 0)} jeeps and trucks, {_slots.Count(s => s.Air)} helicopters; {_keyPref.Value} = tools");
+            Say($"ready: {_slots.Count(s => !s.Air && s.Row > 0 && s.Row <= rows)} targets in {rows} rows (100-{rows * 100} m), {_slots.Count(s => !s.Air && s.Row > rows)} far out ({string.Join(", ", _slots.Where(s => !s.Air && s.Row > rows).Select(s => s.Row * 100 + " m"))}), {_slots.Count(s => s.Row == 0)} jeeps and trucks, {_slots.Count(s => s.Air)} helicopters; {Hotkeys.Label(_keyPref)} = tools");
             // the tools window used to open by itself and held the controls (you couldn't drive off): a hint instead
-            _hintUntil = Time.unscaledTime + 14f;
+            _briefUntil = _briefPref.Value ? Time.unscaledTime + 30f : 0f;
+            _hintUntil = Mathf.Max(_briefUntil, Time.unscaledTime) + (_briefPref.Value ? 8f : 14f);
+            // the vehicle list open from the start: pick what to drive (Drive it closes the tools again), or F4 to keep this one
+            if (!AutoTest.Active || AutoTest.Opt("pgopen", false))
+            {
+                _tab = 0; _picking = 1;
+                ShowWindow(true, keepBrief: true);
+                _autoOpened = true;
+            }
         }
 
         // bearings from the middle of the firing line, per row inside a column (degrees): every target stands clear of
         // the ones in front of it. A vehicle ~2.5 m either side of its centre hides ~1.4 deg at 100 m, 0.7 at 200 m,
         // ... so the near rows get the widest gaps.
         // (gaps leave 1.5-3 m to spare past each nearer vehicle's side)
+        static readonly float[] FarRanges = { 1000f, 1500f };
+        static readonly string[] FarKeys = { "T72M1", "T80B" };
+        const float FarBearing = 8.5f;   // between the rows' centre column (within 5 deg) and their side ones (from 11.8)
+
+        /// Where the i-th soft target stands, from the deck origin: left of the rows, the nearer ones wider.
+        static Vector3 SoftSpot(int i)
+        {
+            float d = 120f + i * 52f, bear = -(54f - i * 4f);
+            return new Vector3(Mathf.Tan(bear * Mathf.Deg2Rad) * d, 0.6f, d);
+        }
+
         static readonly float[] RowBearing = { 0f, 3.0f, -3.0f, 4.2f, -4.2f, 5.0f, -5.0f, 5.6f, -5.6f, 6.1f, -6.1f, 6.5f, -6.5f, 6.9f, -6.9f, 7.2f, -7.2f, 7.5f, -7.5f, 7.8f };
         const float ColumnBearing = 16f;
 
@@ -348,6 +416,7 @@ namespace GHPCHitCam
                     foreach (var m in sp.PrefabLookup.AllUnits)
                     {
                         if (m == null || string.IsNullOrEmpty(m.Name) || m.Name == "TC" || m.Name == "RTS_CAMERA") continue;
+                        if (!ModdedVehicles.Spawnable(m)) continue;   // a lookup-only entry (no prefab), e.g. FEP's binocular fix
                         var c = m.Class;
                         if (!(c == UnitClass.Tank || c == UnitClass.IFV || c == UnitClass.APC || c == UnitClass.Scout || c == UnitClass.Transport || c == UnitClass.FireSupport)) continue;
                         string army = "";
@@ -416,7 +485,7 @@ namespace GHPCHitCam
             string you = "";
             try
             {
-                var pi = PlayerInput.Instance;
+                var pi = SceneUtil.Player;
                 var u = pi != null ? pi.CurrentPlayerUnit as Unit : null;
                 var rb = u != null ? u.GetComponent<Rigidbody>() : null;
                 var ai = u != null && u.InfoBroker != null ? u.InfoBroker.AI : null;
@@ -465,6 +534,18 @@ namespace GHPCHitCam
             catch { }
         }
 
+        /// Every vehicle the range is going to spawn: its targets, helicopters, jeeps and trucks, yours, the ones you placed.
+        internal static IEnumerable<string> PlannedKeys()
+        {
+            var keys = new List<string>(Targets);
+            keys.AddRange(Helis);
+            var sp = UnitSpawner.Instance ?? UnityEngine.Object.FindObjectOfType<UnitSpawner>();
+            if (sp != null) keys.AddRange(SoftTargets(sp).Select(t => t.key));
+            if (!string.IsNullOrEmpty(_myKey)) keys.Add(_myKey);
+            keys.AddRange(_placed.Select(p => p.key));
+            return keys;
+        }
+
         /// Jeeps and trucks from the game's unit table, nearest first.
         static List<(string key, bool troops)> SoftTargets(UnitSpawner sp)
         {
@@ -473,6 +554,8 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("Proving ground: unit table: " + e.Message); }
             return new[] { "UAZ469", "URAL375D", "M151", "M923" }.Where(k => have.Count == 0 || have.Contains(k)).Select(k => (k, false)).ToList();
         }
+
+        static readonly HashSet<string> _spawnErrs = new HashSet<string>();   // the whole error once a vehicle
 
         static Unit SpawnAt(UnitSpawner sp, string key, Vector3 pos, Quaternion rot, Faction f, bool air, bool troops = false)
         {
@@ -486,19 +569,40 @@ namespace GHPCHitCam
                     Allegiance = f,
                     UnitType = air ? UnitType.AirVehicle : troops ? UnitType.Infantry : UnitType.GroundVehicle,
                 };
-                var u = sp.SpawnUnit(key, md, (WaypointHolder)null, (Transform)null) as Unit;
+                var u = ModdedVehicles.Spawn(sp, key, md) as Unit;
                 if (u == null) { HitCamMod.Log.Warning("Proving ground: could not spawn " + key); return null; }
                 u.Targetable = true;
                 try { SceneUnitsManager.Instance.Meta?.UnimportantUnits?.Add(u); } catch { }   // never decides the mission
                 return u;
             }
-            catch (Exception e) { HitCamMod.Log.Warning($"Proving ground: spawn {key} failed: {e.Message}"); return null; }
+            catch (Exception e) { HitCamMod.Log.Warning($"Proving ground: spawn {key} failed: " + (_spawnErrs.Add(key) ? e.ToString() : e.Message)); return null; }
         }
 
         static void SpawnSlot(UnitSpawner sp, Slot s)
         {
-            s.U = SpawnAt(sp, s.Key, s.Pos, s.Rot, _enemy, s.Air, s.Troops);
-            Warmup.Plan(s.U);     // the targets are what gets shot here: their warm-up runs in the background
+            var u = s.U = SpawnAt(sp, s.Key, s.Pos, s.Rot, _enemy, s.Air, s.Troops);
+            // the targets are what gets shot here: their warm-up runs in the background (once vehicle mods have made
+            // their versions of them, as they do the mission's)
+            ModdedVehicles.After(u, () => { WakeAudio(u); ModdedVehicles.ShareEraMaterials(u); Warmup.Plan(u); });
+        }
+
+        static FieldInfo _engineSound;
+
+        /// A vehicle spawned in a running mission came up without its engine sound (the game's vehicle audio had
+        /// nothing playing, yours included): the audio switched off and on again starts it the way the game does at the
+        /// mission's start. Only when there is none, so a running engine doesn't start over.
+        static void WakeAudio(Unit u)
+        {
+            try
+            {
+                var vac = u != null && !u.Destroyed ? u.GetComponent<GHPC.Audio.VehicleAudioController>() : null;
+                if (vac == null || !vac.isActiveAndEnabled) return;
+                _engineSound = _engineSound ?? AccessTools.Field(typeof(GHPC.Audio.VehicleAudioController), "_engineInstance");
+                if (_engineSound != null && _engineSound.GetValue(vac) != null) return;
+                vac.enabled = false;
+                vac.enabled = true;
+            }
+            catch (Exception e) { HitCamMod.Log.Warning("Proving ground: engine sound of " + Recorder.SafeName(u) + ": " + e.Message); }
         }
 
         static void Settle(Slot s)
@@ -517,12 +621,16 @@ namespace GHPCHitCam
         static IEnumerator SpawnMine(string key, float range = 0f, bool back = false)
         {
             var sp = UnitSpawner.Instance ?? UnityEngine.Object.FindObjectOfType<UnitSpawner>();
-            var pi = PlayerInput.Instance;
+            var pi = SceneUtil.Player;
             if (sp == null || pi == null) yield break;
             var u = SpawnAt(sp, key, range < 1f ? _origin + Vector3.up * 0.6f : FreeSpot(range, 0f), Quaternion.Euler(0f, back ? 180f : 0f, 0f), _mine, false);
             if (u == null) { Say("could not spawn " + key); yield break; }
             yield return null;
             yield return null;
+            yield return ModdedVehicles.Convert(u);
+            if (u == null || SceneUtil.IsGameplayGone()) yield break;
+            WakeAudio(u);
+            ModdedVehicles.ShareEraMaterials(u);
             var old = pi.CurrentPlayerUnit;
             try
             {
@@ -539,7 +647,105 @@ namespace GHPCHitCam
 
         /// The VR deck: light grey with a 1 m grid and 10 m lines, a dark line across every 100 m with the range painted
         /// on it, and a board with the range at both ends of each line, readable through a gun sight.
-        static GameObject MakeDeck(Vector3 o, float zMin, float zMax, float half, int rows)
+        static void NoTerrain(Terrain t)
+        {
+            if (t == null) return;
+            t.drawHeightmap = false;
+            t.drawTreesAndFoliage = false;
+            t.treeDistance = 0f;
+            t.detailObjectDistance = 0f;
+        }
+
+        /// Once more a moment later: whatever turns the terrain's own drawing back on as its renderers go.
+        static IEnumerator NoTerrainLater(Terrain[] terrains)
+        {
+            yield return null;
+            yield return new WaitForSecondsRealtime(1f);
+            foreach (var t in terrains) NoTerrain(t);
+        }
+
+        static readonly string[] SkyWords = { "sky", "cloud", "atmos", "sun", "moon", "star" };
+
+        /// The map under the range isn't drawn any more: the terrain, and everything of the terrain's scene (buildings,
+        /// props, water, the GPU-instanced trees and grass) but what belongs to a vehicle and the sky. Nothing is
+        /// removed (colliders, the mission, its units stay), and it all comes back with the next mission.
+        static void HideMap()
+        {
+            try
+            {
+                var terrains = Terrain.activeTerrains;
+                if (terrains == null || terrains.Length == 0) return;
+                // every scene of the map and the mission (the forests and their impostors aren't all in the terrain's
+                // scene), not the game's loader scenes or ours
+                var scenes = new HashSet<UnityEngine.SceneManagement.Scene>();
+                for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
+                {
+                    var sc = UnityEngine.SceneManagement.SceneManager.GetSceneAt(i);
+                    if (sc.isLoaded && !sc.name.StartsWith("LOADER", StringComparison.OrdinalIgnoreCase) && sc.name != "HitCamPhysics") scenes.Add(sc);
+                }
+                int hidden = 0, kept = 0;
+                var perScene = new Dictionary<string, int>();
+                var veg = new HashSet<string>();
+                foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
+                {
+                    if (r == null || r.forceRenderingOff || !scenes.Contains(r.gameObject.scene)) continue;
+                    if (_deck != null && r.transform.IsChildOf(_deck.transform)) continue;
+                    string n = r.name.ToLowerInvariant();
+                    // what stays: vehicles and their parts, cameras and what hangs on them (sights), effects, the sky
+                    if (r.GetComponentInParent<Unit>() != null || r.GetComponentInParent<GHPC.Utility.LateFollow>() != null || r.GetComponentInParent<Camera>() != null
+                        || r is ParticleSystemRenderer || r is LineRenderer || r is TrailRenderer || SkyWords.Any(w => n.Contains(w))) { kept++; continue; }
+                    r.forceRenderingOff = true;
+                    hidden++;
+                    string sn = r.gameObject.scene.name;
+                    perScene[sn] = perScene.TryGetValue(sn, out int c) ? c + 1 : 1;
+                }
+                // the terrain trees and grass are Nature Renderer's (one per terrain): switched off without handing them
+                // back to Unity's own terrain renderer (what it does when disabled), then the terrains told to draw nothing
+                var nature = AccessTools.TypeByName("VisualDesignCafe.Rendering.Nature.NatureRenderer");
+                var giveBack = nature != null ? AccessTools.Field(nature, "_enableUnityRendererWhenDisabled") : null;
+                foreach (var b in UnityEngine.Object.FindObjectsOfType<Behaviour>())
+                {
+                    if (b == null || !b.enabled) continue;
+                    string ns = b.GetType().Namespace ?? "", tn = b.GetType().Name;
+                    if (!ns.StartsWith("VisualDesignCafe") && !ns.Contains("Rendering.Instancing") && !ns.StartsWith("AmplifyImpostors")) continue;
+                    if (giveBack != null && nature.IsInstanceOfType(b)) giveBack.SetValue(b, false);
+                    b.enabled = false;
+                    veg.Add(tn);
+                }
+                // its renderers themselves don't show in a scene search (hidden objects): every one loaded, and its own
+                // list of them (the forest on the horizon was still drawn)
+                var natures = new List<Behaviour>();
+                if (nature != null)
+                {
+                    foreach (var o in Resources.FindObjectsOfTypeAll(nature)) if (o is Behaviour nb && nb != null) natures.Add(nb);
+                    if (AccessTools.Property(nature, "Renderers")?.GetValue(null) is System.Collections.IEnumerable all)
+                        foreach (var o in all.Cast<object>()) if (o is Behaviour nb && nb != null && !natures.Contains(nb)) natures.Add(nb);
+                }
+                int natureOff = 0;
+                foreach (var nb in natures)
+                {
+                    if (!nb.enabled || !nb.gameObject.scene.isLoaded) continue;
+                    giveBack?.SetValue(nb, false);
+                    nb.enabled = false;
+                    natureOff++;
+                }
+                if (natureOff > 0) veg.Add($"NatureRenderer x{natureOff}");
+                if (AutoTest.Active) HitCamMod.Log.Msg($"Proving ground: empty map: {natures.Count} Nature Renderers found ({string.Join(", ", natures.Take(8).Select(nb => nb.name + (nb.enabled ? "" : " (off)") + " in " + nb.gameObject.scene.name))})");
+                foreach (var t in terrains) NoTerrain(t);
+                MelonCoroutines.Start(NoTerrainLater(terrains));
+                if (AutoTest.Active)
+                {
+                    // what's still drawn that isn't a vehicle's (the biggest first): what the empty map may have left
+                    var left = UnityEngine.Object.FindObjectsOfType<Renderer>().Where(x => x != null && x.enabled && !x.forceRenderingOff && x.isVisible && x.GetComponentInParent<Unit>() == null && (_deck == null || !x.transform.IsChildOf(_deck.transform)))
+                        .OrderByDescending(x => x.bounds.size.magnitude).Take(12).Select(x => $"{x.name} [{x.GetType().Name}, {x.gameObject.scene.name}, {x.bounds.size.magnitude:0} m]");
+                    HitCamMod.Log.Msg("Proving ground: empty map, still drawn: " + string.Join("; ", left));
+                }
+                Say($"empty map: {hidden} renderers hidden ({string.Join(", ", perScene.Select(kv => kv.Key + " " + kv.Value))}), {kept} kept (vehicles, cameras, effects, sky), {terrains.Length} terrains, off: {string.Join(", ", veg)}");
+            }
+            catch (Exception e) { HitCamMod.Log.Warning("Proving ground: empty map: " + e.Message); }
+        }
+
+        static GameObject MakeDeck(Vector3 o, float zMin, float zMax, float half, int rows, List<float> farRanges)
         {
             var root = new GameObject("HitCam proving ground");
             int terrain = LayerMask.NameToLayer("Terrain");
@@ -557,7 +763,7 @@ namespace GHPCHitCam
             var dark = new Material(std) { color = new Color(0.16f, 0.18f, 0.22f) };
             var white = new Material(std) { color = new Color(0.92f, 0.93f, 0.95f) };
             var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            for (int r = 1; r <= rows; r++)
+            foreach (int r in Enumerable.Range(1, rows).Concat(farRanges.Select(f => Mathf.RoundToInt(f / RowStep))))
             {
                 float z = r * RowStep;
                 var line = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -632,26 +838,27 @@ namespace GHPCHitCam
         {
             try
             {
-                bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
-                if (Input.GetKeyDown(_key))
-                {
-                    if (ctrl && !Active && !_busy && !ArmorSim.Active && PlayerInput.Instance?.CurrentPlayerUnit != null) MelonCoroutines.Start(Build());
-                    else if (Active) ShowWindow(!_open);
-                }
+                // the range went with its mission (however that was left): nothing of it may outlive it
+                if (Active && _deck == null && !_busy) { HitCamMod.Log.Msg("Proving ground: its mission is gone"); Reset(); }
+                if (Hotkeys.Down(_buildPref) && !Active && !_busy && !ArmorSim.Active && SceneUtil.Player?.CurrentPlayerUnit != null) MelonCoroutines.Start(Build());
+                else if (Active && Hotkeys.Down(_keyPref)) ShowWindow(!_open);
                 if (_open)
                 {
                     Cursor.visible = true;
                     Cursor.lockState = CursorLockMode.None;
                 }
+                if (Active && !_busy) { AutoRespawn(); PutAwayWrecks(); }
             }
             catch (Exception e) { HitCamMod.Log.Warning("Proving ground: " + e.Message); }
         }
 
-        static void ShowWindow(bool on)
+        static void ShowWindow(bool on, bool keepBrief = false)
         {
             if (on == _open) return;
             _open = on;
-            var pi = PlayerInput.Instance;
+            if (on && !keepBrief) { _briefUntil = 0f; _hintUntil = 0f; }   // read: the tools say the rest
+            if (!on) _autoOpened = false;
+            var pi = SceneUtil.Player;
             if (on)
             {
                 _savedCursor = Cursor.visible; _savedLock = Cursor.lockState;
@@ -682,6 +889,9 @@ namespace GHPCHitCam
             try
             {
                 foreach (var rb in u.GetComponentsInChildren<Rigidbody>(true)) { rb.velocity = Vector3.zero; rb.angularVelocity = Vector3.zero; rb.isKinematic = true; }
+                var roots = new List<Transform> { u.transform };
+                foreach (var lf in UnityEngine.Object.FindObjectsOfType<GHPC.Utility.LateFollow>())
+                    if (lf != null && (lf.ParentUnit as Unit) == u && !lf.transform.IsChildOf(u.transform)) roots.Add(lf.transform);
                 int i = _retired++;
                 var g = CodeUtils.GetPositionOnTerrain(new Vector3(_origin.x + (i % 10) * 15f - 70f, 3000f, _origin.z - 600f - (i / 10) * 20f), out bool ok, 6000f);
                 Vector3 to = (ok ? g : _origin) - Vector3.up * 60f;
@@ -695,8 +905,125 @@ namespace GHPCHitCam
                 }
                 foreach (var l in SceneUnitsManager.AllUnitsByFaction) l?.Remove(u);
                 foreach (var l in SceneUnitsManager.AllLiveUnitsByFaction) l?.Remove(u);
+                // targets come back by themselves now and the wrecks add up: one parked is drawn, lit and heard no more,
+                // and later switched off whole (Destroy is what crashed; a burning wreck gets time to burn out first)
+                foreach (var r in roots)
+                {
+                    if (r == null) continue;
+                    foreach (var x in r.GetComponentsInChildren<Renderer>()) x.enabled = false;
+                    foreach (var x in r.GetComponentsInChildren<Light>()) x.enabled = false;
+                    foreach (var x in r.GetComponentsInChildren<ParticleSystem>()) x.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                    foreach (var x in r.GetComponentsInChildren<AudioSource>()) x.enabled = false;
+                    foreach (var x in r.GetComponentsInChildren<GHPC.Audio.VehicleAudioController>()) x.enabled = false;
+                }
+                _parked.Add((roots, Time.realtimeSinceStartup + WreckOffSeconds));
+                _hit.Remove(u);
             }
             catch (Exception e) { HitCamMod.Log.Warning("Proving ground: could not retire " + Recorder.SafeName(u) + ": " + e.Message); }
+        }
+
+        static readonly List<(List<Transform> roots, float at)> _parked = new List<(List<Transform>, float)>();
+        static float WreckOffSeconds => AutoTest.Active && float.TryParse(AutoTest.Opt("wreck_off", ""), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float s) ? s : 45f;
+        static float _nextDownCheck;
+
+        static readonly HashSet<Unit> _hit = new HashSet<Unit>();
+
+        /// A round struck this vehicle's armour (the recorder's pen check).
+        internal static void NoteHit(Unit u) { if (Active && u != null) _hit.Add(u); }
+
+        /// Knocked out: destroyed, or no one left inside who can fight it: dead, or bailed out after it was hit. (A
+        /// truck's crew gets out by itself with an enemy in sight: the M923 came back every 20 s without a shot fired.)
+        static bool KnockedOut(Unit u)
+        {
+            if (u == null || u.Destroyed) return true;
+            var crew = u.CrewManager != null ? u.CrewManager.CrewMembers : null;
+            if (crew == null || crew.Length == 0) return false;
+            if (crew.All(c => c == null || c.Human == null || c.Human.IsDead)) return true;
+            return _hit.Contains(u) && crew.All(c => c == null || c.Evacuated || c.Human == null || c.Human.IsDead);
+        }
+
+        static string Why(Unit u)
+        {
+            if (u == null) return "gone";
+            if (u.Destroyed) return "destroyed";
+            var crew = u.CrewManager != null ? u.CrewManager.CrewMembers : null;
+            return crew == null ? "no crew list" : "crew " + string.Join("/", crew.Select(c => c == null ? "none" : c.Evacuated ? "bailed out" : c.Human == null ? "no body" : c.Human.IsDead ? "dead" : "ok"));
+        }
+
+        /// The targets knocked out a while ago come back (ProvingGroundRespawnSeconds after it was seen, once no hit cam
+        /// is playing: it may be showing that very one).
+        static void AutoRespawn()
+        {
+            float delay = _respawnPref != null ? _respawnPref.Value : 0f;
+            if (delay <= 0f || _respawning || Time.unscaledTime < _nextDownCheck) return;
+            _nextDownCheck = Time.unscaledTime + 0.5f;
+            var due = new List<Slot>();
+            foreach (var s in _slots)
+            {
+                if (s.U == null || !KnockedOut(s.U)) { s.DownAt = -1f; continue; }
+                if (s.DownAt < 0f) s.DownAt = Time.time;
+                else if (Time.time - s.DownAt >= delay) due.Add(s);
+            }
+            if (due.Count == 0 || HitCamPlayer.Current != null || ArmorSim.Active) return;
+            foreach (var s in due) s.DownAt = -1f;
+            HitCamMod.Log.Msg($"Proving ground: {due.Count} target(s) knocked out {delay:0} s ago come back: " + string.Join(", ", due.Select(s => Recorder.SafeName(s.U) + " (" + Why(s.U) + ")")));
+            Respawn(due);
+        }
+
+        static void PutAwayWrecks()
+        {
+            if (_parked.Count == 0) return;
+            float now = Time.realtimeSinceStartup;
+            for (int i = _parked.Count - 1; i >= 0; i--)
+            {
+                if (now < _parked[i].at) continue;
+                foreach (var r in _parked[i].roots) if (r != null) r.gameObject.SetActive(false);
+                _parked.RemoveAt(i);
+                _putAway++;
+                if (Settings.Verbose) HitCamMod.Log.Msg($"Proving ground: a parked wreck switched off ({_putAway} so far, {_parked.Count} still parked)");
+            }
+        }
+
+        static int _putAway;
+        internal static int ParkedCount => _parked.Count;
+
+        static bool EngineSounding(Unit u)
+        {
+            var vac = u != null ? u.GetComponent<GHPC.Audio.VehicleAudioController>() : null;
+            _engineSound = _engineSound ?? AccessTools.Field(typeof(GHPC.Audio.VehicleAudioController), "_engineInstance");
+            return vac != null && _engineSound?.GetValue(vac) != null;
+        }
+
+        /// Self-test respawncycle:<n>:<lab spec>: the target at the lab spec's row and column knocked out n times, each time
+        /// waiting for it to come back by itself (ProvingGroundRespawnSeconds); its engine sound checked each time.
+        public static IEnumerator TestRespawnCycle(string[] spec)
+        {
+            int n = spec.Length > 1 && int.TryParse(spec[1], out int k) ? k : 3;
+            var lab = spec.Skip(2).ToArray();
+            int row = lab.Length > 2 && int.TryParse(lab[2], out int r) ? r : 1, col = lab.Length > 3 && int.TryParse(lab[3], out int c) ? c : 0;
+            var me = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
+            HitCamMod.Log.Msg($"RESPAWN TEST: comes back after {_respawnPref.Value:0.0} s; your {Recorder.SafeName(me)} engine sound {EngineSounding(me)}");
+            for (int i = 0; i < n; i++)
+            {
+                var s = _slots.FirstOrDefault(x => x.Row == row && x.Col == col);
+                if (s == null) { HitCamMod.Log.Warning("RESPAWN TEST: no slot " + row + "/" + col); yield break; }
+                float w0 = Time.realtimeSinceStartup;
+                while ((s.U == null || KnockedOut(s.U) || _respawning) && Time.realtimeSinceStartup - w0 < 40f) yield return null;
+                yield return new WaitForSecondsRealtime(2.5f);
+                var u = s.U;
+                HitCamMod.Log.Msg($"RESPAWN TEST {i + 1}/{n}: {Recorder.SafeName(u)} up, engine sound {EngineSounding(u)}");
+                if (!LabShot(lab, out _, out _, respawnHurt: false)) { HitCamMod.Log.Warning("RESPAWN TEST: lab shot failed"); continue; }
+                float f0 = Time.realtimeSinceStartup;
+                yield return new WaitForSecondsRealtime(1f);
+                while (HitCamPlayer.Current != null && Time.realtimeSinceStartup - f0 < 45f) yield return null;
+                bool ko = KnockedOut(u);
+                float down = Time.realtimeSinceStartup;
+                HitCamMod.Log.Msg($"RESPAWN TEST {i + 1}/{n}: hit cam over {down - f0:0.0} s after the shot; knocked out {ko} (destroyed {u != null && u.Destroyed})");
+                if (!ko) continue;
+                while (s.U == u && Time.realtimeSinceStartup - down < _respawnPref.Value + 30f) yield return null;
+                HitCamMod.Log.Msg($"RESPAWN TEST {i + 1}/{n}: {(s.U != u ? "back" : "NOT back")} {Time.realtimeSinceStartup - down:0.0} s after the hit cam; parked {_parked.Count}, switched off {_putAway}");
+            }
+            yield return new WaitForSecondsRealtime(1f);
         }
 
         static void Respawn(Slot s) => Respawn(new List<Slot> { s });
@@ -771,6 +1098,14 @@ namespace GHPCHitCam
                 case 1: aim += tt.up * b.extents.y * 0.55f; break;     // turret
                 case 2: aim -= tt.up * b.extents.y * 0.35f; break;     // lower hull
                 case 3: aim += tt.up * b.extents.y * 0.25f; break;     // turret ring
+                case 4:
+                {
+                    // the main gun's tube, a third of a metre back from the muzzle
+                    var gun = Arsenal.MainGun(target);
+                    var mz = gun != null ? gun.MuzzleIdentity : null;
+                    if (mz != null) aim = mz.position - mz.forward * 0.35f;
+                    break;
+                }
             }
             Vector3 from = tt.rotation * (Quaternion.Euler(-pitch, yaw, 0f) * Vector3.forward);
             dir = -from.normalized;
@@ -783,7 +1118,7 @@ namespace GHPCHitCam
             round.UseGravity = false;
             round.CurrentSpeed = v;
             round.MaxSpeed = ammo.MuzzleVelocity;
-            round.Shooter = PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit : null;
+            round.Shooter = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
             round.transform.position = start;
             round.transform.rotation = Quaternion.LookRotation(dir);
             ArmorSim.VirtualMuzzle(round, start - dir * range, range, ammo);
@@ -810,7 +1145,7 @@ namespace GHPCHitCam
             round.Guided = false;
             round.UseGravity = true;
             round.CurrentSpeed = round.MaxSpeed = Arsenal.DropSpeed(ammo);
-            round.Shooter = PlayerInput.Instance != null ? PlayerInput.Instance.CurrentPlayerUnit : null;
+            round.Shooter = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;
             round.transform.position = start;
             round.transform.rotation = Quaternion.LookRotation(dir);
             ArmorSim.VirtualMuzzle(round, start + Vector3.up * 300f, 300f, ammo);
@@ -859,7 +1194,7 @@ namespace GHPCHitCam
         }
 
         /// Self-test: lab:<ammo>:<row>:<col>:<aspect or yaw deg>:<aim>:<range m>[:<pitch deg>]
-        public static bool LabShot(string[] spec, out Vector3 aim, out Vector3 dir)
+        public static bool LabShot(string[] spec, out Vector3 aim, out Vector3 dir, bool respawnHurt = true)
         {
             aim = Vector3.zero; dir = Vector3.forward;
             if (!Active) return false;
@@ -872,7 +1207,7 @@ namespace GHPCHitCam
             int row = (int)F(Get(2, "3"), 3), col = (int)F(Get(3, "1"), 1);
             var s = _slots.FirstOrDefault(x => x.Row == row && x.Col == col) ?? _slots.FirstOrDefault(x => !x.Air);
             if (s == null) return false;
-            if (s.U == null || Hurt(s.U)) { Respawn(s); return false; }
+            if (s.U == null || (respawnHurt && Hurt(s.U))) { Respawn(s); return false; }   // (a burst keeps firing at it)
             string asp = Get(4, "side");
             int aspIdx = Array.FindIndex(Aspects, a => a.Equals(asp, StringComparison.OrdinalIgnoreCase));
             float yaw = aspIdx >= 0 ? AspectYaw(aspIdx) : F(asp, 90f);
@@ -918,13 +1253,39 @@ namespace GHPCHitCam
                                (_busy ? (_status ?? "") : "You can't drive or shoot yet: it starts by itself when it's ready."), st);
                 }
             }
-            if (Active && !_open && !ArmorSim.Active && Time.unscaledTime < _hintUntil)
+            // the unit menu open: it lists only your vehicle here (the mission's units stay off the range), so where
+            // another one to drive comes from
+            bool unitMenu = false;
+            try { if (Active) { var um = GHPC.UI.UnitMenu.UnitMenuController.Instance; unitMenu = um != null && um.MenuVisible; } } catch { }
+            if (Active && (!_open || Time.unscaledTime < _briefUntil) && !ArmorSim.Active && (unitMenu || Time.unscaledTime < _hintUntil))
             {
                 float k0 = Mathf.Clamp(Screen.height / 1080f, 0.8f, 2f);
-                var st = new GUIStyle(GUI.skin.box) { fontSize = Mathf.RoundToInt(17 * k0), alignment = TextAnchor.MiddleCenter, wordWrap = true };
+                var st = new GUIStyle(GUI.skin.box) { fontSize = Mathf.RoundToInt(17 * k0), alignment = TextAnchor.MiddleCenter, wordWrap = true, padding = new RectOffset(14, 14, 8, 8) };
                 st.normal.textColor = Color.white;
-                float w = 760f * k0, h = 58f * k0;
-                GUI.Box(new Rect((Screen.width - w) * 0.5f, 90f * k0, w, h), $"PROVING GROUND\n{_keyPref.Value}: tools (your vehicle, place targets, shot lab). You can drive and shoot now.", st);
+                // the range's briefing while it's new (until the tools are opened, or half a minute), then the short hint
+                bool brief = !unitMenu && Time.unscaledTime < _briefUntil;
+                string text = unitMenu
+                    ? $"PROVING GROUND: the unit menu lists only your vehicle here.\nAnother one to drive: {Hotkeys.Label(_keyPref)} > You > pick a vehicle > Drive it."
+                    : brief
+                    ? "WELCOME TO THE PROVING GROUND\n"
+                      + $"Press {Hotkeys.Label(_keyPref)} to open the TOOLSET (changing vehicle, spawning and respawning enemies etc.)\n"
+                      + $"Press {Hotkeys.Label(Settings.ArsenalKey)} to open the round changer, press {Hotkeys.Label(Settings.FireNowKey)} to shoot it (the arcade HUD will calculate the correct arc for you)\n"
+                      + $"Press {Hotkeys.Label(Settings.ConfigKey)} to open the mod's settings for all its functions (works even outside of the proving ground)"
+                    : $"PROVING GROUND\n{Hotkeys.Label(_keyPref)}: tools (your vehicle, place targets, shot lab). You can drive and shoot now.";
+                float w = (brief ? 980f : 760f) * k0;
+                float bh = brief ? 34f * k0 : 0f;
+                float h = Mathf.Max(58f * k0, st.CalcHeight(new GUIContent(text), w)) + bh;
+                var box = new Rect((Screen.width - w) * 0.5f, 90f * k0, w, h);
+                if (brief) st.alignment = TextAnchor.UpperCenter;   // the text on top, the buttons under it
+                GUI.Box(box, text, st);
+                if (brief)
+                {
+                    // close it now, or for good (the tools' You tab and the settings turn it back on)
+                    var bs = new GUIStyle(GUI.skin.button) { fontSize = Mathf.RoundToInt(15 * k0) };
+                    float bw = 170f * k0, gap = 10f * k0, y = box.yMax - bh + 2f * k0;
+                    if (GUI.Button(new Rect(box.center.x - bw - gap * 0.5f, y, bw, bh - 8f * k0), "Close", bs)) { _briefUntil = 0f; _hintUntil = 0f; }
+                    if (GUI.Button(new Rect(box.center.x + gap * 0.5f, y, bw, bh - 8f * k0), "Don't show again", bs)) BriefNever();
+                }
             }
             if (!Active || !_open || ArmorSim.Active) return;
             float k = Mathf.Clamp(Screen.height / 1080f, 0.8f, 2f);
@@ -939,7 +1300,7 @@ namespace GHPCHitCam
 
         static void WindowBody(int id)
         {
-            GUILayout.Label($"{_keyPref.Value}: hide this window (drive and shoot with it hidden). F8: any round for your own gun.");
+            GUILayout.Label($"{Hotkeys.Label(_keyPref)}: hide this window (drive and shoot with it hidden). {Hotkeys.Label(Settings.ArsenalKey)}: any round for your own gun. {Hotkeys.Label(Settings.ConfigKey)}: the mod's settings.");
             _tab = GUILayout.Toolbar(_tab, new[] { "You", "Targets", "Shot lab" });
             GUILayout.Space(6);
             if (_tab == 0) TabYou();
@@ -958,8 +1319,11 @@ namespace GHPCHitCam
             string pick = null;
             foreach (var x in units)
             {
-                var label = (x.key == current ? "> " : "   ") + (x.army.Length > 0 ? x.army + "  ·  " : "") + x.name;
+                var label = (x.key == current ? "> " : "   ") + (x.army.Length > 0 ? x.army + "  ·  " : "") + x.name + ModdedVehicles.Tag(x.key);
+                var oc = GUI.contentColor;
+                if (ModdedVehicles.IsModded(x.key)) GUI.contentColor = ModdedVehicles.TagColor;   // a mod's vehicle, or one a mod changes
                 if (GUILayout.Button(label, GUI.skin.label)) pick = x.key;
+                GUI.contentColor = oc;
             }
             GUILayout.EndScrollView();
             return pick;
@@ -969,7 +1333,7 @@ namespace GHPCHitCam
         {
             GUILayout.Label("YOUR VEHICLE: any the game has (tanks, IFVs, APCs, scout cars, trucks, jeeps)");
             GUILayout.BeginHorizontal();
-            GUILayout.Label(NameOf(_myKey ?? ""), GUILayout.Width(250));
+            GUILayout.Label(NameOf(_myKey ?? "") + ModdedVehicles.Tag(_myKey), GUILayout.Width(320));
             if (GUILayout.Button(_picking == 1 ? "Close list" : "Change...")) _picking = _picking == 1 ? 0 : 1;
             GUILayout.EndHorizontal();
             if (_picking == 1) { var p = PickList(_myKey); if (p != null) { _myKey = p; _picking = 0; } }
@@ -977,8 +1341,13 @@ namespace GHPCHitCam
             _myRange = Mathf.Round(GUILayout.HorizontalSlider(_myRange, 0f, Mathf.Max(_rowsPref.Value, 1) * RowStep) / 50f) * 50f;
             _myBack = GUILayout.Toggle(_myBack, " Facing back toward the firing line");
             GUILayout.Space(4);
-            if (GUILayout.Button("Drive it", GUILayout.Height(30)) && !string.IsNullOrEmpty(_myKey)) MelonCoroutines.Start(SpawnMine(_myKey, _myRange, _myBack));
+            if (GUILayout.Button("Drive it", GUILayout.Height(30)) && !string.IsNullOrEmpty(_myKey))
+            {
+                MelonCoroutines.Start(SpawnMine(_myKey, _myRange, _myBack));
+                if (_autoOpened) ShowWindow(false);   // opened for this: straight to driving
+            }
             GUILayout.Label("Kept when you restart the mission.");
+            _briefPref.Value = GUILayout.Toggle(_briefPref.Value, " Briefing when the range is ready");
         }
 
         static void TabTargets()
