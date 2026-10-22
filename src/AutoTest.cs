@@ -507,6 +507,7 @@ namespace GHPCHitCam
                 if (spec[0] == "erashots") { yield return FpsProbe.EraShots(spec); continue; }
                 if (spec[0] == "layerscan") { yield return FpsProbe.LayerScan(spec); continue; }
                 if (spec[0] == "keydump") { yield return FpsProbe.KeyDump(spec); continue; }
+                if (InputProbe.Step(spec, out var input)) { yield return input; continue; }
                 if (spec[0] == "costtypes") { yield return FpsProbe.CostTypes(spec); continue; }
                 if (spec[0] == "wait") { yield return new WaitForSecondsRealtime(float.Parse(spec[1], System.Globalization.CultureInfo.InvariantCulture)); continue; }
                 if (spec[0] == "gamefx") { FpsProbe.HideGameFx = spec.Length > 1 && spec[1] == "off"; continue; }

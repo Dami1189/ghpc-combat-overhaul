@@ -417,6 +417,7 @@ namespace GHPCHitCam
                     {
                         if (m == null || string.IsNullOrEmpty(m.Name) || m.Name == "TC" || m.Name == "RTS_CAMERA") continue;
                         if (!ModdedVehicles.Spawnable(m)) continue;   // a lookup-only entry (no prefab), e.g. FEP's binocular fix
+                        if (!ModdedVehicles.Released(m)) continue;   // the game's own mission customizer leaves it out
                         var c = m.Class;
                         if (!(c == UnitClass.Tank || c == UnitClass.IFV || c == UnitClass.APC || c == UnitClass.Scout || c == UnitClass.Transport || c == UnitClass.FireSupport)) continue;
                         string army = "";
@@ -870,7 +871,8 @@ namespace GHPCHitCam
             }
             else
             {
-                if (pi != null) try { _setGun?.Invoke(pi, new object[] { _savedGun }); _setCam?.Invoke(pi, new object[] { _savedCam }); } catch { }
+                bool menu = SceneUtil.GameMenuUp(pi);
+                if (pi != null) try { _setGun?.Invoke(pi, new object[] { _savedGun && menu }); _setCam?.Invoke(pi, new object[] { _savedCam && (menu || pi.IsMapActive) }); } catch { }
                 Cursor.visible = _savedCursor; Cursor.lockState = _savedLock;
             }
         }

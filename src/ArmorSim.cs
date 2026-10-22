@@ -257,8 +257,9 @@ namespace GHPCHitCam
             var pi = SceneUtil.Player;
             if (pi != null && _haveSaved)
             {
-                try { _setGun?.Invoke(pi, new object[] { _savedGun }); _setCam?.Invoke(pi, new object[] { _savedCam }); } catch { }
-                pi.BlockKeyboardInput = _savedKb;
+                bool menu = SceneUtil.GameMenuUp(pi);
+                try { _setGun?.Invoke(pi, new object[] { _savedGun && menu }); _setCam?.Invoke(pi, new object[] { _savedCam && (menu || pi.IsMapActive) }); } catch { }
+                pi.BlockKeyboardInput = _savedKb && SceneUtil.InPlanning();
             }
             _haveSaved = false;
             Cursor.visible = _savedCursor;
@@ -287,6 +288,7 @@ namespace GHPCHitCam
                         if (m == null || string.IsNullOrEmpty(m.Name) || !IsVehicleClass(m.Class)) continue;
                         if (m.Name == "TC") continue;   // the easter-egg cheese
                         if (!ModdedVehicles.Spawnable(m)) continue;   // a lookup-only entry (no prefab), e.g. FEP's binocular fix
+                        if (!ModdedVehicles.Released(m)) continue;   // the game's own mission customizer leaves it out
                         string army = "";
                         try { army = m.Army != null && m.Army.Info != null ? m.Army.Info.Abbreviation ?? "" : ""; } catch { }
                         _vehicles.Add(new VehicleEntry { Key = m.Name, Name = string.IsNullOrEmpty(m.FriendlyName) ? m.Name : m.FriendlyName, Army = army, Class = m.Class });

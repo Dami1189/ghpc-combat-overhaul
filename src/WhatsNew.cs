@@ -27,7 +27,7 @@ namespace GHPCHitCam
         {
             new Notes
             {
-                Version = "1.1.0", Date = "October 2026",
+                Version = "1.1.1", Date = "October 2026",
                 New = new[]
                 {
                     "What's new page in the main menu, and a short welcome in the settings on the first start.",
@@ -36,8 +36,8 @@ namespace GHPCHitCam
                     "Proving ground reworked. It loads on the game's M1 Abrams training range and draws only the deck and the vehicles, no map under it (looks like a VR range, and about twice the frame rate). The vehicle list opens when it's ready, a short briefing on the keys, and knocked-out targets come back by themselves after 20 s (all of it in the settings if you want to change it).",
                     "Armor Sim loads on the same quiet range and starts on the M1IP, which everyone has. Right mouse turns around the vehicle, middle mouse moves the view (double click to centre).",
                     "Light hit cam for autocannons. A 20-30 mm burst plays a different way: one x-ray for the whole burst, the camera holds still and every round arrives into it, with simple holes - much more fps.",
-                    "Calmer defaults. A steady camera, one constant slow motion, the crew stay in their seats. If your settings were untouched they switch over by themselves; the Cinematic preset brings the ragdolls and the rest of \"cool\" effects back.",
-                    "New keys that don't clash with the game. The old ones sat on the game's own keys (waypoints, screenshot, weapon switch, cruise speed, the game's AAR). The new ones are in the list below: none of them are used by the game, and the ones that change the mission you're in need Alt so you won't hit them by accident. They do nothing while the game's own AAR is open. Rebind anything in F12 > Keys (Alt / Ctrl / Shift work too); it tells you if the game already uses a key. If you never changed your keys, they move by themselves.",
+                    "Calmer defaults. A steadier camera, one constant slow motion for x-ray (WT style), the crew stay in their seats. If your settings were untouched they switch over by themselves; the Cinematic preset brings the ragdolls and the rest of the effects back.",
+                    "New keys that don't clash with the game. The old ones sat on the game's own keys (waypoints, screenshot, weapon switch, cruise speed, the game's AAR). The new ones are in the list below: none of them are used by the game, and the ones that change the mission you're in need Alt so you won't hit them by accident. They do nothing while the game's own AAR is open. Rebind anything in F12 > Keys (Alt / Ctrl / Shift work too); it tells you if the game already uses a key. If you never changed your keys, they move by themselves. Keys can also be unbound if needed.",
                     "\"Later ammo blasts\" setting: how loud a vehicle's remaining ammo is after the first big explosion. (Realistically it would still be loud but it can get pretty intense with all the detonations so I offer the option to lessen the effect)",
                 },
                 Keys = new[]
@@ -54,6 +54,9 @@ namespace GHPCHitCam
                 },
                 Fixes = new[]
                 {
+                    "Closing the settings window with ESC also opened the game's own menu, and until that was closed again Q (restock, platoon orders) and Tab (switching vehicles) did nothing. ESC now closes only the window.",
+                    "The settings window, the Armor Sim and the proving ground tools could leave the game's input held after they closed (the gun or the camera not answering, Q and Tab dead), when the game's Q menu or a mission's planning map was up around them.",
+                    "With another mod's hook on the game's spawn failing (seen in a mission with several mods), the test range lost targets that then stood there untracked and fighting. They are taken as spawned now, and the log says which code failed.",
                     "Low frame rate in the main menu (56 fps instead of 144). Should now be smooth sailing.",
                     "The main menu lost ARMOR SIM, PROVING GROUND and the update box after leaving a mission, broke while one of the game's pages was open, and sometimes had no mouse cursor after the proving ground. If the mod menu still disappears after exiting a mission, the logs should contain the reason - please let me know then!",
                     "Couldn't switch vehicles in the next mission after a proving ground.",
@@ -71,7 +74,7 @@ namespace GHPCHitCam
                 },
                 Coming = new[]
                 {
-                    "Gun barrel damage physics: a barrel barely holding on sags, swings and can tear off (maybe even with an optional real collider for trees and houses for the hardcore players?).",
+                    "Gun barrel damage physics: a barrel barely holding on sags, swings and can tear off - possibly with real colliders for house/trees collisions.",
                     "Onboarding: on the first start you build your own preset by comparing the options side by side.",
                     "ERA physics.",
                     "Further optimizations.",
@@ -80,11 +83,11 @@ namespace GHPCHitCam
                 },
                 Known = new[]
                 {
-                    "Fulda's Leopard 2KA3 'Adler' from the proving ground or the Armor Sim can come without its 20 mm gun: its ammo only loads when a vehicle carrying it is in the mission. Working on it with the Fulda dev.",
                     "ERA is the game's own for now: its armour counts, but the x-ray doesn't show the bricks going off yet.",
                     "On the empty proving ground one far hill can still show on the horizon.",
                     "Autocannon bursts can still stutter a little.",
                     "Helicopters in the x-ray hit cam don't show their whole model correctly yet.",
+                    "A proving ground built inside a mission (Alt+Home): vehicle mods that get their parts ready only for the vehicles a mission starts with (PIL) can't convert the others, so those come as the game's own.",
                 },
             },
             new Notes

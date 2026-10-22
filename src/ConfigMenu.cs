@@ -21,7 +21,7 @@ namespace GHPCHitCam
     {
         public static bool IsOpen { get; private set; }
         public static bool PausedByMenu { get; private set; }
-        static bool _cursorVisible, _blockKb, _dirty;
+        static bool _cursorVisible, _dirty;
         static EventSystem _uiOff;      // the game's menu input, off while the window is up (clicks would fall through to it)
         static CursorLockMode _cursorLock;
         static int _tab;
@@ -167,8 +167,6 @@ namespace GHPCHitCam
                 {
                     Cursor.visible = true;
                     Cursor.lockState = CursorLockMode.None;
-                    var pi = SceneUtil.Player;
-                    if (pi != null) pi.BlockKeyboardInput = true;
                 }
             }
             catch (Exception e) { HitCamMod.Log.Warning("Settings window: " + e.Message); }
@@ -193,7 +191,6 @@ namespace GHPCHitCam
             _cursorVisible = Cursor.visible;
             _cursorLock = Cursor.lockState;
             var pi = SceneUtil.Player;
-            if (pi != null) _blockKb = pi.BlockKeyboardInput;
             PausedByMenu = false;
             try
             {
@@ -219,10 +216,50 @@ namespace GHPCHitCam
             PausedByMenu = false;
             if (_uiOff != null) _uiOff.enabled = true;
             _uiOff = null;
-            var pi = SceneUtil.Player;
-            if (pi != null) pi.BlockKeyboardInput = _blockKb;
+            _closedFrame = Time.frameCount;
             Cursor.visible = _cursorVisible;
             Cursor.lockState = _cursorLock;
+        }
+
+        // ------------------------------------------------------------------ the game's own input while the window is up
+
+        static int _closedFrame = -10;
+
+        /// The game's player input (driving, the gun, Q, Tab, ESC...) waits while the window is up, and on the frame it
+        /// closes: the ESC that closed it doesn't also open the game's menu. Holding the game's whole input update keeps
+        /// its own state (BlockKeyboardInput, which the game sets in a mission's planning phase) untouched; setting that
+        /// and putting it back later restored a stale value.
+        public static bool HoldsGameInput => IsOpen || Time.frameCount - _closedFrame <= 1;
+
+        public static void Install(HarmonyLib.Harmony h)
+        {
+            try
+            {
+                var upd = HarmonyLib.AccessTools.Method(typeof(PlayerInput), "Update");
+                h.Patch(upd, prefix: new HarmonyLib.HarmonyMethod(typeof(ConfigMenu).GetMethod(nameof(PlayerUpdatePrefix), BindingFlags.Static | BindingFlags.NonPublic)),
+                    finalizer: new HarmonyLib.HarmonyMethod(typeof(ConfigMenu).GetMethod(nameof(PlayerUpdateFinalizer), BindingFlags.Static | BindingFlags.NonPublic)));
+            }
+            catch (Exception e) { HitCamMod.Log.Warning("Settings window: could not hook the game's player input: " + e.Message); }
+        }
+
+        static bool PlayerUpdatePrefix() => !HoldsGameInput;
+
+        static readonly Dictionary<string, int> _inputErrors = new Dictionary<string, int>();
+
+        /// An error in the game's player input update (another mod's hook in the Q menu, say) is written to the log with
+        /// where it came from, a few times each: the game itself only stops that frame's input there.
+        static Exception PlayerUpdateFinalizer(Exception __exception)
+        {
+            if (__exception == null) return null;
+            try
+            {
+                string key = __exception.GetType().Name + __exception.Message + (__exception.StackTrace ?? "").Split('\n').FirstOrDefault();
+                _inputErrors.TryGetValue(key, out int n);
+                _inputErrors[key] = n + 1;
+                if (n < 3) HitCamMod.Log.Warning("The game's player input update failed (the code at the top of this is where, often another mod's hook): " + __exception);
+            }
+            catch { }
+            return __exception;
         }
 
         static void Save()

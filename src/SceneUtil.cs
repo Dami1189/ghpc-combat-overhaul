@@ -10,6 +10,29 @@ namespace GHPCHitCam
         static PlayerInput _pi;
         static float _lookedAt = -1f, _piLookedAt = -1f;
 
+        /// One of the game's own menus that holds the gun and the camera is up (the Q menu, the unit menu, a menu page).
+        /// A window of the mod that set those holds puts back only what one of these still wants: the value it saw when
+        /// it opened can be stale by then (the Q menu closed in between).
+        public static bool GameMenuUp(PlayerInput pi)
+        {
+            try
+            {
+                if (pi == null) return false;
+                if (pi.ContextMenuRoot != null && pi.ContextMenuRoot.gameObject.activeInHierarchy) return true;
+                var um = GHPC.UI.UnitMenu.UnitMenuController.Instance;
+                if (um != null && um.MenuVisible) return true;
+                return pi.MenuController != null && pi.MenuController.ActiveMenu != null;
+            }
+            catch { return false; }
+        }
+
+        /// The game blocks the keyboard only in a mission's planning phase (the map before it starts).
+        public static bool InPlanning()
+        {
+            try { return GHPC.State.MissionStateController.CurrentState == GHPC.State.MissionState.Planning; }
+            catch { return false; }
+        }
+
         /// The game's PlayerInput (null in the main menu). Its own getter, like the unit manager's, looks the whole scene
         /// over on every call while there is none: the HUD, the settings window and the proving ground asked for it each
         /// frame and in every OnGUI pass, ~10 ms a frame in the main menu. Kept once found, looked for 4 times a second.

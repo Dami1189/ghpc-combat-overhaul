@@ -453,8 +453,27 @@ namespace GHPCHitCam
         {
             BeforeSpawn(sp, key);
             EnsurePrefab(sp, key);
-            return sp.SpawnUnit(key, md, (GHPC.AI.WaypointHolder)null, (Transform)null);
+            HashSet<Unit> before = null;
+            if (!string.IsNullOrEmpty(md?.Name))
+                try { before = new HashSet<Unit>(UnityEngine.Object.FindObjectsOfType<Unit>().Where(u => u != null && u.gameObject.name == md.Name)); } catch { }
+            try { return sp.SpawnUnit(key, md, (GHPC.AI.WaypointHolder)null, (Transform)null); }
+            catch (Exception e)
+            {
+                // another mod's hook on the spawn failing after the vehicle was made (seen in a mission with several mods: the
+                // test range lost half its targets, which stood there anyway, untracked and fighting): the vehicle is
+                // there, only the call threw. It's taken as spawned; the error goes to the log once a vehicle.
+                Unit made = null;
+                if (before != null)
+                    try { made = UnityEngine.Object.FindObjectsOfType<Unit>().FirstOrDefault(u => u != null && u.gameObject.name == md.Name && !before.Contains(u)); } catch { }
+                if (_spawnHookErrs.Add(key))
+                    HitCamMod.Log.Warning($"Spawning {key}: {(made != null ? "the vehicle came, but a hook on the game's spawn failed" : "the spawn failed")} " +
+                        $"(the code it failed in is at the top of this, often another mod's): {e}");
+                if (made != null) return made;
+                throw;
+            }
         }
+
+        static readonly HashSet<string> _spawnHookErrs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         static void EnsurePrefab(GHPC.Mission.UnitSpawner sp, string key)
         {
@@ -525,6 +544,13 @@ namespace GHPCHitCam
                 return true;
             }
             catch { return true; }
+        }
+
+        /// The vehicle lists offer the same units as the game's own mission customizer (the entries marked AllowInCustomizer).
+        public static bool Released(GHPC.Mission.UnitPrefabLookupScriptable.UnitPrefabMetadata m)
+        {
+            try { return m != null && m.AllowInCustomizer; }
+            catch { return false; }
         }
 
         /// The unit table's entries a vehicle mod added. FEP puts its Leopard 2K in as a second entry on the Leopard 1A4's

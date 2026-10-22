@@ -116,6 +116,8 @@ namespace GHPCHitCam
             _busy = false;
         }
 
+        static readonly HashSet<string> _spawnErrs = new HashSet<string>();
+
         internal static Unit Spawn(UnitSpawner sp, string key, Vector3 pos, Quaternion rot, Faction f, bool ground)
         {
             try
@@ -145,6 +147,7 @@ namespace GHPCHitCam
             catch (Exception e)
             {
                 HitCamMod.Log.Warning($"Test range: spawn {key} failed: {e.Message}");
+                if (_spawnErrs.Add(key)) HitCamMod.Log.Warning(e.ToString());   // the whole error once a vehicle
                 return null;
             }
         }

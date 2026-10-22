@@ -2,7 +2,7 @@ using System;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(GHPCHitCam.HitCamMod), "GHPC Combat Overhaul", "1.1.0", "Damian")]
+[assembly: MelonInfo(typeof(GHPCHitCam.HitCamMod), "GHPC Combat Overhaul", "1.1.1", "Damian")]
 [assembly: MelonGame("Radian Simulations LLC", "GHPC")]
 
 namespace GHPCHitCam
@@ -37,6 +37,7 @@ namespace GHPCHitCam
             AfterAction.Install(HarmonyInstance);
             KillFeed.Install(HarmonyInstance);
             BlastSound.Install(HarmonyInstance);
+            ConfigMenu.Install(HarmonyInstance);
             AutoTest.Init();
             PrefsRescue.Apply(Settings.Cat);
             Settings.Migrate();
