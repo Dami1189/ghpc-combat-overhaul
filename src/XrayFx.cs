@@ -3,14 +3,13 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Fire and explosions in the x-ray, readable at a glance like War Thunder's: everything is additive light (or dark
-    /// alpha smoke) over the black hull, sized from the physics (fireball ~ charge^(1/3), flames from what burns).
+    /// fire and explosions in the x-ray, readable at a glance like War Thunder's: all additive light (or dark alpha
+    /// smoke) over the black hull, sized from the physics (fireball ~ charge^(1/3), flames from what burns)
     internal static class XrayFxMeshes
     {
         static Mesh _tongue, _ring, _puff;
 
-        /// A soft round puff for alpha blending (white, opaque in the middle, transparent at the rim; tint it dark for
-        /// smoke). Diameter 1, XY plane.
+        /// soft round puff for alpha blending (white, opaque in the middle, clear at the rim; tint dark for smoke), diameter 1, XY plane
         public static Mesh Puff
         {
             get
@@ -42,8 +41,8 @@ namespace GHPCHitCam
             }
         }
 
-        /// A flame tongue: a vertical teardrop strip, white-yellow at the base through orange to a dark red tip,
-        /// black at its sides (soft edges when drawn additive). Unit height, base at the origin.
+        /// flame tongue: vertical teardrop strip, white-yellow at the base through orange to a dark red tip, black at the
+        /// sides (soft edges when drawn additive). unit height, base at origin
         public static Mesh Tongue
         {
             get
@@ -79,7 +78,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// A thin bright ring (dark inside and out), unit radius in the XY plane: the shock front seen face-on.
+        /// thin bright ring (dark inside and out), unit radius in XY plane: the shock front seen face-on
         public static Mesh Ring
         {
             get
@@ -113,7 +112,7 @@ namespace GHPCHitCam
         }
     }
 
-    /// A camera-facing particle cloud in one dynamic mesh: sparks / embers as short streaks along their motion.
+    /// camera-facing particle cloud in one dynamic mesh: sparks / embers as short streaks along their motion
     internal class Sparks
     {
         public struct P { public Vector3 P0, V; public float T0, Life, Size; public Color C; }
@@ -145,7 +144,7 @@ namespace GHPCHitCam
         public int Capacity => _v.Length / 4;
         public void Add(P p) { if (_p.Count < Capacity) _p.Add(p); else { _p[Random.Range(0, _p.Count)] = p; } }
 
-        /// t = session time; cam = camera position in the parent's space.
+        /// t = session time; cam = camera pos in the parent's space
         public void Tick(float t, Vector3 cam)
         {
             int n = _p.Count;
@@ -180,8 +179,8 @@ namespace GHPCHitCam
         public void Dispose() { if (_mesh != null) Object.Destroy(_mesh); }
     }
 
-    /// Something burning: flame tongues licking up from a hot base glow, a smoke column, rising embers.
-    /// Propellant burns as a fierce jet: taller, whiter, faster, more of everything.
+    /// something burning: flame tongues licking up from a hot base glow, smoke column, rising embers.
+    /// propellant burns as a fierce jet: taller, whiter, faster, more of everything
     internal class XrayFire
     {
         public Vector3 L;
@@ -197,7 +196,7 @@ namespace GHPCHitCam
         readonly System.Random _rnd;
 
         public float Start => _start;
-        /// A fire on something that moves (a burning crewman).
+        /// fire on something that moves (burning crewman)
         public void MoveTo(Vector3 l) { L = l; _t.localPosition = l; }
 
         public XrayFire(Transform parent, Vector3 l, float size, bool jet, float start, int seed)
@@ -237,7 +236,7 @@ namespace GHPCHitCam
             Quaternion yaw = flat.sqrMagnitude > 1e-6f ? Quaternion.LookRotation(-flat.normalized, Vector3.up) : Quaternion.identity;
             Quaternion face = Quaternion.LookRotation(-cam.normalized, Vector3.up);
             float s = _size * grow;
-            // the hot base and its white core, pulsing
+            // hot base and its white core, pulsing
             float pulse = 0.85f + 0.15f * Mathf.Sin(now * 17f) + 0.08f * Mathf.Sin(now * 41f);
             _glow.transform.localRotation = face;
             _glow.transform.localScale = Vector3.one * s * (_jet ? 2.6f : 2.1f) * pulse;
@@ -245,7 +244,7 @@ namespace GHPCHitCam
             _core.transform.localRotation = face;
             _core.transform.localScale = Vector3.one * s * (_jet ? 1.1f : 0.7f) * pulse;
             Vis.SetColor(_core, new Color(1f, 0.92f, 0.7f) * (_jet ? 1f : 0.7f));
-            // tongues: each one rises, stretches, detaches and dies on its own cycle (flames lick, they don't scale)
+            // tongues: each rises, stretches, detaches and dies on its own cycle (flames lick, they don't scale)
             float speed = _jet ? 2.6f : 1.5f;
             for (int i = 0; i < _tongues.Length; i++)
             {
@@ -264,7 +263,7 @@ namespace GHPCHitCam
                 float fade = Mathf.Sin(Mathf.PI * Mathf.Clamp01(u * 1.15f));
                 Vis.SetColor(_tongues[i], Color.white * (0.55f + 0.45f * fade) * (_jet ? 1f : 0.85f) * grow);
             }
-            // a dark smoke column rising out of the flames
+            // dark smoke column rising out of the flames
             for (int i = 0; i < _smoke.Length; i++)
             {
                 float cyc = (age * 0.35f + i / (float)_smoke.Length);
@@ -290,9 +289,8 @@ namespace GHPCHitCam
         public void Dispose() => _embers.Dispose();
     }
 
-    /// An explosion inside the vehicle: white flash, a fireball of many hot puffs growing on the blast's own time
-    /// scale and cooling from white through orange to dull red, a shock ring, sparks thrown out, a lingering glow and
-    /// smoke filling the space afterwards.
+    /// explosion inside the vehicle: white flash, fireball of many hot puffs growing on the blast's own time scale and
+    /// cooling white -> orange -> dull red, shock ring, sparks thrown out, then a lingering glow and smoke filling the space
     internal class XrayExplosion
     {
         readonly Transform _t;
@@ -352,7 +350,7 @@ namespace GHPCHitCam
 
         static float Ease(float x) { x = Mathf.Clamp01(x); return 1f - (1f - x) * (1f - x) * (1f - x); }
 
-        /// The full-frame flash the UI draws (0..1).
+        /// full-frame flash the UI draws (0..1)
         public float Flash(float now) { float a = now - _start; return a < 0f ? 0f : Mathf.Clamp01(1f - a / (_big ? 0.5f : 0.3f)); }
 
         public bool Done(float now) => now - _start > (_big ? 6f : 3.5f);
@@ -362,14 +360,14 @@ namespace GHPCHitCam
             float age = now - _start;
             Vector3 cam = _t.InverseTransformPoint(camWorld);
             Quaternion face = Quaternion.LookRotation(-cam.normalized, Vector3.up);
-            // 1. the white flash
+            // 1. white flash
             float fl = Mathf.Clamp01(1f - age / 0.15f);
             fl *= fl;
             _flash.enabled = fl > 0.01f && age >= 0f;
             _flash.transform.localRotation = face;
             _flash.transform.localScale = Vector3.one * _r * 1.7f;
             Vis.SetColor(_flash, new Color(1f, 0.97f, 0.9f) * 0.8f * fl);
-            // 2. the fireball: hot puffs grow fast, then cool and fade; the hottest light is in the middle
+            // 2. fireball: hot puffs grow fast, then cool and fade, hottest light in the middle
             float grow = _big ? 0.45f : 0.3f, life = _big ? 1.6f : 1.0f;
             for (int i = 0; i < _puff.Length; i++)
             {
@@ -388,7 +386,7 @@ namespace GHPCHitCam
                 r.transform.localScale = Vector3.one * _pSize[i] * (0.15f + 1.25f * k);
                 Vis.SetColor(r, c * (1f - cool * cool) * 0.6f * flick);
             }
-            // 3. the shock front: fast, thin, gone in a quarter second
+            // 3. shock front: fast, thin, gone in a quarter second
             float sk = age / 0.28f;
             _ring.enabled = sk >= 0f && sk < 1f;
             if (_ring.enabled)
@@ -397,7 +395,7 @@ namespace GHPCHitCam
                 _ring.transform.localScale = Vector3.one * _r * (0.3f + 2.4f * Ease(sk));
                 Vis.SetColor(_ring, new Color(0.9f, 0.95f, 1f) * (1f - sk) * 0.8f);
             }
-            // 4. the glow left behind (hot gas, burning residue)
+            // 4. glow left behind (hot gas, burning residue)
             float g = age < 0f ? 0f : Mathf.Clamp01(age / 0.2f) * Mathf.Clamp01(1f - (age - 0.6f) / (_big ? 3.5f : 2f));
             _glow.enabled = g > 0.01f;
             _glow.transform.localRotation = face;
@@ -423,11 +421,10 @@ namespace GHPCHitCam
         public void Dispose() => _sparks.Dispose();
     }
 
-    /// A shaped-charge jet as the real thing: a thin stream of hot copper with a velocity gradient (tip ~8 km/s, tail
-    /// ~2 km/s), so it stretches as it flies; after a few tens of microseconds it necks and breaks into a string of
-    /// particles; a fat, slow slug trails far behind. The tip is where the game's jet is; every other part of the
-    /// stream sits at the distance its own speed carried it from the formation point. White-hot at the tip, orange
-    /// along the body, dull red at the tail, with a soft glow around it.
+    /// shaped-charge jet like the real thing: thin stream of hot copper with a velocity gradient (tip ~8 km/s, tail
+    /// ~2 km/s) so it stretches as it flies; after a few tens of us it necks and breaks into a string of particles; a fat
+    /// slow slug trails far behind. tip = where the game's jet is, every other part sits where its own speed carried it
+    /// from the formation point. white-hot tip, orange body, dull red tail, soft glow around
     internal class JetFx
     {
         const int Segs = 30;
@@ -441,7 +438,7 @@ namespace GHPCHitCam
 
         public JetFx(Transform parent, float calibre)
         {
-            _w = Mathf.Clamp(0.05f * calibre, 0.003f, 0.008f);         // a few mm of copper, shown a little thicker
+            _w = Mathf.Clamp(0.05f * calibre, 0.003f, 0.008f);         // a few mm of copper, drawn a bit thicker
             _breakup = 4e-4f * Mathf.Clamp(calibre / 0.1f, 0.5f, 2f) * 0.1f;   // ~40 us per 100 mm of charge
             _mesh = new Mesh { name = "heat jet" };
             _mesh.MarkDynamic();
@@ -463,8 +460,8 @@ namespace GHPCHitCam
 
         public void Hide() { _r.enabled = _form.enabled = _slug.enabled = false; }
 
-        /// from = formation point, tip = where the jet is now, age = sim seconds since it formed, now = session time,
-        /// fade = 1 while it is alive, falling to 0 once it is spent. cam in the parent's space.
+        /// from = formation point, tip = where the jet is now, age = sim s since it formed, now = session time,
+        /// fade = 1 while alive, drops to 0 once spent. cam in the parent's space
         public void Update(Vector3 from, Vector3 tip, float age, float now, float fade, Vector3 cam)
         {
             if (_formAt < 0f) _formAt = now;
@@ -478,7 +475,7 @@ namespace GHPCHitCam
                 Vector3 mid = from + axis * 0.6f;
                 Vector3 side = Vector3.Cross(dir, (cam - mid).normalized);
                 side = side.sqrMagnitude > 1e-6f ? side.normalized : Vector3.up;
-                // after break-up the stream is a string of particles with gaps between them
+                // after break-up the stream is a string of particles with gaps
                 float broken = Mathf.Clamp01((age - _breakup) / (2f * _breakup));
                 for (int i = 0; i <= Segs; i++)
                 {
@@ -488,15 +485,15 @@ namespace GHPCHitCam
                     // each part's distance from the formation point grows with its own speed
                     float dA = len * Mathf.Lerp(TailRatio, 1f, fm - half), dB = len * Mathf.Lerp(TailRatio, 1f, fm + half);
                     Vector3 a = from + dir * dA, b = from + dir * dB;
-                    float w = _w * Mathf.Lerp(1.4f, 0.7f, fm);               // the tail is thicker
+                    float w = _w * Mathf.Lerp(1.4f, 0.7f, fm);               // tail is thicker
                     Color core = fm > 0.9f ? Color.Lerp(new Color(1f, 0.85f, 0.55f), new Color(1f, 0.98f, 0.95f), (fm - 0.9f) / 0.1f)
                                : Color.Lerp(new Color(0.8f, 0.18f, 0.04f), new Color(1f, 0.7f, 0.25f), fm / 0.9f);
                     int k = i * 8;
-                    // the bright core
+                    // bright core
                     _v[k] = a - side * w; _v[k + 1] = a + side * w; _v[k + 2] = b + side * w; _v[k + 3] = b - side * w;
                     Color cc = core * fade;
                     _c[k] = _c[k + 1] = _c[k + 2] = _c[k + 3] = cc;
-                    // a soft glow around it
+                    // soft glow around it
                     float g = w * 4f;
                     _v[k + 4] = a - side * g; _v[k + 5] = a + side * g; _v[k + 6] = b + side * g; _v[k + 7] = b - side * g;
                     _c[k + 4] = _c[k + 5] = _c[k + 6] = _c[k + 7] = core * (0.18f * fade);
@@ -504,14 +501,14 @@ namespace GHPCHitCam
                 _mesh.vertices = _v;
                 _mesh.colors = _c;
                 _mesh.RecalculateBounds();
-                // the slug: slow, fat, glowing
+                // slug: slow, fat, glowing
                 _slug.enabled = true;
                 _slug.transform.localPosition = from + dir * (len * SlugRatio);
                 _slug.transform.localRotation = Quaternion.LookRotation(_slug.transform.localPosition - cam);
                 _slug.transform.localScale = Vector3.one * _w * 9f;
                 Vis.SetColor(_slug, new Color(1f, 0.45f, 0.1f) * 0.8f * fade);
             }
-            // the liner collapsing: a white flash where the jet forms
+            // liner collapsing: white flash where the jet forms
             float fa = now - _formAt;
             float ff = Mathf.Clamp01(1f - fa / 0.18f);
             _form.enabled = ff > 0.01f;
@@ -527,10 +524,10 @@ namespace GHPCHitCam
         public void Dispose() { if (_mesh != null) Object.Destroy(_mesh); }
     }
 
-    /// Burning propellant venting from a broken case or a burning charge: a roaring blowtorch. The grains burn at a few
-    /// hundred bar inside their case, so the gas leaves the rupture at hundreds of m/s: white-hot at the root, yellow
-    /// and orange further out, ragged turbulent puffs racing along it, burning grains streaming out as sparks, dark
-    /// smoke rolling off the end. It flares as the pressure in the rack builds, and is snuffed out when it detonates.
+    /// burning propellant venting from a broken case or burning charge: a roaring blowtorch. grains burn at a few hundred
+    /// bar inside the case so the gas leaves the rupture at hundreds of m/s: white-hot root, yellow and orange further
+    /// out, ragged turbulent puffs racing along, burning grains streaming out as sparks, dark smoke rolling off the end.
+    /// flares as rack pressure builds, snuffed out when it detonates
     internal class PropellantJet
     {
         public readonly Vector3 L, Dir;
@@ -542,14 +539,14 @@ namespace GHPCHitCam
         readonly Vector3[] _wob;
         readonly Sparks _grains;
         readonly System.Random _rnd;
-        readonly float _burn;      // seconds it roars at full strength before the charge starts burning down
-        readonly float _wid;       // a vent jet's narrowest width (at its hole)
+        readonly float _burn;      // s it roars at full strength before the charge starts burning down
+        readonly float _wid;       // vent jet's narrowest width (at its hole)
         float _next, _surgeAt = float.MaxValue, _cutAt = float.MaxValue;
-        /// A vent jet: hot gas forced out of a hole by the pressure in the hull (not a charge's own case). Push says how
-        /// far of its full length the pressure drives it now; its width follows that, and there is no case bursting.
+        /// vent jet: hot gas pushed out of a hole by hull pressure (not a charge's own case). Push = how much of its full
+        /// length the pressure drives it now, width follows that, no case bursting
         public bool Vent;
         public float Push = 1f;
-        /// How bright its flame is drawn (1 against the x-ray's dark; the daylit world needs more).
+        /// how bright its flame is drawn (1 against the x-ray's dark, the daylit world needs more)
         public float Bright = 1f;
 
         public PropellantJet(Transform parent, Vector3 l, Vector3 dir, float len, float start, float burn, int seed, float width = 0f)
@@ -584,22 +581,22 @@ namespace GHPCHitCam
 
         float R() => (float)_rnd.NextDouble();
 
-        /// The pressure in the rack builds just before it detonates: the jet flares longer and brighter.
+        /// rack pressure builds right before it detonates: jet flares longer and brighter
         public void Surge(float at) { if (at < _surgeAt) _surgeAt = at; }
-        /// The detonation consumes it.
+        /// detonation consumes it
         public void Cut(float at) { if (at < _cutAt) _cutAt = at; }
         public bool Cutting => _cutAt < float.MaxValue;
 
-        /// How hard it roars now, 0..~1.5 (the camera rumbles with it).
+        /// how hard it roars now, 0..~1.5 (camera rumbles with it)
         public float Level(float now)
         {
             float age = now - Start;
             if (age < 0f) return 0f;
             float grow = Mathf.Clamp01(age / 0.22f);
-            float pop = Vent ? 0f : 0.7f * Mathf.Exp(-age * 10f);                             // the case bursting open
+            float pop = Vent ? 0f : 0.7f * Mathf.Exp(-age * 10f);                             // case bursting open
             float surge = now > _surgeAt ? 1f + 0.55f * Mathf.Clamp01((now - _surgeAt) / 0.15f) : 1f;
             float cut = now > _cutAt ? Mathf.Clamp01(1f - (now - _cutAt) / 0.1f) : 1f;
-            float down = Mathf.Lerp(1f, 0.45f, Mathf.Clamp01((age - _burn) / 5f));           // the charge burns down
+            float down = Mathf.Lerp(1f, 0.45f, Mathf.Clamp01((age - _burn) / 5f));           // charge burns down
             float flick = 0.88f + 0.12f * Mathf.PerlinNoise(now * 11f, _ph[0] * 9f);
             return (grow * flick + pop) * surge * cut * down * Push;
         }
@@ -618,9 +615,9 @@ namespace GHPCHitCam
             float lv = Level(now);
             bool on = age >= 0f && lv > 0.01f;
             float lenNow = Len * Mathf.Min(lv, 1.5f);
-            // a vent jet is as wide as how far it reaches now (a torch out of a hole); a charge's own jet keeps its size
+            // vent jet is as wide as how far it reaches now (torch out of a hole), a charge's own jet keeps its size
             float W = Vent ? Mathf.Max(lenNow * 0.55f, _wid) : Len;
-            // how bright: a vent jet glows full once the pressure drives it at all (only its reach follows the push)
+            // brightness: vent jet glows full once the pressure drives it at all (only its reach follows the push)
             float lc = Vent ? Mathf.Min(1f, lv / Mathf.Max(Push, 1e-3f)) * Mathf.Clamp01(Push * 8f) : lv;
             Vector3 cam = _t.InverseTransformPoint(camWorld);
             Quaternion face = Quaternion.LookRotation(-cam.normalized, Vector3.up);
@@ -631,7 +628,7 @@ namespace GHPCHitCam
             if (on)
             {
                 float len = lenNow;
-                // the light it throws on everything around
+                // light it throws on everything around
                 _glow.transform.localPosition = Dir * len * 0.3f;
                 _glow.transform.localRotation = face;
                 _glow.transform.localScale = Vector3.one * len * 1.1f;
@@ -639,7 +636,7 @@ namespace GHPCHitCam
                 _root.transform.localRotation = face;
                 _root.transform.localScale = Vector3.one * W * 0.16f * (0.9f + 0.2f * Mathf.Sin(now * 37f));
                 Vis.SetColor(_root, new Color(1f, 0.97f, 0.88f) * Mathf.Min(lc, 1f) * Bright);
-                // the white-hot core: long thin tongues, flickering in length
+                // white-hot core: long thin tongues, flickering in length
                 for (int i = 0; i < _core.Length; i++)
                 {
                     Vector3 ax = (Dir + _wob[i] * 0.04f * Mathf.Sin(now * 13f + i)).normalized;
@@ -650,7 +647,7 @@ namespace GHPCHitCam
                     tr.localScale = new Vector3(W * (0.07f + 0.025f * i), h, 1f);
                     Vis.SetColor(_core[i], Color.white * Mathf.Min(lc, 1.2f) * Bright * (i == 0 ? 1f : 0.7f));
                 }
-                // the turbulent sheath: wider, shorter, wobbling around the axis
+                // turbulent sheath: wider, shorter, wobbling around the axis
                 for (int i = 0; i < _sheath.Length; i++)
                 {
                     Vector3 w = _wob[3 + i];
@@ -687,7 +684,7 @@ namespace GHPCHitCam
                     }
                 }
             }
-            // the case bursting open: a white pop
+            // case bursting open: a white pop
             float pa = age / 0.14f;
             _pop.enabled = pa >= 0f && pa < 1f && !Vent;
             if (_pop.enabled)
@@ -696,7 +693,7 @@ namespace GHPCHitCam
                 _pop.transform.localScale = Vector3.one * Len * (0.15f + 0.45f * pa);
                 Vis.SetColor(_pop, new Color(1f, 0.96f, 0.85f) * (1f - pa) * (1f - pa));
             }
-            // dark smoke rolling off the end (it outlives the flame for a moment)
+            // dark smoke rolling off the end (outlives the flame for a moment)
             float sm = age < 0f ? 0f : Mathf.Clamp01(age / 0.5f) * (_cutAt < float.MaxValue ? Mathf.Clamp01(1f - (now - _cutAt) / 1.2f) : 1f);
             if (Vent) sm *= Mathf.Clamp01(Push * 6f);
             float sl = Vent ? lenNow : Len;

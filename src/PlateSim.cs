@@ -3,52 +3,50 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// How a plate fails under one hit. These are the classic classes from Backman & Goldsmith, chosen by the
-    /// plate's line-of-sight thickness against the penetrator's diameter and by the kind of round.
+    /// how a plate fails under one hit: the classic classes from Backman & Goldsmith, picked by the plate's LOS thickness
+    /// vs the penetrator's diameter and by round type
     internal enum PlateMode
     {
         Dent,     // held: crater + lip, dished plate, no hole
-        Gouge,    // ricochet: elongated scrape, lip at the far end
-        Petal,    // thin plate vs. a fat round: radial cracks, the petals fold inward
-        Plug,     // intermediate plate vs. a blunt round: a disc is sheared out and flies on
-        Ductile,  // thick plate vs. a rod: the hole is pushed open, crater lip, back-splash
-        Jet,      // shaped-charge jet: narrow hole, wide shallow crater
+        Gouge,    // ricochet: long scrape, lip at the far end
+        Petal,    // thin plate vs fat round: radial cracks, petals fold inward
+        Plug,     // medium plate vs blunt round: a disc gets sheared out and flies on
+        Ductile,  // thick plate vs rod: hole pushed open, crater lip, back-splash
+        Jet,      // shaped charge jet: narrow hole, wide shallow crater
         Tear,     // HE through thin armor: big petals, some break off and fly in with the blast
-        Trench,   // grazing hit: a ricochet ploughs a groove with raised lips; a grazing penetration cuts a long slot
+        Trench,   // grazing hit: ricochet ploughs a groove with raised lips, grazing pen cuts a long slot
     }
 
-    /// One armor impact, War Thunder style, as a plate that deforms and breaks in slow motion.
-    ///
-    /// The panel is a polar mesh lying on the plate around the hit, rectangular at its border. It runs on the
-    /// plate's own clock: physical seconds since impact, the same slow-motion clock as the round. The plate:
-    /// - is pushed in by the round. The penetration takes LOS / v. The plastic dishing spreads with a hinge speed
-    ///   of sqrt(sigma_y / rho) ~ 360 m/s, so a 0.3 m zone needs about 1 ms. Its permanent depth comes from the
-    ///   energy against plastic bending (thick plates) or membrane stretching (thin plates).
-    /// - rings with damped flexural ripples that freeze into the plastic set.
+    /// one armor impact WT style, as a plate that deforms and breaks in slow-mo
+    /// panel is a polar mesh lying on the plate around the hit, rectangular at its border. runs on the plate's own clock:
+    /// physical seconds since impact, same slow-mo clock as the round. the plate:
+    /// - gets pushed in by the round. pen takes LOS / v. plastic dishing spreads at hinge speed sqrt(sigma_y / rho)
+    ///   ~ 360 m/s, so a 0.3 m zone needs ~1 ms. permanent depth = energy vs plastic bending (thick) or membrane
+    ///   stretching (thin)
+    /// - rings with damped flexural ripples that freeze into the plastic set
     /// - fails by its mode: cracks run out at ~1.4 km/s, petals fold about their hinge chords, plugs shear out,
-    ///   ductile holes are pushed open into a lip, and HE petals break off and fly inward.
-    /// - is coloured by stress, not heat. Red is failure at the hole; the log falloff of a 1/r field runs through
-    ///   orange, yellow and green to blue at the edge of the zone that is still bending (bulging). The plastic
-    ///   front grows over time, so the colours spread.
-    /// - throws chips: front-face ejecta and back-splash, or plate fragments for HE.
-    /// PlateWorld.cs adds the same plate, settled and steel-coloured, on the real vehicles in the game world.
+    ///   ductile holes get pushed open into a lip, HE petals break off and fly inward
+    /// - coloured by stress, not heat: red = failure at the hole, log falloff of a 1/r field goes orange, yellow, green to
+    ///   blue at the edge of the zone still bending (bulging). plastic front grows over time so the colours spread
+    /// - throws chips: front-face ejecta and back-splash, or plate fragments for HE
+    /// PlateWorld.cs puts the same plate, settled and steel coloured, on the real vehicles in the world
     internal partial class HoleFx
     {
         const float Yield = 1.0e9f;          // Pa, armor steel (RHA ~0.9-1.1 GPa)
         const float HingeSpeed = 357f;       // m/s, sqrt(sigma_y / rho)
         const float CrackSpeed = 1400f;      // m/s, running cracks in steel (~0.4 x Rayleigh wave speed)
-        const float VisualDish = 2f;         // the permanent dishing is mm..cm; doubled so it reads at hit-cam distance
+        const float VisualDish = 2f;         // real dishing is mm..cm, doubled so it reads at hit cam distance
 
         public ArmorHit Hit;
         public float Wall;                   // session time the round reaches the plate
         public PlateMode Mode;
         public float Tau;                    // plate clock: physical seconds since impact
-        public float TPen, TResp, TauTotal;  // penetration time, plate response time, whole process
+        public float TPen, TResp, TauTotal;  // pen time, plate response time, whole process
         public float Size;                   // panel width (m)
         public float Feature => _rFeat;      // radius of the hole / crater / petals (m)
-        public float TrenchLen => Mode == PlateMode.Trench ? _tr.Len : 0f;   // the groove as drawn (clamped at the plate's edge)
+        public float TrenchLen => Mode == PlateMode.Trench ? _tr.Len : 0f;   // groove as drawn (clamped at the plate's edge)
         public Transform T;
-        /// The round is through and the plate has let go (spawn the physics fragments now).
+        /// round is through and the plate let go (spawn the physics fragments now)
         public bool Broke => Tau >= TPen * 0.8f && Mode != PlateMode.Dent && Mode != PlateMode.Gouge;
 
         Renderer _panel, _chips, _glow;
@@ -61,23 +59,23 @@ namespace GHPCHitCam
         float _hx, _hy, _R, _rFeat, _rCore, _rHole, _rCrater, _rPlug, _depthC, _lipH, _dish, _ripA, _ripL, _cE, _frontMax, _peak, _t, _elong = 1f;
         Vector2 _g = Vector2.right;          // gouge direction in the plate
         Vector2 _gn = Vector2.up;            // across it
-        float _stretch = 1f;                 // oblique holes: features elongated along _g by 1/sin(angle)
-        bool _stretchOn;                     // set by both builds (x-ray and world); off only while a plate is set up
+        float _stretch = 1f;                 // oblique holes: features stretched along _g by 1/sin(angle)
+        bool _stretchOn;                     // set by both builds (x-ray and world), off only while a plate is being set up
         TrenchGeo _tr;
-        // the real plate (the struck armour piece's face), in panel space: its triangles and outline
+        // the real plate (hit armour piece's face) in panel space: its triangles and outline
         bool _hasPlate;
         Vector2[] _faceTri;                  // 3 corners per triangle
         float[] _faceZ;                      // their depth along the panel normal (curved plates)
-        Vector2[] _outline;                  // outline edges: 2 points each
-        bool _terraced;                      // the collider is a stack of slabs: its face smoothed into one surface
+        Vector2[] _outline;                  // outline edges, 2 points each
+        bool _terraced;                      // collider is a stack of slabs: its face smoothed into one surface
         readonly List<LineRenderer> _plateLines = new List<LineRenderer>();
         float _edgeBlend = 0.05f;
-        float _tx0, _tx1, _ty;               // trench panel: from _tx0 to _tx1 along _g, +-_ty across
+        float _tx0, _tx1, _ty;               // trench panel: _tx0 to _tx1 along _g, +-_ty across
         bool _low, _started, _he, _pen, _shaped;
         float _lastSim, _minWall, _age, _glowAt = -1f, _settle;
         Vector3 _camL = new Vector3(0f, 0f, -5f), _camUpL = Vector3.up;
-        // shape and colours stop being worked out once nothing visibly changes any more (most of a hit cam): a plate is
-        // thousands of vertices, three of them took ~6 ms a frame
+        // stop working out shape and colours once nothing visibly changes (most of a hit cam): a plate is thousands of
+        // verts, three of them took ~6 ms a frame
         int _quiet;                 // frames in a row the shape moved less than StillMove
         bool _still;                // shape done: no more vertex / normal updates
         float _paintTau = -1f;
@@ -94,11 +92,11 @@ namespace GHPCHitCam
             public int NIn, NOut;
             public bool ToBorder, Petal, Plug, Detach;
             public Vector2 E, N;                 // mid-direction and its normal (petal frame)
-            public float Ah, PhiMax;             // hinge chord distance from the centre, final fold angle
+            public float Ah, PhiMax;             // hinge chord distance from centre, final fold angle
             public float TBreak, Drag, Omega;
             public Vector3 Vel, Axis, C;
             public bool CSet;
-            public int Grid;                     // trench panels: 0 = polar wedge; -1 / +1 = the half-grid on that side of the path
+            public int Grid;                     // trench panels: 0 = polar wedge; -1 / +1 = half-grid on that side of the path
         }
 
         struct Crack { public Vector2 A, B; public float TA, TB, W; public bool Hot; }
@@ -120,9 +118,9 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ physics helpers
 
-        /// Energy (J) the plate itself absorbs. A round that goes through keeps most of its energy: a KE round or a jet
-        /// loses about LOS / penetration of it (that's what the game's residual-penetration model says too). A stopped
-        /// round puts all of it into the plate, a ricochet a little, and an HE charge tearing thin armor a good part of its coupled blast.
+        /// energy (J) the plate itself soaks up. a round that goes through keeps most of it: KE round or jet loses about
+        /// LOS / pen of it (same as the game's residual-pen model). a stopped round dumps all of it into the plate, a ricochet
+        /// a little, an HE charge tearing thin armor a good part of its coupled blast
         public static float Absorbed(ArmorHit ah)
         {
             float e = Mathf.Max(ah.Energy, 1000f);
@@ -133,7 +131,7 @@ namespace GHPCHitCam
             return e * Mathf.Clamp(los / Mathf.Max(ah.Pen, los), 0.01f, 1f);
         }
 
-        /// Radius (m) of the plastically bending zone: R ~ sqrt(E / (sigma_y * t)).
+        /// radius (m) of the plastically bending zone: R ~ sqrt(E / (sigma_y * t))
         public static float BendRadius(ArmorHit ah)
             => Mathf.Clamp(1.2f * Mathf.Sqrt(Mathf.Max(Absorbed(ah), 500f) / (Yield * Thick(ah))), 0.06f, 1.6f);
 
@@ -145,10 +143,10 @@ namespace GHPCHitCam
             return ah.RodRadius > 0.0015f ? Mathf.Min(ah.RodRadius, cal) : cal;
         }
 
-        /// Below this angle to the plate (degrees) a KE round skims: the failure runs along the surface, not through it.
+        /// below this angle to the plate (deg) a KE round skims: failure runs along the surface, not through
         public const float GrazeAngle = 20f;
 
-        /// The angle the round met the plate at: the drawn surface if it was found, the struck collider otherwise.
+        /// angle the round met the plate at: drawn surface if found, else the hit collider
         public static float ImpactAngle(ArmorHit ah) => ah.HasSurf ? ah.SurfAngle : ah.Angle;
 
         static bool IsKE(ArmorHit ah) => ah.Category == AmmoType.AmmoCategory.Penetrator;
@@ -156,12 +154,12 @@ namespace GHPCHitCam
         public static PlateMode ModeOf(ArmorHit ah)
         {
             if (ah.Era) return PlateMode.Dent;
-            // a ricochet never makes a hole: the round ploughs a groove and leaves; a KE round skimming the plate cuts or gouges along it
+            // ricochet never makes a hole, it ploughs a groove and leaves; a KE round skimming the plate cuts or gouges along it
             if (ah.Ricochet || (IsKE(ah) && ImpactAngle(ah) < GrazeAngle)) return PlateMode.Trench;
             return LegacyMode(ah);
         }
 
-        /// The point-like failure modes (also what the world plates use until they draw trenches).
+        /// point-like failure modes (also what world plates use until they draw trenches)
         static PlateMode LegacyMode(ArmorHit ah)
         {
             if (ah.Era) return PlateMode.Dent;
@@ -177,12 +175,12 @@ namespace GHPCHitCam
             return PlateMode.Ductile;
         }
 
-        /// A grazing hit's groove / slot. Physics:
-        /// - a slot through a plate of thickness t at angle a is t / tan(a) long, plus the penetrator's own footprint d / sin(a);
-        /// - a ricochet digs in to a depth that grows with the angle (the normal velocity component), then the rod slides
-        ///   along about half its length while it turns out: L ~ 0.45 L_rod cos(a) + 2 depth / tan(a);
-        /// - a round that stopped at a grazing angle (crushed) ploughs in and ends in a crater.
-        /// Rod length from its mass (KE energy / speed) and tungsten's density; a full-bore AP shot is ~3.2 calibres long.
+        /// grazing hit's groove / slot, physics:
+        /// - slot through a plate of thickness t at angle a is t / tan(a) long, plus the penetrator's own footprint d / sin(a)
+        /// - ricochet digs in to a depth that grows with the angle (normal velocity part), then the rod slides about half its
+        ///   length while turning out: L ~ 0.45 L_rod cos(a) + 2 depth / tan(a)
+        /// - round that stopped at a grazing angle (crushed) ploughs in and ends in a crater
+        /// rod length from its mass (KE energy / speed) and tungsten density; full-bore AP shot is ~3.2 calibres long
         public struct TrenchGeo { public float Len, HalfW, Depth, Speed; public bool Slot, Ric; }
 
         public static TrenchGeo TrenchOf(ArmorHit ah)
@@ -219,9 +217,9 @@ namespace GHPCHitCam
             return g;
         }
 
-        /// Find the drawn armour surface at the hit: short rays from around the impact (along the round, against the
-        /// collider normal, from above / below / both sides of the path) onto the x-ray copy's hull meshes; the nearest
-        /// face within 10 cm that the round was going into wins.
+        /// find the drawn armour surface at the hit: short rays from around the impact (along the round, against the collider
+        /// normal, from above / below / both sides of the path) onto the x-ray copy's hull meshes, nearest face within 10 cm
+        /// that the round was going into wins
         public static void ProbeSurface(ArmorHit ah, GhostPhysics phys)
         {
             if (ah.SurfDone) return;
@@ -244,7 +242,7 @@ namespace GHPCHitCam
                 n.Normalize();
                 Vector3 hp = o + r * dist;
                 float off = (hp - ah.L).magnitude;
-                if (off >= best || Vector3.Dot(n, d) > 0.05f) continue;    // the round can't have gone into a face looking away from it
+                if (off >= best || Vector3.Dot(n, d) > 0.05f) continue;    // round can't have gone into a face looking away from it
                 best = off; bp = hp; bn = n; found = true;
             }
             if (!found) return;
@@ -254,7 +252,7 @@ namespace GHPCHitCam
             ah.SurfAngle = Mathf.Max(0.5f, 90f - Vector3.Angle(bn, -d));
         }
 
-        /// Seconds the penetrator needs to get through the plate (the plate's fast process).
+        /// seconds the penetrator needs to get through the plate (the plate's fast process)
         public static float PenTime(ArmorHit ah) => PenTime(ah, ModeOf(ah));
 
         static float PenTime(ArmorHit ah, PlateMode mode)
@@ -263,16 +261,16 @@ namespace GHPCHitCam
             float t;
             switch (mode)
             {
-                case PlateMode.Trench: { var g = TrenchOf(ah); t = g.Len / g.Speed; break; }   // the round slides the trench's length
-                case PlateMode.Jet: t = LosT(ah) / 3000f; break;   // jet tip penetration velocity ~3 km/s
+                case PlateMode.Trench: { var g = TrenchOf(ah); t = g.Len / g.Speed; break; }   // round slides the trench's length
+                case PlateMode.Jet: t = LosT(ah) / 3000f; break;   // jet tip pen velocity ~3 km/s
                 case PlateMode.Tear: t = 1.5e-4f * Mathf.Pow(Mathf.Max(ah.Tnt, 0.05f), 0.333f) + LosT(ah) / Mathf.Max(v, 250f); break;   // blast loading + shell
                 default: t = LosT(ah) / Mathf.Max(v, 250f); break;
             }
             return Mathf.Clamp(t, 8e-6f, 2e-3f);
         }
 
-        /// Sim seconds worth stretching for the first plate: the round going through and the petals / plug / crater forming
-        /// (the fold runs on the hinge-speed time scale of the bending zone).
+        /// sim seconds worth stretching for the first plate: round going through and petals / plug / crater forming (fold
+        /// runs on the hinge-speed time scale of the bending zone)
         public static float DwellSpan(ArmorHit ah)
         {
             float tPen = PenTime(ah);
@@ -303,13 +301,13 @@ namespace GHPCHitCam
             T = go.transform;
             T.SetParent(parent, false);
             ProbeSurface(ah, phys);
-            // the real plate's face if the armour piece's shape is known; else the drawn armour; else the struck collider
+            // real plate's face if the armour piece's shape is known, else drawn armour, else the hit collider
             Vector3 n = ah.HasSurf ? ah.SurfNormalL : ah.NormalL.sqrMagnitude > 0.01f ? ah.NormalL.normalized : -ah.DirL.normalized;
             Vector3 at = ah.HasSurf ? ah.SurfPointL : ah.L;
             Prepare(ah, phys);
             var face = PlateFace(ah, out Vector3 fn, out Vector3 fat);
             if (face != null) { n = fn; at = fat; }
-            // +Z of the effect points into the plate (against the outward normal)
+            // effect's +Z points into the plate (against the outward normal)
             T.localPosition = at - n * 0.004f;
             T.localRotation = Quaternion.LookRotation(-n, Mathf.Abs(Vector3.Dot(n, Vector3.up)) > 0.95f ? Vector3.forward : Vector3.up);
 
@@ -332,7 +330,7 @@ namespace GHPCHitCam
             if (_chipMesh != null) _chips = Vis.Child(T, "chips", _chipMesh, Matrix4x4.identity, Vis.Unlit).GetComponent<Renderer>();
             if (_pen)
             {
-                // where the fragments come out: a red-orange glow on the inside of the plate
+                // where the fragments come out: red-orange glow on the inside of the plate
                 float inside = Mathf.Clamp(_t, 0.01f, 0.3f);
                 _glow = Vis.Child(T, "exit glow", Vis.SoftDisc, Matrix4x4.TRS(Vector3.forward * inside, Quaternion.identity, Vector3.one * Mathf.Clamp(_R * 0.5f, 0.1f, 0.45f)), Vis.Additive).GetComponent<Renderer>();
                 _glow.enabled = false;
@@ -341,8 +339,8 @@ namespace GHPCHitCam
             SetVisible(false);
         }
 
-        /// The physics of this hit: failure mode, feature radii, crater, dishing, panel size, time scales.
-        /// T must already sit on the plate (its rotation gives the gouge direction). Returns the impact speed.
+        /// physics of this hit: failure mode, feature radii, crater, dishing, panel size, time scales
+        /// T has to sit on the plate already (its rotation gives the gouge direction). returns impact speed
         float Setup(bool compact)
         {
             var ah = Hit;
@@ -385,15 +383,15 @@ namespace GHPCHitCam
                 _depthC = Mathf.Clamp(got * 0.5f, 0.003f, Mathf.Min(0.06f, _rCrater * 1.2f));
             else
                 _depthC = Mathf.Min(_t * 0.5f, (_rCrater > 0f ? _rCrater : _rFeat) * 0.6f);
-            if (_he && !_pen) _depthC = Mathf.Min(_depthC, 0.012f);   // a blast scoops a shallow, wide crater
+            if (_he && !_pen) _depthC = Mathf.Min(_depthC, 0.012f);   // blast scoops a shallow, wide crater
             if (Mode == PlateMode.Trench) _depthC = _tr.Depth;
             _lipH = Mode == PlateMode.Ductile || Mode == PlateMode.Jet ? _rHole * 0.25f
                   : Mode == PlateMode.Trench ? 0.35f * _tr.Depth + 0.12f * _tr.HalfW
                   : _depthC * 0.3f + _rCrater * 0.06f;
             _peak = _pen ? 1f : ah.Era ? 0.5f : Mode == PlateMode.Trench ? 0.85f : Mode == PlateMode.Gouge ? 0.45f : 0.55f + 0.4f * Mathf.Clamp01(ah.Pen / Mathf.Max(ah.Los, 1f));
 
-            // permanent dishing: the absorbed energy's far-field share (the rest goes into the local failure)
-            // against plastic bending (thick plates) or membrane stretching (thin plates)
+            // permanent dishing: far-field share of the absorbed energy (rest goes into local failure)
+            // vs plastic bending (thick plates) or membrane stretching (thin plates)
             float cDish;
             if (ah.Era) cDish = 0.05f;
             else if (Mode == PlateMode.Dent || Mode == PlateMode.Gouge || (Mode == PlateMode.Trench && !_tr.Slot)) cDish = 0.6f;
@@ -416,19 +414,19 @@ namespace GHPCHitCam
             _settle = 6f * TauTotal;
 
             {
-                // the round's path along the plate
+                // round's path along the plate
                 Vector3 d = Quaternion.Inverse(T.localRotation) * ah.DirL;
                 var g = new Vector2(d.x, d.y);
                 _g = g.sqrMagnitude > 1e-4f ? g.normalized : Vector2.right;
                 _gn = new Vector2(-_g.y, _g.x);
             }
-            // an oblique hole is an ellipse 1/sin(angle) long along the path (capped; below the graze angle it is a trench)
+            // oblique hole = ellipse 1/sin(angle) long along the path (capped; below the graze angle it's a trench)
             _stretch = Mode == PlateMode.Trench || ah.Era ? 1f
                      : Mathf.Clamp(1f / Mathf.Sin(Mathf.Max(ImpactAngle(ah), GrazeAngle) * Mathf.Deg2Rad), 1f, 2.4f);
             if (Mode == PlateMode.Trench)
             {
-                // the panel follows the groove: from just before the impact to past its end, a strip either side of it
-                // (on a big casting a wider one drew half the turret, its terraces and all, like a sheet thrown over it)
+                // panel follows the groove: from just before impact to past its end, a strip either side
+                // (on a big casting a wider one drew half the turret, terraces and all, like a sheet thrown over it)
                 float m = Mathf.Clamp(Mathf.Max(1.1f * _R, 6f * _tr.HalfW), 0.1f, 0.25f);
                 _tx0 = -m;
                 _tx1 = _tr.Len + m;
@@ -450,7 +448,7 @@ namespace GHPCHitCam
             int nIn = _low ? 4 : 9, nOut = _low ? 10 : 24;
             if (Mode == PlateMode.Trench)
             {
-                // two half-grids meeting on the path, so a slot can open between them
+                // two half-grids meeting on the path so a slot can open between them
                 int nx = _low ? 36 : 96, ny = _low ? 8 : 22;
                 _w.Add(new Wedge { Grid = -1, Cols = nx, NIn = 0, NOut = ny });
                 _w.Add(new Wedge { Grid = 1, Cols = nx, NIn = 0, NOut = ny });
@@ -470,7 +468,7 @@ namespace GHPCHitCam
                     float wa = widths[i] / sum * Mathf.PI * 2f;
                     float m = a + wa * 0.5f;
                     int cols = Mathf.Max(3, Mathf.RoundToInt(ns * wa / (Mathf.PI * 2f)));
-                    // the petal itself (inside the hole radius) is its own block, so it can tear off along the arc
+                    // petal itself (inside hole radius) is its own block so it can tear off along the arc
                     var w = new Wedge
                     {
                         A0 = a, A1 = a + wa, Cols = cols,
@@ -502,7 +500,7 @@ namespace GHPCHitCam
                 _w.Add(new Wedge { A0 = a0, A1 = a0 + Mathf.PI * 2f, Cols = ns, RStart = Mode == PlateMode.Plug ? _rPlug : 0f, RMid = _rFeat, NIn = nIn, NOut = nOut, ToBorder = true });
                 if (Mode == PlateMode.Plug)
                 {
-                    float vpl = 0.55f * v;    // the plug leaves at roughly the residual speed of the round
+                    float vpl = 0.55f * v;    // plug leaves at roughly the round's residual speed
                     float ax = Rn(0f, Mathf.PI * 2f);
                     _w.Add(new Wedge
                     {
@@ -540,7 +538,7 @@ namespace GHPCHitCam
                         float x = Mathf.Lerp(_tx0, _tx1, (float)c / w.Cols);
                         for (int i = 0; i <= nr; i++)
                         {
-                            // rows crowd toward the path (the groove is a few cm wide on a panel tens of cm across)
+                            // rows crowd toward the path (groove is a few cm wide on a panel tens of cm across)
                             float y = w.Grid * _ty * Mathf.Pow((float)i / nr, 1.8f);
                             var pg = _g * x + _gn * y;
                             var vx = new Vtx { P = pg, R = pg.magnitude, Th = Mathf.Atan2(pg.y, pg.x), W = wi, Ring = i };
@@ -611,9 +609,9 @@ namespace GHPCHitCam
 
         bool _conformed, _borderOk = true;
 
-        /// Lay the panel onto the vehicle's real outer surface: every vertex is raycast onto the hull (the x-ray copy's
-        /// own colliders), so the panel follows a curved turret and stops where the armor ends instead of sticking out
-        /// into the air as a flat sheet. Vertices with no armor behind them are hidden.
+        /// lay the panel onto the vehicle's real outer surface: every vertex raycast onto the hull (x-ray copy's own
+        /// colliders) so it follows a curved turret and stops where the armor ends instead of sticking out into the air as
+        /// a flat sheet. verts with no armor behind them get hidden
         void Conform(GhostPhysics phys)
         {
             if (phys == null || !phys.HasHull) return;
@@ -628,8 +626,8 @@ namespace GHPCHitCam
                 Vector3 p = o + T.localRotation * Stretch(new Vector3(vx.P.x, vx.P.y, 0f), vx.R);
                 if (_hasPlate)
                 {
-                    // the plate is known: follow the drawn paint only where it sits within a few cm of the armour face
-                    // (not on a terraced one: it stays in the struck step's plane, where the rod is)
+                    // plate is known: follow the drawn paint only where it's within a few cm of the armour face
+                    // (not on a terraced one: it stays in the hit step's plane, where the rod is)
                     if (!_terraced && !vx.Off && phys.RaycastHull(p - inward * probe, inward, probe * 2f, out float dp) && Mathf.Abs(dp - probe - zc - vx.Z0) < 0.04f) vx.Z0 = dp - probe - zc;
                 }
                 else if (phys.RaycastHull(p - inward * probe, inward, probe * 2f, out float d) && Mathf.Abs(d - probe - zc) < probe * 0.9f)
@@ -654,7 +652,7 @@ namespace GHPCHitCam
                 foreach (var w in _w)
                 {
                     if (!w.Petal) continue;
-                    // the seam between two petals (it opens as they fold), then the crack runs on into the plate
+                    // seam between two petals (opens as they fold), then the crack runs on into the plate
                     float th = w.A0;
                     Vector2 d = Dir(th);
                     AddLine(cr, Vector2.zero, d * _rFeat, Birth(0f), Birth(_rFeat), true, 1f);
@@ -680,7 +678,7 @@ namespace GHPCHitCam
                 }
             if (_pen && Mode != PlateMode.Jet)
             {
-                // the fracture network of the failing core
+                // fracture network of the failing core
                 float rf = Mode == PlateMode.Plug ? _rPlug * 1.3f : Mode == PlateMode.Ductile ? _rCrater : _rFeat;
                 int chains = _low ? 3 : 7;
                 for (int c = 0; c < chains; c++)
@@ -707,7 +705,7 @@ namespace GHPCHitCam
                 if (_tr.Slot)
                     for (int s = -1; s <= 1; s += 2)
                     {
-                        // the cut's torn edges, running out with the rod, and short tears off them
+                        // the cut's torn edges, running out with the rod, + short tears off them
                         float y = s * 0.9f * w;
                         int segs = 6;
                         for (int i = 0; i < segs; i++)
@@ -720,14 +718,14 @@ namespace GHPCHitCam
                 else
                     for (int i = 0; i < (_low ? 3 : 7); i++)
                     {
-                        // the plowed lips crack across
+                        // plowed lips crack across
                         float x = Rn(0.1f, 0.95f) * _tr.Len, s = Rn(0f, 1f) < 0.5f ? -1f : 1f;
                         AddLine(cr, _g * x + _gn * (s * 0.8f * w), _g * (x + Rn(-0.5f, 0.5f) * w) + _gn * (s * Rn(1.8f, 2.6f) * w), x / _tr.Speed, x / _tr.Speed + 2f * w / CrackSpeed, true, 0.7f);
                     }
             }
             if (Mode == PlateMode.Plug)
             {
-                // the shear circle the plug comes out along
+                // shear circle the plug comes out along
                 const int n = 28;
                 for (int i = 0; i < n; i++)
                 {
@@ -884,9 +882,9 @@ namespace GHPCHitCam
             return lr;
         }
 
-        // ------------------------------------------------------------------ the plate's physics, as functions of its clock
+        // ------------------------------------------------------------------ plate physics as functions of its clock
 
-        /// Distance from (x along the path, y across) to the groove's axis from 0 to len.
+        /// distance from (x along the path, y across) to the groove's axis from 0 to len
         static float Capsule(float x, float y, float len)
         {
             float cx = Mathf.Clamp(x, 0f, Mathf.Max(len, 0f));
@@ -894,8 +892,8 @@ namespace GHPCHitCam
             return Mathf.Sqrt(dx * dx + y * y);
         }
 
-        /// Oblique holes: the in-plane position stretched along the path by up to 1/sin(angle) near the hole, easing to a
-        /// third of that in the far field (slow enough with radius that the mesh never folds over).
+        /// oblique holes: in-plane position stretched along the path by up to 1/sin(angle) near the hole, easing to a third
+        /// of that far out (slow enough with radius that the mesh never folds over)
         Vector3 Stretch(Vector3 q, float r)
         {
             if (!_stretchOn || _stretch <= 1.001f) return q;
@@ -911,10 +909,10 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ the real plate
 
-        /// The face of the struck armour piece the round met: its triangles grouped by direction, the group (a flat or gently
-        /// curved face) nearest the hit with the most area facing the round wins. A grazing round that touched the thin end
-        /// face of a plate gets the plate's big face, which is what it actually skims along.
-        /// The vehicle's centre in the same space as the armour hits (outward = away from it), set before plates are built.
+        /// face of the hit armour piece the round met: its triangles grouped by direction, the group (flat or gently curved
+        /// face) nearest the hit with the most area facing the round wins. a grazing round that touched the thin end face
+        /// of a plate gets the plate's big face, which is what it really skims along
+        /// vehicle's centre in the same space as the armour hits (outward = away from it), set before plates get built
         public static Vector3 CentreL;
 
         static List<Vector3> PlateFace(ArmorHit ah, out Vector3 normal, out Vector3 at)
@@ -931,8 +929,8 @@ namespace GHPCHitCam
             var t = ah.PlateTris;
             if (t == null || t.Length < 9) return null;
             Vector3 d = ah.DirL.sqrMagnitude > 1e-6f ? ah.DirL.normalized : -ah.NormalL.normalized;
-            // collider meshes don't wind their triangles consistently: every face is turned to look out of the plate the
-            // round came in through (the drawn surface if found, else against the round, else away from the vehicle's centre)
+            // collider meshes don't wind their triangles consistently: every face gets turned to look out of the plate the round
+            // came in through (drawn surface if found, else against the round, else away from the vehicle's centre)
             Vector3 OutRef(Vector3 n, Vector3 c)
             {
                 if (ah.HasSurf && Mathf.Abs(Vector3.Dot(n, ah.SurfNormalL)) > 0.3f) return ah.SurfNormalL;
@@ -955,7 +953,7 @@ namespace GHPCHitCam
                 Vector3 cp = ClosestOnTri(ah.L, a, b, c);
                 near[i] = (cp - ah.L).sqrMagnitude < 2.6f;   // within 1.6 m
             }
-            // clusters of similar direction (within 18 degrees), seeded by the biggest triangles
+            // clusters of similar direction (within 18 deg), seeded by the biggest triangles
             var order = new List<int>();
             for (int i = 0; i < nt; i++) if (near[i] && ta[i] > 1e-7f) order.Add(i);
             order.Sort((x, y) => ta[y].CompareTo(ta[x]));
@@ -974,7 +972,7 @@ namespace GHPCHitCam
             for (int k = 0; k < cn.Count; k++)
             {
                 Vector3 nk = cn[k].normalized;
-                // only the part of the face that passes within the plate's thickness of the hit counts
+                // only the part of the face within the plate's thickness of the hit counts
                 float area = 0f, distBest = float.MaxValue;
                 foreach (int i in cl[k])
                 {
@@ -988,7 +986,7 @@ namespace GHPCHitCam
                 if (score > bestScore) { bestScore = score; pick = k; }
             }
             if (pick < 0) return null;
-            // the face the game says was struck wins, unless it's a sliver (the thin end face of a plate the round slid onto)
+            // face the game says was hit wins, unless it's a sliver (thin end face of a plate the round slid onto)
             if (ah.NormalL.sqrMagnitude > 0.01f)
             {
                 Vector3 hn = ah.NormalL.normalized;
@@ -1007,14 +1005,14 @@ namespace GHPCHitCam
                         Vector3 cp = ClosestOnTri(ah.L, t[3 * i], t[3 * i + 1], t[3 * i + 2]);
                         if ((cp - ah.L).sqrMagnitude < 1.44f) struckArea += ta[i];
                     }
-                    // a thick block has no "end face": the face struck is the face
+                    // thick block has no "end face": the face hit is the face
                     if (struckArea >= 0.3f * pickArea || ah.Nominal > 60f) pick = struck;
                 }
             }
             normal = cn[pick].normalized;
-            // a hollow part (a fuel tank on the fender) has its far wall in the same cluster, turned to face the round: the
-            // panel then followed both walls and stretched back half a metre. The plate is the sheet the round struck, and
-            // what lies in its layer (the stacked slabs of a cast turret aren't joined, but sit within a few cm of it)
+            // hollow part (fuel tank on the fender) has its far wall in the same cluster, turned to face the round: the panel
+            // then followed both walls and stretched back half a metre. the plate is the sheet the round hit + whatever lies in
+            // its layer (stacked slabs of a cast turret aren't joined but sit within a few cm of it)
             var sheet = Sheet(t, tn, cl[pick], ah.L, Mathf.Max(tmax, 0.06f), out int dropped);
             if (dropped > 0 && AutoTest.Active) HitCamMod.Log.Msg($"  plate {ah.Name}: {dropped} of {cl[pick].Count} face triangles left out (a far wall of the part, {Mathf.Max(tmax, 0.06f) * 100f:0} cm+ behind the struck sheet)");
             cl[pick] = sheet;
@@ -1032,8 +1030,8 @@ namespace GHPCHitCam
             return res;
         }
 
-        /// The face triangles joined (by shared corners) to the one nearest the hit, and any other joined piece whose plane
-        /// passes within `layer` of the hit.
+        /// face triangles joined (by shared corners) to the one nearest the hit, + any other joined piece whose plane
+        /// passes within `layer` of the hit
         static List<int> Sheet(Vector3[] t, Vector3[] tn, List<int> tris, Vector3 hit, float layer, out int dropped)
         {
             dropped = 0;
@@ -1076,8 +1074,8 @@ namespace GHPCHitCam
             return keep;
         }
 
-        /// Everything about where and how the round met the plate, before any timing is planned: the drawn surface, then the
-        /// real armour piece's face (it wins: that's the plate the game simulates), and the angle the round met it at.
+        /// everything about where and how the round met the plate, before any timing: drawn surface, then the real armour
+        /// piece's face (it wins, that's the plate the game simulates), and the angle the round met it at
         public static void Prepare(ArmorHit ah, GhostPhysics phys)
         {
             ProbeSurface(ah, phys);
@@ -1111,7 +1109,7 @@ namespace GHPCHitCam
             return a + ab * (vb * den) + ac * (vc * den);
         }
 
-        /// The face triangles in panel space (T is placed on the face), and the face's outline edges.
+        /// face triangles in panel space (T is placed on the face) and the face's outline edges
         void ToPanel(List<Vector3> face, Vector3 at)
         {
             var inv = Quaternion.Inverse(T.localRotation);
@@ -1140,10 +1138,10 @@ namespace GHPCHitCam
                 }
             var segs = new List<(Vector2 a, Vector2 b, float z)>();
             foreach (var kv in edges) if (kv.Value == 1) { var (a, b) = ends[kv.Key]; segs.Add((a, b, endZ[kv.Key])); }
-            // GHPC models some cast turrets as stacked slabs: the slab tops are parallel faces at different heights, and
-            // seen along the normal the top edge of one step lies on the foot of the next. Those edges are no edges of the
-            // plate (they drew stair-step walls deeper than the rod through the panel): they go, and the face is smoothed
-            // into one surface in OnPlate
+            // GHPC models some cast turrets as stacked slabs: slab tops are parallel faces at different heights, and seen
+            // along the normal the top edge of one step lies on the foot of the next. those aren't real plate edges (they drew
+            // stair-step walls deeper than the rod through the panel), so they go and the face gets smoothed into one surface
+            // in OnPlate
             var inner = new bool[segs.Count];
             for (int i = 0; i < segs.Count; i++)
                 for (int j = i + 1; j < segs.Count; j++)
@@ -1158,7 +1156,7 @@ namespace GHPCHitCam
             if (_terraced && AutoTest.Active) HitCamMod.Log.Msg($"  plate {Hit.Name}: terraced collider, {dropped} step edges dropped, face smoothed");
         }
 
-        /// The panel window: at least half a metre around the hit so the plate's shape shows, never past the plate itself.
+        /// panel window: at least half a metre around the hit so the plate's shape shows, never past the plate itself
         void ClipToPlate()
         {
             float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
@@ -1167,7 +1165,7 @@ namespace GHPCHitCam
             float want = Mathf.Clamp(Mathf.Max(_hx, 0.5f), 0.2f, 1.6f);
             if (Mode == PlateMode.Trench)
             {
-                // the groove ends where the plate does
+                // groove ends where the plate does
                 float edge = RayToOutline(Vector2.zero, _g);
                 if (edge < float.MaxValue) _tr.Len = Mathf.Clamp(Mathf.Min(_tr.Len, edge), 2f * _tr.HalfW, 1.2f);
                 _tx1 = Mathf.Min(_tx1, Mathf.Max(_tr.Len + 0.05f, maxX + 0.02f));
@@ -1179,7 +1177,7 @@ namespace GHPCHitCam
             Size = 2f * _hx;
         }
 
-        /// Two outline edges lying on top of each other in the panel (collinear within 3 mm, overlapping most of the shorter).
+        /// two outline edges lying on top of each other in the panel (collinear within 3 mm, overlapping most of the shorter)
         static bool Overlap(Vector2 a0, Vector2 a1, Vector2 b0, Vector2 b1)
         {
             Vector2 d = a1 - a0;
@@ -1194,9 +1192,9 @@ namespace GHPCHitCam
             return hi - lo > 0.5f * Mathf.Min(la, lb);
         }
 
-        /// A terraced face: the panel lies flat in the plane of the step the round struck. That's the plane the rod slides
-        /// on (RodRig.RicochetChannel) and the plane the game's hit is on; following the other steps drew stair walls, and
-        /// a surface smoothed over all of them sat below the rod, which then wore away in mid-air above its groove.
+        /// terraced face: panel lies flat in the plane of the step the round hit. that's the plane the rod slides on
+        /// (RodRig.RicochetChannel) and the game's hit is on; following the other steps drew stair walls, and a surface
+        /// smoothed over all of them sat below the rod, which then wore away in mid-air above its groove
         void FlattenTerraces()
         {
             for (int k = 0; k < _v.Length; k++)
@@ -1222,8 +1220,8 @@ namespace GHPCHitCam
             return best;
         }
 
-        /// Which panel vertices lie on the plate (soft over one mesh cell at its edge), how far from its edge, and the
-        /// plate face's own curvature under them.
+        /// which panel verts lie on the plate (soft over one mesh cell at its edge), how far from its edge, and the plate
+        /// face's own curvature under them
         void OnPlate()
         {
             for (int k = 0; k < _v.Length; k++)
@@ -1252,7 +1250,7 @@ namespace GHPCHitCam
             float minDim = 0.6f;
             if (_outline.Length >= 2)
             {
-                // the edge zone a clamped plate needs to come back to flat: a fraction of its size, never more than 25 cm
+                // edge zone a clamped plate needs to come back to flat: a fraction of its size, max 25 cm
                 float ext = 0f;
                 foreach (var p in _faceTri) ext = Mathf.Max(ext, p.magnitude);
                 minDim = ext;
@@ -1278,7 +1276,7 @@ namespace GHPCHitCam
             return u >= -1e-4f && w >= -1e-4f && u + w <= 1.0001f;
         }
 
-        /// The plate's real outline, drawn where War Thunder draws the panel border.
+        /// plate's real outline, drawn where War Thunder draws the panel border
         void PlateLines()
         {
             _border.positionCount = 0;
@@ -1328,7 +1326,7 @@ namespace GHPCHitCam
 
         float Phi(Wedge w, float ts) => w.PhiMax * Ease((ts - 0.08f * TPen) / (1.6f * TPen + 0.25f * TResp));
 
-        /// Dishing at rest radius r: Gaussian-like bulge out to the bending zone, critically damped growth with a small elastic rebound.
+        /// dishing at rest radius r: gaussian-like bulge out to the bending zone, critically damped growth with a small elastic rebound
         float Dish(float r, float ts)
         {
             float x = ts / TResp;
@@ -1336,7 +1334,7 @@ namespace GHPCHitCam
             return _dish * Mathf.Exp(-1.7f * (r * r) / (_R * _R)) * g;
         }
 
-        /// Flexural ripples behind the outgoing wave front; they damp out and leave a faint plastic set.
+        /// flexural ripples behind the outgoing wave front, they damp out and leave a faint plastic set
         float Ripple(float r, float ts)
         {
             float front = Mathf.Min(_cE * ts, _frontMax);
@@ -1347,9 +1345,9 @@ namespace GHPCHitCam
             return amp * behind * wgt * Mathf.Sin(2f * Mathf.PI * (r - 0.3f * front) / _ripL);
         }
 
-        /// 0..1 stress at (elliptic) radius re. Failure inside the core; a log falloff of the 1/r field out to the plastic front;
-        /// beyond it the elastically bending plate (blue), relaxing toward the panel edge (pale).
-        // the stress zone's radii at one moment (the same for every vertex painted then)
+        /// 0..1 stress at (elliptic) radius re. failure inside the core, log falloff of the 1/r field out to the plastic front,
+        /// past it the elastically bending plate (blue), relaxing toward the panel edge (pale)
+        // stress zone radii at one moment (same for every vertex painted then)
         float _sTs = float.NaN, _sRc, _sRp, _sLogRp, _sInvLog;
 
         float Stress(float re, float ts)
@@ -1370,17 +1368,17 @@ namespace GHPCHitCam
             return Mathf.Lerp(elastic, _peak, Mathf.Pow(f, 0.65f));
         }
 
-        /// Position of a vertex while still part of the plate (everything except rigid flight of broken pieces).
+        /// vertex position while still part of the plate (everything except rigid flight of broken pieces)
         Vector3 Attached(Wedge w, Vector2 p, float r, float re, float th, float ts)
         {
             float z = 0f;
-            float pIn = Mathf.Clamp01(ts / TPen);    // how far the penetrator has got through
+            float pIn = Mathf.Clamp01(ts / TPen);    // how far the penetrator got through
             switch (Mode)
             {
                 case PlateMode.Ductile:
                 case PlateMode.Jet:
                 {
-                    // ductile hole growth: the material is pushed aside radially into a funnel and a lip
+                    // ductile hole growth: material pushed aside radially into a funnel and a lip
                     float rhNow = _rHole * Mathf.Sqrt(pIn);
                     float rr = r;
                     if (r < _rCrater)
@@ -1411,7 +1409,7 @@ namespace GHPCHitCam
                 {
                     float x = Vector2.Dot(p, _g), y = Vector2.Dot(p, _gn);
                     float hw = _tr.HalfW, len = Mathf.Max(_tr.Len, 1e-4f);
-                    float xf = Mathf.Min(_tr.Speed * ts, len);                 // how far the round has got along the plate
+                    float xf = Mathf.Min(_tr.Speed * ts, len);                 // how far the round got along the plate
                     float cut = x < -hw ? 0f : Smooth(-hw, 0.5f * hw, xf - x);  // behind the round
                     float u = x / len;
                     // digs in over the first part; a ricochet climbs out at the end, a crushed round ends deepest
@@ -1421,7 +1419,7 @@ namespace GHPCHitCam
                     float ay = Mathf.Abs(y), k = cut * env;
                     if (_tr.Slot)
                     {
-                        // cut open: the two sides are pushed apart and their edges dragged into the plate
+                        // cut open: the two sides get pushed apart and their edges dragged into the plate
                         float half = 0.85f * hw * k, wc = 2.6f * hw;
                         if (ay < wc && half > 0f) y = w.Grid * (half + ay * (1f - half / wc));
                         z += 0.6f * _t * k * (1f - Smooth(0f, wc, ay));
@@ -1430,7 +1428,7 @@ namespace GHPCHitCam
                     else
                     {
                         if (ay < hw) z += _tr.Depth * (1f - (ay / hw) * (ay / hw)) * k;
-                        z -= _lipH * k * Bump(ay, 0.75f * hw, 2.1f * hw);        // the plowed lips on both sides
+                        z -= _lipH * k * Bump(ay, 0.75f * hw, 2.1f * hw);        // plowed lips on both sides
                         if (_tr.Ric) z -= 1.3f * _lipH * cut * Bump(x, 0.82f * len, 1.08f * len) * (1f - Smooth(0f, 1.6f * hw, ay));   // shoved up where it climbs out
                     }
                     p = _g * x + _gn * y;
@@ -1440,7 +1438,7 @@ namespace GHPCHitCam
 
             if (w.Petal)
             {
-                // a petal folds about its hinge chord, curling with constant curvature to its final angle
+                // petal folds about its hinge chord, curling with constant curvature to its final angle
                 float a = Vector2.Dot(p, w.E);
                 if (a < w.Ah)
                 {
@@ -1466,7 +1464,7 @@ namespace GHPCHitCam
             var w = _w[vx.W];
             bool rigid = (w.Detach || w.Plug) && Tau > w.TBreak;
             float ts = rigid ? w.TBreak : Tau;
-            _clamp = _hasPlate ? Smooth(0f, _edgeBlend, vx.EdgeD) : 1f;    // a welded / bolted plate can't bulge at its edge
+            _clamp = _hasPlate ? Smooth(0f, _edgeBlend, vx.EdgeD) : 1f;    // welded / bolted plate can't bulge at its edge
             Vector3 q = Stretch(Attached(w, vx.P, vx.R, vx.Re, vx.Th, ts), vx.R);
             q.z += vx.Z0;
             if (w.Plug)
@@ -1517,7 +1515,7 @@ namespace GHPCHitCam
             _mesh.GetNormals(_nrm);
             if (all)
             {
-                if (!_borderOk) { _border.positionCount = 0; return; }   // the plate ends inside the panel: no rectangle
+                if (!_borderOk) { _border.positionCount = 0; return; }   // plate ends inside the panel: no rectangle
                 for (int i = 0; i < _borderIdx.Length; i++) _borderPos[i] = _pos[_borderIdx[i]] + Vector3.back * 0.002f;
                 _border.positionCount = _borderPos.Length;
                 _border.SetPositions(_borderPos);
@@ -1565,7 +1563,7 @@ namespace GHPCHitCam
             if (T != null && T.gameObject.activeSelf != v) T.gameObject.SetActive(v);
         }
 
-        /// now = session time, sim = this hit's slow-motion clock, interior = the round's clock is still running.
+        /// now = session time, sim = this hit's slow-mo clock, interior = round's clock still running
         public int VertexCount => _v != null ? _v.Length : 0;
         public bool Shaped => _still;
 
@@ -1579,7 +1577,7 @@ namespace GHPCHitCam
                 SetVisible(true);
             }
             _age = now - Wall;
-            // the plate follows the round's clock, but never plays its process in less than _minWall seconds
+            // plate follows the round's clock but never plays its process in less than _minWall s
             float dSim = Mathf.Max(0f, sim - _lastSim);
             _lastSim = Mathf.Max(_lastSim, sim);
             float dWall = dt * TauTotal / _minWall;
@@ -1590,7 +1588,7 @@ namespace GHPCHitCam
                 {
                     if (Tau < _settle || !_shaped) { Deform(true); _shaped = Tau >= _settle; }
                     else Deform(false);
-                    // the waves have died out and the broken pieces have come to rest
+                    // waves died out and broken pieces came to rest
                     if (_quiet >= 8 && Tau > 1.5f * TauTotal) { _still = true; _shaped = true; }
                 }
             StepChips();
@@ -1607,7 +1605,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Colours depend on the view (lighting), so they're painted once the camera has moved this frame.
+        /// colours depend on the view (lighting), so they get painted once the camera moved this frame
         public void FaceCamera(Vector3 camPos, Vector3 camUp, bool viewNow = true)
         {
             if (T == null || !T.gameObject.activeSelf) return;
@@ -1621,22 +1619,22 @@ namespace GHPCHitCam
             _paintCam = _camL; _paintUp = _camUpL;
         }
 
-        /// Painted again only when it would look different: the plate still changing (failing, the stress spreading, hot
-        /// edges cooling) or the view having moved (the lighting follows the camera).
-        /// 0: nothing to do, 1: only the lighting (the view moved), 2: the colours themselves.
+        /// repainted only when it would look different: plate still changing (failing, stress spreading, hot edges cooling)
+        /// or the view moved (lighting follows the camera)
+        /// 0: nothing to do, 1: only the lighting (view moved), 2: the colours themselves
         int NeedsPaint()
         {
             if (_paintTau < 0f) return 2;
             float dTau = Tau - _paintTau, phase = Tau / Mathf.Max(TauTotal, 1e-6f);
-            // while it fails every step shows; after that the colours only creep (cooling, the tails of the stress)
+            // while it fails every step shows, after that colours only creep (cooling, stress tails)
             if (phase < 3f ? dTau > 0.004f * TauTotal : phase < 8f && dTau > 0.08f * TauTotal) return 2;
-            if (!_still && dTau > 0.02f * TauTotal) return 2;                // the shape (and its shading) still moving
+            if (!_still && dTau > 0.02f * TauTotal) return 2;                // shape (and its shading) still moving
             float d = _camL.magnitude;
-            if ((_camL - _paintCam).sqrMagnitude > 0.013f * 0.013f * d * d) return 1;   // the view turned ~0.75 deg
+            if ((_camL - _paintCam).sqrMagnitude > 0.013f * 0.013f * d * d) return 1;   // view turned ~0.75 deg
             return Vector3.Dot(_paintUp, _camUpL) < 0.9999f ? 1 : 0;
         }
 
-        Color[] _base;      // the colours before the lighting, as of _paintTau
+        Color[] _base;      // colours before lighting, as of _paintTau
 
         static readonly Color HotWhite = new Color(1f, 0.96f, 0.86f), Burnt = new Color(0.06f, 0.02f, 0.02f), Crease = new Color(0.05f, 0.05f, 0.08f);
 
@@ -1660,11 +1658,11 @@ namespace GHPCHitCam
                 var w = _w[vx.W];
                 bool torn = w.Plug || (w.Petal && Vector2.Dot(vx.P, w.E) < w.Ah && Phi(w, (w.Detach && ts > w.TBreak) ? w.TBreak : ts) > 0.05f);
                 bool flying = (w.Detach || w.Plug) && ts > w.TBreak;
-                if (flying) c = Shards.Hot(Mathf.Lerp(0.85f, 0.3f, Smooth(0f, 4f, (ts - w.TBreak) / TauTotal)));   // torn free: a hot steel piece
+                if (flying) c = Shards.Hot(Mathf.Lerp(0.85f, 0.3f, Smooth(0f, 4f, (ts - w.TBreak) / TauTotal)));   // torn free: hot steel piece
                 else if (torn) c = Color.Lerp(new Color(0.95f, 0.12f, 0.06f), new Color(0.45f, 0.03f, 0.02f), Mathf.Clamp01(1f - vx.R / Mathf.Max(_rFeat, 1e-4f)));   // bent, torn steel: red, darker toward the tip
                 else if (Mode == PlateMode.Trench)
                 {
-                    // the stress follows the round along the groove
+                    // stress follows the round along the groove
                     float x = Vector2.Dot(vx.P, _g), y = Vector2.Dot(vx.P, _gn);
                     float xf = Mathf.Min(_tr.Speed * ts, _tr.Len);
                     c = Vis.Heat(1f - Stress(x < -_tr.HalfW ? 99f : Capsule(x, y, xf), ts));
@@ -1686,7 +1684,7 @@ namespace GHPCHitCam
                 if (_hasPlate && !flying) c.a *= vx.Cover;
                 _base[k] = c;
                 }
-                // lighting: two-sided Lambert + a soft highlight, so the dish, ripples and petals read in 3D
+                // lighting: two-sided Lambert + soft highlight so dish, ripples and petals read in 3D
                 Vector3 p = _pos[k];
                 Vector3 view = (_camL - p).normalized;
                 Vector3 nn = hasN ? _nrm[k] : Vector3.back;

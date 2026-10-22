@@ -11,9 +11,9 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Test gun: every projectile the game has loaded, plus generated shells of any calibre (APFSDS / AP / HEAT / HE)
-    /// and bombs. While the arsenal is on, the player's main gun fires the selected projectile; bombs are dropped
-    /// onto whatever the gun points at. U on/off, 9 / 0 pick, Shift+9 / 0 jump group, J fire instantly (no reload).
+    /// test gun: every projectile the game has loaded + generated shells of any calibre (APFSDS / AP / HEAT / HE) and bombs.
+    /// while the arsenal is on the main gun fires the picked projectile, bombs drop onto whatever the gun points at.
+    /// U on/off, 9 / 0 pick, Shift+9 / 0 jump group, J fire instantly (no reload)
     internal static class Arsenal
     {
         internal class Entry
@@ -49,7 +49,7 @@ namespace GHPCHitCam
             if (_templateOf.TryGetValue(e.Ammo, out var tpl) && tpl.CachedIndex >= 0) e.Ammo.CachedIndex = tpl.CachedIndex;
         }
 
-        /// For the self-test: an arsenal entry by (part of) its name.
+        /// self-test: arsenal entry by (part of) its name
         public static Entry Find(string name)
         {
             if (!_built) Build();
@@ -59,7 +59,7 @@ namespace GHPCHitCam
 
         internal static Entry Selected => _entries.Count > 0 ? _entries[Mathf.Clamp(_sel, 0, _entries.Count - 1)] : null;
 
-        /// The whole catalogue (the Armor Sim's projectile picker).
+        /// whole catalogue (for the Armor Sim's projectile picker)
         public static IReadOnlyList<Entry> Entries { get { if (!_built) Build(); return _entries; } }
 
         // ------------------------------------------------------------------ catalogue
@@ -78,7 +78,7 @@ namespace GHPCHitCam
                 _entries.Add(new Entry { Group = "Game: " + Cat(a, bomb), Label = $"{a.Name}  ({a.GetFinalCaliber():0} mm, pen {a.RhaPenetration:0}, TNT {a.TntEquivalentKg:0.##} kg)", Ammo = a, Bomb = bomb });
             }
 
-            // templates for generated rounds: the game's own examples of each kind, so fuzes / spall settings stay sane
+            // templates for generated rounds: the game's own example of each kind so fuzes / spall settings stay sane
             AmmoType rod = real.Where(a => a.Category == AmmoType.AmmoCategory.Penetrator && a.Radius * 2000f < a.GetFinalCaliber() * 0.6f && a.GetFinalCaliber() >= 90).OrderByDescending(a => a.RhaPenetration).FirstOrDefault();
             AmmoType ap = real.Where(a => a.Category == AmmoType.AmmoCategory.Penetrator && a.Radius * 2000f >= a.GetFinalCaliber() * 0.6f && a.GetFinalCaliber() >= 20).OrderByDescending(a => a.GetFinalCaliber()).FirstOrDefault()
                          ?? rod;
@@ -110,14 +110,14 @@ namespace GHPCHitCam
 
         static AmmoType Clone(AmmoType t)
         {
-            // keep the template's cache index: GHPC's impact effect / decal tables are keyed by it
+            // keep the template's cache index, GHPC's impact effect / decal tables are keyed by it
             var a = (AmmoType)_clone.Invoke(t, null);
             _templateOf[a] = t;
             return a;
         }
 
-        /// Scaled from public rules of thumb: modern APFSDS ~4.4x calibre RHA, full-calibre AP ~1.9x,
-        /// HEAT ~5x, HE filler ~1.7e-6*cal^3 kg TNT (152 mm -> 6 kg), shell mass ~1.25e-5*cal^3 kg.
+        /// scaled from public rules of thumb: modern APFSDS ~4.4x calibre RHA, full-calibre AP ~1.9x,
+        /// HEAT ~5x, HE filler ~1.7e-6*cal^3 kg TNT (152 mm -> 6 kg), shell mass ~1.25e-5*cal^3 kg
         static AmmoType Gen(AmmoType t, string name, float cal, char kind)
         {
             var a = Clone(t);
@@ -146,7 +146,7 @@ namespace GHPCHitCam
             return a;
         }
 
-        /// General-purpose bomb: ~45 % of its mass is explosive; diameter grows with the cube root of mass.
+        /// general purpose bomb: ~45 % of the mass is explosive, diameter grows with cube root of mass
         static AmmoType GenBomb(AmmoType t, int kg)
         {
             var a = Clone(t);
@@ -175,7 +175,7 @@ namespace GHPCHitCam
             return info?.Weapon;
         }
 
-        /// The player's main gun firing while the arsenal is on: swap in the selected projectile.
+        /// player's main gun firing while the arsenal is on: swap in the picked projectile
         static void InitPrefix(LiveRound __instance, LiveRound parentRound)
         {
             try
@@ -183,7 +183,7 @@ namespace GHPCHitCam
                 if (!On || parentRound != null || __instance.Info == null || _overriding) return;
                 var u = Player;
                 if (u == null || __instance.Shooter != u) return;
-                if (__instance.Info.GetFinalCaliber() < 20f) return;   // machine guns stay what they are
+                if (__instance.Info.GetFinalCaliber() < 20f) return;   // machine guns stay as they are
                 var e = Selected;
                 if (e == null) return;
                 Apply(__instance, e, __instance.transform.position, __instance.transform.forward);
@@ -212,9 +212,9 @@ namespace GHPCHitCam
             }
         }
 
-        internal static Vector3? TestSightDir;   // self-test: the sight held on this direction
+        internal static Vector3? TestSightDir;   // self-test: sight held on this direction
 
-        /// Self-test: the picked bomb fired with the sight held on the target, as if you had aimed at it.
+        /// self-test: fire the picked bomb with the sight held on the target, like you aimed at it
         public static void TestSightDrop(Entry e, Unit target)
         {
             int i = _entries.IndexOf(e);
@@ -230,11 +230,11 @@ namespace GHPCHitCam
             finally { TestSightDir = null; }
         }
 
-        /// How fast a bomb is going when it reaches the ground from 300 m.
+        /// how fast a bomb is going when it reaches the ground from 300 m
         internal static float DropSpeed(AmmoType a) => Mathf.Sqrt(Mathf.Pow(Mathf.Max(a.MuzzleVelocity, 0f), 2f) + 2f * 9.81f * 300f);
 
-        /// Where a bomb lands: what the sight is on, by the game's own ray (it sees the vehicles' armour, which a plain
-        /// raycast goes through to the ground behind them); a vehicle's roof when it is one.
+        /// where a bomb lands: what the sight is on by the game's own ray (it sees vehicle armour, a plain raycast goes
+        /// through to the ground behind), a vehicle's roof if it's a vehicle
         static Vector3 AimPoint(Vector3 from, Vector3 dir, AmmoType ammo, out string what)
         {
             what = "the ground";
@@ -268,7 +268,7 @@ namespace GHPCHitCam
             return o + d * 1500f;
         }
 
-        /// Fire the selected projectile right now from the main gun (no reload, for quick tests).
+        /// fire the picked projectile right now from the main gun (no reload, for quick tests)
         public static void FireNow()
         {
             var u = Player;

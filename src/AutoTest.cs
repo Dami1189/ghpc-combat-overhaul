@@ -18,8 +18,8 @@ using UnityEngine.SceneManagement;
 
 namespace GHPCHitCam
 {
-    /// Dev harness. Active only when UserData/HitCam/autotest.cfg exists:
-    /// loads a mission, fires real game rounds at a vehicle, captures the hit cam to PNG, quits.
+    /// dev harness, only on when UserData/HitCam/autotest.cfg exists:
+    /// loads a mission, fires real game rounds at a vehicle, saves the hit cam to PNG, quits
     ///   mission=auto | list | <theaterKey>,<missionScene>
     ///   shots=apfsds:front, heat:side, he:top        (ammo:aspect, ammo = apfsds|ap|heat|atgm|he|any name substring;
     ///                                                 aspect = front|side|rear|top|turret|mantlet (along the target's gun))
@@ -60,16 +60,15 @@ namespace GHPCHitCam
         }
 
         static string Cfg(string k, string d) => _cfg.TryGetValue(k, out var v) ? v : d;
-        /// An on/off option of the running self-test (false when no self-test runs).
+        /// on/off option of the running self-test (false when none runs)
         internal static bool Opt(string k, bool d) => Active && Cfg(k, d ? "true" : "false") == "true";
         internal static string OutDir => _outDir;
-        /// film=<fps>: the hit cam advances by a fixed step a frame and every frame is saved (an even sequence for video,
-        /// however slow saving makes the game).
-        /// modulefilm=<seconds>: a module shot (a track) filmed from one view at 30 frames a second of game time.
+        /// film=<fps>: hit cam steps a fixed amount per frame and every frame is saved (even sequence for video, however slow saving gets)
+        /// modulefilm=<seconds>: a module shot (a track) filmed from one view at 30 fps of game time
         internal static float ModuleFilm => Active && float.TryParse(Cfg("modulefilm", "0"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float s) && s > 0f ? s : 0f;
         internal static float FilmStep => Active && float.TryParse(Cfg("film", "0"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fps) && fps > 0f ? 1f / fps : 0f;
 
-        /// Self-test: the real screen (the game's own camera, HUD and all) saved a few times from now.
+        /// self-test: grab the real screen (game camera, HUD and all) a few times from now
         internal static IEnumerator ScreenFrames(string name, params float[] at)
         {
             float t0 = Time.realtimeSinceStartup;
@@ -87,7 +86,7 @@ namespace GHPCHitCam
             if (!Active) return;
             _lastScene = scene;
             _sceneLoadedAt = Time.realtimeSinceStartup;
-            bool menu = scene.IndexOf("MainMenu", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool menu = SceneUtil.IsMenuScene(scene);
             if (menu && _pgEsc == 1) { _pgEsc = 2; MelonCoroutines.Start(PgEscBack()); return; }
             if (!_menuStarted && menu)
             {
@@ -96,19 +95,20 @@ namespace GHPCHitCam
                 else if (Cfg("menu_pages", "false") == "true") MelonCoroutines.Start(MenuPages());
                 else if (Cfg("pg_menu", "false") == "true") MelonCoroutines.Start(PgMenuFlow());
                 else if (Cfg("update_test", "false") == "true") MelonCoroutines.Start(UpdateTest());
-                // armorsim_menu=true: the main menu's ARMOR SIM button is the test (it loads the mission itself)
+                // armorsim_menu=true: test the main menu's ARMOR SIM button (it loads the mission itself)
                 else if (Cfg("armorsim_menu", "false") == "true") MelonCoroutines.Start(ArmorSimMenu.SelfTest(Cfg, _outDir, () => Finish("armor sim menu self-test done")));
                 else if (Cfg("menushot", "false") == "true") MelonCoroutines.Start(MenuShot());
                 else if (Cfg("menufps", "false") == "true") MelonCoroutines.Start(MenuFpsOnly());
                 else if (Cfg("menucfg", "false") == "true") MelonCoroutines.Start(MenuCfg());
+                else if (Cfg("menu_steps", "").Length > 0) MelonCoroutines.Start(MenuSteps());
                 else MelonCoroutines.Start(MenuFlow());
             }
         }
 
         static int _pgEsc;
 
-        /// update_test=true: the main menu's update box (updatecheck=true asks GitHub; update_feed=<file:// json> a stand-in
-        /// release), update_install=true clicks Update, whatsnew=true opens What's new; photographs each step.
+        /// update_test=true: main menu's update box (updatecheck=true asks GitHub, update_feed=<file:// json> = fake release),
+        /// update_install=true clicks Update, whatsnew=true opens What's new, screenshot of each step
         static IEnumerator UpdateTest()
         {
             float t0 = Time.realtimeSinceStartup;
@@ -136,7 +136,7 @@ namespace GHPCHitCam
                 yield return new WaitForSecondsRealtime(1f);
                 ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "update2_installed.png"));
                 yield return new WaitForSecondsRealtime(0.5f);
-                // restart=true: the Restart now button (the game quits and comes back through Steam on the new version)
+                // restart=true: Restart now button (game quits and comes back through Steam on the new version)
                 if (Cfg("restart", "false") == "true" && Updater.Now == Updater.State.Installed)
                 {
                     HitCamMod.Log.Msg("UPDATE TEST: Restart now");
@@ -148,7 +148,7 @@ namespace GHPCHitCam
             Finish("update test done");
         }
 
-        /// pg_menu=true: the proving ground from its main menu button (as a player starts it), then the shot list there.
+        /// pg_menu=true: proving ground from its main menu button (like a player starts it), then the shot list there
         static IEnumerator PgMenuFlow()
         {
             float t0 = Time.realtimeSinceStartup;
@@ -156,14 +156,14 @@ namespace GHPCHitCam
             if (ArmorSimMenu.PgButton == null) { Finish("pg_menu: no PROVING GROUND button in the main menu"); yield break; }
             yield return new WaitForSecondsRealtime(1f);
             HitCamMod.Log.Msg("AUTOTEST: PROVING GROUND from the main menu");
-            // loadshots=true: the real screen through the loading and into the mission (nothing of the menu's may stay up)
+            // loadshots=true: real screen through the loading into the mission (nothing from the menu may stay up)
             if (Cfg("loadshots", "false") == "true") MelonCoroutines.Start(ScreenFrames("load", 0.5f, 3f, 8f, 16f, 30f, 45f));
             ArmorSimMenu.PgButton.GetComponentInChildren<UnityEngine.UI.Button>(true).onClick.Invoke();
-            _launched = true;   // the shot list starts once the mission is up (and waits for the range)
+            _launched = true;   // shot list starts once the mission is up (and waits for the range)
         }
 
-        /// menu_pages=true: the title menu's own pages opened with its own buttons and closed again (the menu's cancel),
-        /// the rows' places written down and photographed each time: ours must move with the game's.
+        /// menu_pages=true: open the title menu's pages with its own buttons and close them (menu's cancel), log and screenshot
+        /// the row positions each time: ours have to move with the game's
         static IEnumerator MenuPages()
         {
             float t0 = Time.realtimeSinceStartup;
@@ -204,9 +204,9 @@ namespace GHPCHitCam
             Finish("menu pages done");
         }
 
-        /// pg_esc=true: PROVING GROUND from the main menu, then out the way a player leaves (ESC, Quit to menu); back in
-        /// the main menu our rows and the badge must be there again, and in the ordinary mission loaded after it
-        /// (mission=..., provingground=false, shots=unitmenu) the unit menu must list the mission's units.
+        /// pg_esc=true: PROVING GROUND from the main menu, then leave like a player (ESC, Quit to menu). back in the menu our
+        /// rows and the badge have to be there again, and in the normal mission loaded after (mission=..., provingground=false,
+        /// shots=unitmenu) the unit menu has to list that mission's units
         static IEnumerator PgEscFlow()
         {
             float t0 = Time.realtimeSinceStartup;
@@ -226,7 +226,7 @@ namespace GHPCHitCam
             ScreenCapture.CaptureScreenshot(Path.Combine(_outDir, "pgesc1_range.png"));
             ProvingGround.TestUnitMenu();
             yield return new WaitForSecondsRealtime(1f);
-            // pg_esc_shots=<lab spec>,...: hits first (the hit cam's own physics scene comes with the first one)
+            // pg_esc_shots=<lab spec>,...: hits first (hit cam's own physics scene comes with the first one)
             foreach (var shot in Cfg("pg_esc_shots", "").Split(',').Select(x => x.Trim()).Where(x => x.Length > 0))
             {
                 if (!ProvingGround.LabShot(shot.Split(':'), out _, out _)) { yield return new WaitForSecondsRealtime(3f); ProvingGround.LabShot(shot.Split(':'), out _, out _); }
@@ -247,7 +247,7 @@ namespace GHPCHitCam
                 ConfigMenu.Close();
                 yield return new WaitForSecondsRealtime(0.5f);
             }
-            // ESC: the game's menu stack opens its root menu (what PlayerInput does on the key), then its Quit to menu
+            // ESC: game's menu stack opens its root menu (same as PlayerInput on the key), then Quit to menu
             var mc = UnityEngine.Object.FindObjectOfType<GHPC.UI.MenuController>();
             bool open = false;
             try { open = mc != null && mc.ToggleRootMenu(); } catch (Exception e) { HitCamMod.Log.Warning("PG ESC TEST: game menu: " + e.Message); }
@@ -284,8 +284,22 @@ namespace GHPCHitCam
             yield return MenuFlow();
         }
 
-        /// menucfg=true: the settings window opened over the title menu and closed again, photographed each time (the
-        /// game's bottom line stepping aside), with its Keys tab.
+        /// menu_steps=<step>,<step>...: a player's steps from the main menu on, across scene loads (menu buttons, Armor Sim,
+        /// proving ground): wait:<s> plus every InputProbe step (real keys and clicks, waitfor, asleave)
+        static IEnumerator MenuSteps()
+        {
+            foreach (var raw in Cfg("menu_steps", "").Split(',').Select(x => x.Trim()).Where(x => x.Length > 0))
+            {
+                var spec = raw.Split(':');
+                if (spec[0] == "wait") { yield return new WaitForSecondsRealtime(float.Parse(spec[1], System.Globalization.CultureInfo.InvariantCulture)); continue; }
+                if (InputProbe.Step(spec, out var run)) { yield return run; continue; }
+                HitCamMod.Log.Warning("MENU STEPS: unknown step " + raw);
+            }
+            Finish("menu steps done");
+        }
+
+        /// menucfg=true: open and close the settings window over the title menu, screenshot each time (game's bottom line
+        /// steps aside), plus its Keys tab
         static IEnumerator MenuCfg()
         {
             float t0 = Time.realtimeSinceStartup;
@@ -311,7 +325,7 @@ namespace GHPCHitCam
             Finish("menu cfg done");
         }
 
-        /// menufps=true: the title menu's frame time and the mod's part of it, then quit.
+        /// menufps=true: title menu frame time and the mod's share of it, then quit
         static IEnumerator MenuFpsOnly()
         {
             float t0 = Time.realtimeSinceStartup;
@@ -327,7 +341,7 @@ namespace GHPCHitCam
             Finish("menu fps done");
         }
 
-        /// menushot=true: the main menu as it looks with our buttons in it, then quit.
+        /// menushot=true: screenshot of the main menu with our buttons in it, then quit
         static IEnumerator MenuShot()
         {
             float t0 = Time.realtimeSinceStartup;
@@ -380,7 +394,7 @@ namespace GHPCHitCam
             var sc = UnityEngine.Object.FindObjectOfType<SceneController>();
             int idx = SceneUtility.GetBuildIndexByScenePath(theater.TerrainSceneReference.Path);
             HitCamMod.Log.Msg($"AUTOTEST: launching {theater.Key},{SceneName(mission)} \"{mission.MissionName}\" terrain index {idx}");
-            // play the side the mission actually offers (forcing the wrong one leaves the player without a vehicle)
+            // play the side the mission really offers (forcing the wrong one leaves the player with no vehicle)
             var sides = mission.FactionInfo?.Select(f => f.Allegiance).Where(f => f != Faction.Neutral).ToList() ?? new List<Faction>();
             Faction side = sides.Count > 0 ? sides[0] : Faction.Blue;
             string wantSide = Cfg("faction", "").ToLower();
@@ -401,7 +415,7 @@ namespace GHPCHitCam
 
         static bool InBuild(MissionMetaData m)
         {
-            // dev missions are listed in the data but their scenes are not shipped
+            // dev missions are in the data but their scenes aren't shipped
             try { return m.MissionSceneReference != null && SceneUtility.GetBuildIndexByScenePath(m.MissionSceneReference.Path) >= 0; }
             catch { return false; }
         }
@@ -439,7 +453,7 @@ namespace GHPCHitCam
             var ammos = Resources.FindObjectsOfTypeAll<AmmoCodexScriptable>().Where(a => a != null && a.AmmoType != null).Select(a => a.AmmoType).Distinct().ToList();
             HitCamMod.Log.Msg("AUTOTEST: ammo: " + string.Join(" | ", ammos.Select(a => $"{a.Name} [{a.Category} {a.Caliber}mm pen {a.RhaPenetration} tnt {a.TntEquivalentKg}]")));
 
-            // armorsim=<vehicle key>: the Armor Sim self-test instead of the shot list
+            // armorsim=<vehicle key>: Armor Sim self-test instead of the shot list
             if (_cfg.TryGetValue("armorsim", out var simVehicle))
             {
                 yield return ArmorSim.SelfTest(simVehicle, Cfg("armorsim_ammo", "apfsds"), Cfg("armorsim_shots", "front,side,rear"), Cfg("armorsim_range", "1000"), _outDir);
@@ -447,15 +461,15 @@ namespace GHPCHitCam
                 yield break;
             }
 
-            // testground=true: our own flat pad and targets, far from the mission's units (whose AI is switched off)
+            // testground=true: our own flat pad and targets, far from the mission's units (their AI is off)
             if (Cfg("testground", "false") == "true") yield return TestGround.Build(player);
-            // the proving ground is where self-tests shoot (its flat deck, rows of targets every 100 m, nothing of the
-            // mission in the way; lab:<ammo>:<row>:<col>:<aspect>:<aim>:<range> shots fire there). provingground=false,
-            // testground=true or armorsim=... keep the mission's own ground.
+            // self-tests shoot on the proving ground (flat deck, target rows every 100 m, nothing from the mission in the way,
+            // lab:<ammo>:<row>:<col>:<aspect>:<aim>:<range> shots fire there). provingground=false, testground=true or
+            // armorsim=... keep the mission's own ground
             if (Cfg("provingground", Cfg("testground", "false") == "true" ? "false" : "true") == "true")
             {
                 yield return ProvingGround.Build();
-                // (a range on its way already, from the menu: wait for it)
+                // (range already on its way from the menu: wait for it)
                 float w0 = Time.realtimeSinceStartup;
                 while (!ProvingGround.Active && Time.realtimeSinceStartup - w0 < 180f) yield return null;
                 player = SceneUtil.Player.CurrentPlayerUnit;
@@ -466,7 +480,7 @@ namespace GHPCHitCam
             for (_shotIndex = 0; _shotIndex < specs.Count; _shotIndex++)
             {
                 var spec = specs[_shotIndex].Split(':');
-                // the unit list changes (range spawns, kills): refresh it every shot
+                // unit list changes (range spawns, kills): refresh it every shot
                 units = SceneUnitsManager.Instance.AllUnitsInScene.Where(u => u != null && u != player && u.Type != UnitType.Infantry && !u.Destroyed && u.gameObject.activeInHierarchy).ToList();
                 if (spec[0] == "range")
                 {
@@ -515,7 +529,7 @@ namespace GHPCHitCam
                 if (spec[0] == "set") { foreach (var kv in spec.Skip(1)) { var kvp = kv.Split('='); HitCamMod.Log.Msg($"AUTOTEST set {kv}: {(kvp.Length == 2 && Presets.Set(kvp[0], kvp[1]) ? "ok" : "FAILED")}"); } continue; }
                 if (spec[0] == "restart")
                 {
-                    // the game's own Restart Mission: the proving ground has to come back by itself
+                    // game's own Restart Mission: proving ground has to come back by itself
                     var sc = UnityEngine.Object.FindObjectOfType<GHPC.SceneController>();
                     HitCamMod.Log.Msg("AUTOTEST: restarting the mission (proving ground active: " + ProvingGround.Active + ")");
                     if (sc != null) sc.RestartActiveScene();
@@ -530,13 +544,13 @@ namespace GHPCHitCam
                 }
                 if (spec[0] == "near")
                 {
-                    // near:<arsenal round>:<metres>: a round into the ground in front of the camera (explosion sound / kick)
+                    // near:<arsenal round>:<metres>: round into the ground in front of the camera (explosion sound / kick)
                     yield return BlastSound.NearShot(spec, player);
                     continue;
                 }
                 if (spec[0] == "cal")
                 {
-                    // cal:<metres>: the gun / explosion events and the boom measured at that range (BlastSound.Calibrate)
+                    // cal:<metres>: gun / explosion events and the boom measured at that range (BlastSound.Calibrate)
                     yield return BlastSound.Calibrate(spec);
                     continue;
                 }
@@ -550,16 +564,16 @@ namespace GHPCHitCam
                     float fired = Time.time;
                     if (!ProvingGround.LabShot(spec, out var labAim, out var labDir))
                     {
-                        // a hurt target was respawned instead: try once more
+                        // a hurt target got respawned instead: try once more
                         yield return new WaitForSecondsRealtime(3f);
                         if (!ProvingGround.LabShot(spec, out labAim, out labDir)) { HitCamMod.Log.Warning($"AUTOTEST: shot {_shotIndex}: lab shot failed ({specs[_shotIndex]})"); continue; }
                     }
-                    if (Cfg("world", "false") == "true") MelonCoroutines.Start(WorldShots(labAim, labDir, _shotIndex));   // the holes on the real vehicle too
+                    if (Cfg("world", "false") == "true") MelonCoroutines.Start(WorldShots(labAim, labDir, _shotIndex));   // holes on the real vehicle too
                     if (Cfg("cine", "false") == "true") MelonCoroutines.Start(CineShots(labAim, labDir, _shotIndex));
                     HitCamMod.Log.Msg($"AUTOTEST: shot {_shotIndex}: proving ground {specs[_shotIndex]}");
                     float l0 = Time.realtimeSinceStartup;
                     _watch = null; _watchPlayback = null;
-                    // this shot's own hit cam (not a cook-off replay of an earlier one still playing)
+                    // this shot's own hit cam, not a cook-off replay of an earlier one still playing
                     bool Mine(Playback pb) => pb != null && !pb.CookOffReplay && pb.Rec.CreatedReal >= fired - 0.2f;
                     while (Time.realtimeSinceStartup - l0 < 12f && !Mine(HitCamPlayer.Current)) yield return null;
                     if (!Mine(HitCamPlayer.Current)) { HitCamMod.Log.Warning("AUTOTEST: no hit cam for shot " + _shotIndex + " (miss?)"); continue; }
@@ -569,7 +583,7 @@ namespace GHPCHitCam
                     while (HitCamPlayer.Current == _watchPlayback) yield return null;
                     HitCamMod.Log.Msg($"AUTOTEST: shot {_shotIndex} done: {_watch.Title}; longest frame {_maxFrame * 1000f:0} ms; events: " + string.Join(" / ", _watch.Events.Where(ev => ev.Kind != EvKind.CrewHit).Select(ev => ev.Text).Take(25)));
                     _maxFrame = 0f;
-                    if (Cfg("cine", "false") == "true") while (Time.realtimeSinceStartup - l0 < 28f) yield return null;   // the wreck stays for its pictures
+                    if (Cfg("cine", "false") == "true") while (Time.realtimeSinceStartup - l0 < 28f) yield return null;   // wreck stays around for its pictures
                     yield return ProvingGround.RespawnHurt();
                     yield return new WaitForSecondsRealtime(1.5f);
                     continue;
@@ -601,7 +615,7 @@ namespace GHPCHitCam
                 _maxFrame = 0f;
                 yield return new WaitForSecondsRealtime(0.5f);
             }
-            // cookwait=<s>: keep the mission running for a late cook-off and capture its follow-up replay
+            // cookwait=<s>: keep the mission running for a late cook-off and grab its follow-up replay
             if (float.TryParse(Cfg("cookwait", "0"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float cookWait) && cookWait > 0f)
             {
                 float c0 = Time.realtimeSinceStartup;
@@ -624,7 +638,7 @@ namespace GHPCHitCam
             Finish("all shots done");
         }
 
-        /// Arsenal test shots: generated shells, autocannon bursts (one merged hit cam), bombs dropped on the roof.
+        /// arsenal test shots: generated shells, autocannon bursts (one merged hit cam), bombs dropped on the roof
         static IEnumerator ArsenalShot(string[] spec, List<Unit> units, Unit player, string targetWant)
         {
             string kind = spec[0];
@@ -643,7 +657,7 @@ namespace GHPCHitCam
                 if (kind == "bomb") (aim, dir) = DropBomb(player, target, e.Ammo);
                 else if (kind == "sightbomb")
                 {
-                    // the arsenal's own drop, the sight held on the target (sightbomb:<arsenal entry>:<target>)
+                    // arsenal's own drop with the sight held on the target (sightbomb:<arsenal entry>:<target>)
                     Arsenal.TestSightDrop(e, target);
                     aim = target.transform.position; dir = Vector3.up;
                 }
@@ -665,7 +679,7 @@ namespace GHPCHitCam
             yield return new WaitForSecondsRealtime(0.5f);
         }
 
-        /// A bomb falling onto the target's roof from 300 m.
+        /// bomb dropped onto the target's roof from 300 m
         static (Vector3, Vector3) DropBomb(Unit shooter, Unit target, AmmoType ammo)
         {
             Bounds b = UnitBounds(target);
@@ -694,7 +708,7 @@ namespace GHPCHitCam
             }
             if (ProvingGround.Active)
             {
-                // the proving ground's targets (nearest first: the 100 m row before the 1000 m one)
+                // proving ground targets, nearest first (100 m row before the 1000 m one)
                 var mine = units.Where(ProvingGround.IsTarget).OrderBy(u => (u.transform.position - player.transform.position).sqrMagnitude).ToList();
                 if (mine.Count > 0) units = mine;
             }
@@ -702,7 +716,7 @@ namespace GHPCHitCam
                 return units.Where(u => u.Allegiance != player.Allegiance).OrderBy(u => (u.transform.position - player.transform.position).sqrMagnitude).FirstOrDefault()
                     ?? units.FirstOrDefault();
             if (want == "any") return units.FirstOrDefault();
-            // an exact name first, then a name that goes on with something other than a digit ("Mi-2" is not "Mi-24D")
+            // exact name first, then a name that goes on with something other than a digit ("Mi-2" is not "Mi-24D")
             return units.FirstOrDefault(u => Recorder.SafeName(u).Equals(want, StringComparison.OrdinalIgnoreCase))
                 ?? units.FirstOrDefault(u =>
                 {
@@ -727,7 +741,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Same steps WeaponSystem.Fire uses, minus the gun.
+        /// same steps as WeaponSystem.Fire, minus the gun
         public static (Vector3 aim, Vector3 dir) Fire(Unit shooter, Unit target, AmmoType ammo, string aspect, float jitter = 0f)
         {
             Bounds b = UnitBounds(target);
@@ -763,7 +777,7 @@ namespace GHPCHitCam
                 case "top": dir = (tt.up * 2.5f + tt.forward * 0.6f).normalized; break;
                 case "turret": dir = tt.forward; aim += tt.up * b.extents.y * 0.55f; break;
                 case "mantlet":
-                    // down the target's own gun, just beside the barrel: the mantlet face, wherever the turret points
+                    // down the target's own gun, just beside the barrel: hits the mantlet face wherever the turret points
                     var mz = Arsenal.MainGun(target)?.MuzzleIdentity;
                     if (mz == null) goto default;
                     dir = mz.forward;
@@ -773,7 +787,7 @@ namespace GHPCHitCam
                     if (ModuleAim(target, aspect, ref aim, out dir)) break;
                     dir = tt.forward; aim += tt.up * b.extents.y * 0.15f; break;
             }
-            // a moving target (a helicopter): lead it by the round's 30 m of flight
+            // moving target (helicopter): lead it by the round's 30 m of flight
             var trb = target.GetComponent<Rigidbody>();
             if (trb != null && trb.velocity.sqrMagnitude > 1f) aim += trb.velocity * (30f / Mathf.Max(ammo.MuzzleVelocity, 50f));
             Vector3 pos = aim + dir * 30f + Vector3.up * 0.3f;
@@ -790,9 +804,9 @@ namespace GHPCHitCam
             return (aim, (aim - pos).normalized);
         }
 
-        /// Module aim points for the world module damage: barrel-<fraction of its length from the muzzle> (from the side),
-        /// track (its upper run, from the side), engine (down onto the engine deck from behind), boom (a helicopter's tail
-        /// boom, from the side). `dir` points from the aim back toward where the round comes from.
+        /// aim points for world module damage: barrel-<fraction of its length from the muzzle> (from the side), track (upper
+        /// run, from the side), engine (down onto the engine deck from behind), boom (helicopter tail boom, from the side).
+        /// `dir` points from the aim back to where the round comes from
         static bool ModuleAim(Unit target, string aspect, ref Vector3 aim, out Vector3 dir)
         {
             dir = Vector3.forward;
@@ -818,7 +832,7 @@ namespace GHPCHitCam
             }
             if (aspect == "cook")
             {
-                // from the side into the middle of the hull, where the T-72's / T-80's carousel sits under the turret
+                // from the side into mid hull, where the T-72 / T-80 carousel sits under the turret
                 Bounds hb = UnitBounds(target);
                 aim = hb.center + tt.up * hb.extents.y * -0.25f;
                 dir = tt.right;
@@ -826,12 +840,12 @@ namespace GHPCHitCam
             }
             if (aspect == "trackfront")
             {
-                // the front of a track from straight ahead, as you'd hit it facing the tank
+                // front of a track from straight ahead, like you'd hit it facing the tank
                 var z = Zone(n => n.Contains("left track")) ?? Zone(n => n.Contains("track"));
                 if (z == null) return false;
                 var zc = z.ComponentCollision;
-                // rays from straight ahead at the track's own lateral place: the frontmost point of its hit zone (the idler end)
-                // (a switched-off "Raycast Only" zone can't be raycast: the front of its box then)
+                // rays from straight ahead at the track's lateral spot: frontmost point of its hit zone (idler end)
+                // (a switched-off "Raycast Only" zone can't be raycast, use the front of its box then)
                 Bounds zbb = WorldModules.ZoneBounds(zc);
                 Vector3 lp = tt.InverseTransformPoint(zbb.center);
                 float bestD = float.MaxValue;
@@ -856,7 +870,7 @@ namespace GHPCHitCam
                 var z = Zone(n => n.Contains("left track")) ?? Zone(n => n.Contains("track"));
                 if (z == null) return false;
                 Bounds zb = WorldModules.ZoneBounds(z.ComponentCollision);
-                aim = zb.center + tt.up * zb.extents.y * 0.8f;          // the top run (the hit zone's loop is hollow in the middle)
+                aim = zb.center + tt.up * zb.extents.y * 0.8f;          // top run (the hit zone's loop is hollow in the middle)
                 dir = Vector3.Dot(zb.center - tt.position, tt.right) < 0f ? -tt.right : tt.right;
                 return true;
             }
@@ -877,7 +891,7 @@ namespace GHPCHitCam
                 aim = hub != null ? Vector3.Lerp(z.ComponentCollision.bounds.center, hub.ComponentCollision.bounds.center, 0.3f) : z.ComponentCollision.bounds.center;
                 // onto the boom's own armour, if a ray across it finds it
                 var dc0 = z.ComponentCollision;
-                // the shaft runs along the top of the boom: scan down across the boom for its skin (the helicopter's armour)
+                // shaft runs along the top of the boom: scan down across it for its skin (the heli's armour)
                 Vector3 across = tt.right, onArmour = aim;
                 var armour = WorldDamage.UnitRoots(target).SelectMany(r => r.GetComponentsInChildren<Collider>(false)).Where(c => c != null && !c.isTrigger && c.TryGetComponent<GHPC.IArmor>(out _)).ToList();
                 bool found = false;
@@ -896,7 +910,7 @@ namespace GHPCHitCam
         static bool GrazeShot(Unit target, Bounds b, string face, float deg, out Vector3 aim, out Vector3 dir)
         {
             Transform tt = target.transform;
-            // the armour's own extent in the vehicle's frame (renderer bounds include map icons and the like)
+            // armour's own extent in the vehicle frame (renderer bounds include map icons and such)
             bool any = false;
             Bounds lb = default;
             foreach (var c in WorldDamage.HullColliders(target).set)
@@ -918,13 +932,13 @@ namespace GHPCHitCam
                     lo = lc + new Vector3(0f, le.y + 2f, -le.z * 0.6f); lp = Vector3.down; la = Vector3.forward; break;
                 case "side":
                     lo = lc + new Vector3(le.x + 2f, -le.y * 0.3f, 0f); lp = Vector3.left; la = Vector3.forward; break;
-                default:       // the upper glacis, then up it toward the turret
+                default:       // upper glacis, then up it toward the turret
                     lo = lc + new Vector3(0f, -le.y * 0.1f, le.z + 2f); lp = Vector3.back; la = Vector3.back; break;
             }
             Vector3 o = tt.TransformPoint(lo), probe = tt.TransformDirection(lp), along = tt.TransformDirection(la);
             aim = Vector3.zero; dir = Vector3.forward;
-            // the vehicle's own armour colliders, each tested on its own (a plain scene raycast only meets its coarse
-            // bounds / vision / near-miss colliders)
+            // vehicle's own armour colliders, each tested alone (a plain scene raycast only hits the coarse bounds / vision /
+            // near-miss colliders)
             var ray = new Ray(o, probe);
             var found = new List<RaycastHit>();
             if (WorldDamage.ArmourHit(target, ray, 12f, out var rh)) found.Add(rh);    // scene query on the armour layers, kept to this unit's plates
@@ -944,15 +958,15 @@ namespace GHPCHitCam
             return false;
         }
 
-        /// Photographs the real vehicle in the game world right after the impact (sparks, hole, shrapnel).
-        /// cine=true: pictures of the wreck for the mod page, the way you'd frame them by hand: low, from the side the
-        /// round came in, a little off its line, the hole and the smoke in view, at several moments after the hit.
-        /// Files: cine{shot}_{k}.png with the game's post-processing, cine{shot}_{k}_raw.png without.
+        /// screenshots the real vehicle in the world right after impact (sparks, hole, shrapnel)
+        /// cine=true: wreck shots for the mod page framed like by hand: low, from the side the round came in, a bit off its
+        /// line, hole and smoke in view, at a few moments after the hit
+        /// files: cine{shot}_{k}.png with the game's post-processing, cine{shot}_{k}_raw.png without
         static IEnumerator CineShots(Vector3 aim, Vector3 shotDir, int shot)
         {
             float t0 = Time.realtimeSinceStartup;
             Vector3 back = -shotDir; back.y = 0f; back = back.sqrMagnitude > 1e-4f ? back.normalized : Vector3.back;
-            // (seconds after the hit, yaw off the round's line, distance, height, field of view)
+            // (s after the hit, yaw off the round's line, distance, height, fov)
             var views = new (float t, float yaw, float dist, float up, float fov)[]
             {
                 (1.2f, 32f, 6.5f, 1.3f, 34f), (3.5f, -48f, 8.5f, 1.6f, 36f), (7f, 68f, 12f, 2.4f, 38f),
@@ -999,15 +1013,15 @@ namespace GHPCHitCam
             cam.nearClipPlane = 0.05f;
             cam.farClipPlane = 4000f;
             cam.enabled = false;
-            // no MSAA: the game's deferred camera has none, and with it near-flush decals dither per sample
+            // no MSAA: game's deferred camera has none, and with it near-flush decals dither per sample
             var rt = new RenderTexture(1280, 720, 24) { antiAliasing = 1 };
             cam.targetTexture = rt;
             var near = UnityEngine.Object.FindObjectsOfType<Renderer>().Where(r => (r.bounds.center - aim).sqrMagnitude < 36f).ToList();
             HitCamMod.Log.Msg($"AUTOTEST inspect shot {shot}: aim {aim}, renderers within 6 m: {near.Count} (enabled {near.Count(r => r.enabled && r.gameObject.activeInHierarchy)}), e.g. " + string.Join(", ", near.Take(6).Select(r => r.name + "/" + LayerMask.LayerToName(r.gameObject.layer) + (r.enabled ? "" : "(off)"))));
             Vector3 side = Vector3.Cross(Vector3.up, shotDir).normalized;
-            // 0-2: the vehicle (close, then wide for the shrapnel); 3-6: close-ups of this shot's first 3D plate (else its flat decals):
-            // 3 while it is hot (oblique), 4 cooled (oblique, no post-processing so the depth of field doesn't blur it),
-            // 5 cooled (face-on, no post), 6 cooled (oblique, the game's post-processing); 7-8: its second plate (an exit hole), like 4-5
+            // 0-2: the vehicle (close, then wide for shrapnel); 3-6: close-ups of this shot's first 3D plate (else its flat decals):
+            // 3 hot (oblique), 4 cooled (oblique, no post so DoF doesn't blur it), 5 cooled (face-on, no post),
+            // 6 cooled (oblique, game's post); 7-8: its second plate (exit hole), like 4-5
             float[] at = { 0.1f, 0.7f, 4f, 0.45f, 4.3f, 4.45f, 4.6f, 4.75f, 4.9f };
             int[] order = { 0, 3, 1, 2, 4, 5, 6, 7, 8 };
             foreach (int k in order)
@@ -1017,7 +1031,7 @@ namespace GHPCHitCam
                 if (k >= 3)
                 {
                     var mine = WorldPlate.All.Where(w => w != null && w.Has3D && w.Born >= since - 0.01f).OrderBy(w => w.Fx.Mode == PlateMode.Trench ? 0 : 1).ThenBy(w => w.Born).ToList();    // grooves and slots first
-                    // then the hits that only got flat decals (no hull under them, covered by a net or stowage)
+                    // then hits that only got flat decals (no hull under them, covered by a net or stowage)
                     mine.AddRange(WorldPlate.All.Where(w => w != null && !w.Has3D && w.Wait == null && w.Born >= since - 0.01f).OrderBy(w => w.Born));
                     int which = k >= 7 ? 1 : 0;
                     if (mine.Count <= which) { if (k == 3 || k == 7) HitCamMod.Log.Msg($"AUTOTEST inspect shot {shot}: no plate #{which}"); continue; }
@@ -1025,7 +1039,7 @@ namespace GHPCHitCam
                     if (k == 3 || k == 7) HitCamMod.Log.Msg($"AUTOTEST inspect shot {shot}: close-ups of plate #{which} " + (pl.Has3D ? $"{pl.Fx.Mode}{(pl.Fx.Exit ? " (exit)" : "")} on {pl.Fx.Hit.Name}" : "(flat decals only)"));
                     Transform t = pl.Has3D ? pl.Fx.T : pl.transform;
                     Vector3 outN = -t.forward;
-                    // a groove: framed on its middle, far enough back to see it end to end
+                    // groove: frame its middle, far enough back to see it end to end
                     Vector3 look = pl.Has3D ? pl.Fx.ViewCenter : t.position;
                     float dist = pl.Has3D && pl.Fx.Mode == PlateMode.Trench ? Mathf.Clamp(pl.Fx.ViewRadius * 2.6f, 0.35f, 3f)
                                : Mathf.Clamp((pl.Has3D ? pl.Fx.ViewRadius : Mathf.Max(pl.HoleR * 4f, 0.06f)) * 5f, 0.35f, 3f);
@@ -1035,7 +1049,7 @@ namespace GHPCHitCam
                 }
                 else
                 {
-                    // close-up for the hole, then a wider view for the shrapnel on the ground
+                    // close-up of the hole, then wider for the shrapnel on the ground
                     float back = k < 2 ? 3.2f : 7f;
                     cam.transform.position = aim - shotDir * back + side * (k < 2 ? 1.8f : 4f) + Vector3.up * (k < 2 ? 0.9f : 2.5f);
                     cam.transform.LookAt(aim - (k < 2 ? Vector3.zero : Vector3.up * 0.8f));
@@ -1071,8 +1085,8 @@ namespace GHPCHitCam
             return b;
         }
 
-        /// Capture times: one approach frame, a dense run through the impact slow motion (dense=true), then the interior and aftermath.
-        /// The playing hit cam's frames saved as a shot's are (the burst probe: burstcap=true).
+        /// capture times: one approach frame, a dense run through the impact slow-mo (dense=true), then interior and aftermath.
+        /// also saves the playing hit cam's frames like a shot's (burst probe: burstcap=true)
         internal static void CaptureCurrent()
         {
             var p = HitCamPlayer.Current;
@@ -1098,11 +1112,11 @@ namespace GHPCHitCam
                 for (float t = p.A - 0.04f; t < p.A + p.Dwell + 1.0f; t += step) _captureAt.Add(t);
             else _captureAt.Add(p.A + 0.05f);
             _captureAt.AddRange(new[] { p.A + p.B * 0.4f, p.A + p.B * 0.75f, p.A + p.B + p.C * 0.6f });
-            // late=true: the aftermath too (fires, ammo cook-offs), every 0.25 s
+            // late=true: aftermath too (fires, ammo cook-offs), every 0.25 s
             if (Cfg("late", "false") == "true")
             {
                 for (float t = p.A + p.B * 0.6f; t < p.Duration - 0.1f; t += 0.25f) _captureAt.Add(t);
-                // the replay may keep going (a propellant fire waiting for its cook-off): keep capturing, slower
+                // replay may keep going (propellant fire waiting for its cook-off): keep capturing, slower
                 for (float t = Mathf.Max(p.Duration, p.A + p.B * 0.6f); t < p.Duration + 16f; t += 0.5f) _captureAt.Add(t);
             }
             _captureAt.Sort();

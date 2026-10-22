@@ -1,8 +1,9 @@
 using System;
+using System.Linq;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(GHPCHitCam.HitCamMod), "GHPC Combat Overhaul", "1.1.1", "Damian")]
+[assembly: MelonInfo(typeof(GHPCHitCam.HitCamMod), "GHPC Combat Overhaul", "1.1.2", "Damian")]
 [assembly: MelonGame("Radian Simulations LLC", "GHPC")]
 
 namespace GHPCHitCam
@@ -13,10 +14,24 @@ namespace GHPCHitCam
         internal static HitCamMod Instance;
         internal static string DataDir;
 
+        /// every mod running next to this one + version on one line, so a report's log says what it ran with
+        public override void OnLateInitializeMelon()
+        {
+            try
+            {
+                var others = MelonLoader.MelonBase.RegisteredMelons.Where(m => m != null && m != this && m.Info != null)
+                    .Select(m => m.Info.Name + " " + m.Info.Version).ToList();
+                Log.Msg($"Running with {others.Count} other mod(s): " + (others.Count > 0 ? string.Join(", ", others) : "none") +
+                        $"; MelonLoader {MelonLoader.BuildInfo.Version}, game build {Application.version}");
+            }
+            catch (Exception e) { Log.Warning("mod list: " + e.Message); }
+        }
+
         public override void OnInitializeMelon()
         {
             Log = new ModLog(LoggerInstance);
             Instance = this;
+            UnityErrors.Install();
             DataDir = System.IO.Path.Combine(MelonLoader.Utils.MelonEnvironment.UserDataDirectory, "HitCam");
             System.IO.Directory.CreateDirectory(DataDir);
             try
@@ -25,48 +40,48 @@ namespace GHPCHitCam
                 Settings.FreshInstall = !System.IO.File.Exists(cfg) || !System.IO.File.ReadAllText(cfg).Contains("[HitCam]");
             }
             catch { }
-            Settings.Init();
-            Recorder.Install(HarmonyInstance);
-            Arsenal.Install(HarmonyInstance);
-            Safety.Install(HarmonyInstance);
-            ModdedVehicles.Install(HarmonyInstance);
-            ArmorSim.Init(HarmonyInstance);
-            ProvingGround.Init();
-            ProvingGround.Install(HarmonyInstance);
-            AfterAction.Init();
-            AfterAction.Install(HarmonyInstance);
-            KillFeed.Install(HarmonyInstance);
-            BlastSound.Install(HarmonyInstance);
-            ConfigMenu.Install(HarmonyInstance);
-            AutoTest.Init();
-            PrefsRescue.Apply(Settings.Cat);
-            Settings.Migrate();
+            try { Settings.Init(); }
+            catch (Exception e) { Log.Error("Startup: the settings failed to load, the mod can't run without them (please send this log): " + e); throw; }
+            Part("hit recorder", () => Recorder.Install(HarmonyInstance));
+            Part("arsenal", () => Arsenal.Install(HarmonyInstance));
+            Part("safety hooks", () => Safety.Install(HarmonyInstance));
+            Part("vehicle mods support", () => ModdedVehicles.Install(HarmonyInstance));
+            Part("armor sim", () => ArmorSim.Init(HarmonyInstance));
+            Part("proving ground", () => { ProvingGround.Init(); ProvingGround.Install(HarmonyInstance); });
+            Part("after action report", () => { AfterAction.Init(); AfterAction.Install(HarmonyInstance); });
+            Part("kill feed", () => KillFeed.Install(HarmonyInstance));
+            Part("blast sound", () => BlastSound.Install(HarmonyInstance));
+            Part("settings window", () => ConfigMenu.Install(HarmonyInstance));
+            Part("self test", AutoTest.Init);
+            Part("settings rescue", () => PrefsRescue.Apply(Settings.Cat));
+            Part("settings update", Settings.Migrate);
             Perf.On = Settings.DebugLog.Value || AutoTest.Active;
-            Perf.InstrumentHooks(HarmonyInstance);
+            Part("perf hooks", () => Perf.InstrumentHooks(HarmonyInstance));
             Log.Info($"GHPC Combat Overhaul ready. Settings: {Hotkeys.Label(Settings.ConfigKey)}, hit cam on/off: {Hotkeys.Label(Settings.ToggleKey)}, replay the last hit: {Hotkeys.Label(Settings.ReplayKey)}");
         }
 
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
             Log.Msg("Scene loaded: " + sceneName + " (" + buildIndex + ")");
-            SceneUtil.Recheck();
-            ArmorSimMenu.OnSceneLoaded(sceneName);
-            if (ArmorSimMenu.InMenu) WhatsNew.OnMenu();
-            ProvingGround.OnSceneLoaded(sceneName);
-            AutoTest.OnSceneLoaded(sceneName);
+            // each on its own, one throwing can't keep the menu rows or the proving ground from the others
+            Run("SceneUtil.Recheck", SceneUtil.Recheck);
+            Run("main menu", () => ArmorSimMenu.OnSceneLoaded(sceneName));
+            if (ArmorSimMenu.InMenu) Run("What's new", WhatsNew.OnMenu);
+            Run("proving ground", () => ProvingGround.OnSceneLoaded(sceneName));
+            Run("self test", () => AutoTest.OnSceneLoaded(sceneName));
         }
 
         public override void OnSceneWasUnloaded(int buildIndex, string sceneName)
         {
             Log.Msg("Scene unloaded: " + sceneName);
-            ArmorSimMenu.OnSceneUnloaded(sceneName);
-            // the mission scene going away invalidates every unit reference we hold
+            Run("main menu", () => ArmorSimMenu.OnSceneUnloaded(sceneName));
+            // mission scene going away invalidates every unit ref we hold
             SceneUtil.Recheck();
             if (SceneUtil.IsGameplayGone())
             {
-                // each on its own: one that fails must not leave the others holding the old mission (a proving ground
-                // still "on" would keep the next mission's unit menu to one vehicle)
-                Step("AAR", AfterAction.OnGameplayGone);   // first: saves the mission's hits before the records are dropped
+                // each one on its own: one failing must not leave the others on the old mission (a proving ground still "on"
+                // would keep the next mission's unit menu to one vehicle)
+                Step("AAR", AfterAction.OnGameplayGone);   // first: saves the mission's hits before the records get dropped
                 Step("Armor Sim", ArmorSim.Reset);
                 Step("proving ground", ProvingGround.Reset);
                 Step("hit cam", HitCamPlayer.Reset);
@@ -86,70 +101,129 @@ namespace GHPCHitCam
             catch (Exception e) { Log.Warning($"Leaving the mission ({what}): {e.Message}"); }
         }
 
-        public override void OnUpdate()
+        /// one part of startup; if it throws the rest still loads and the log says which part
+        static void Part(string what, Action run)
         {
+            try { run(); }
+            catch (Exception e) { Log.Error($"Startup: the {what} part failed, the rest of the mod still loads (please send this log): {e}"); }
+        }
+
+        static readonly System.Collections.Generic.Dictionary<string, int> _fails = new System.Collections.Generic.Dictionary<string, int>();
+        static string _failPart;
+
+        /// one part of a frame on its own: one that throws doesn't take the rest down with it (F12, the hit cam...), and
+        /// the log gets it a few times with the stack, not every frame
+        static void Run(string what, Action a)
+        {
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
-                Perf.FrameStart();
-                if (Hotkeys.Down(Settings.ToggleKey))
-                {
-                    Settings.Enabled.Value = !Settings.Enabled.Value;
-                    Log.Info("Hit cam " + (Settings.Enabled.Value ? "on" : "off"));
-                    if (!Settings.Enabled.Value) HitCamPlayer.StopCurrent();
-                }
-                if (Hotkeys.Down(Settings.ReplayKey))
-                    HitCamPlayer.ReplayLast();
-
-                using (Perf.T("Arsenal.Update")) Arsenal.Update();
-                using (Perf.T("TestRange.Update")) TestRange.Update();
-                using (Perf.T("ArmorSim.Update")) ArmorSim.Update();
-                using (Perf.T("ProvingGround.Update")) ProvingGround.Update();
-                using (Perf.T("Recorder.Update")) Recorder.Update();
-                using (Perf.T("BlastSound.Update")) BlastSound.Update();
-                using (Perf.T("WorldDamage.Update")) WorldDamage.Update();
-                using (Perf.T("HitCamPlayer.Update")) HitCamPlayer.Update();
-                using (Perf.T("AfterAction.Update")) AfterAction.Update();
-                Archive.Update();
-                using (Perf.T("ConfigMenu.Update")) ConfigMenu.Update();
-                using (Perf.T("ArcadeHud.Update")) ArcadeHud.Update();
-                using (Perf.T("AutoTest.Update")) AutoTest.Update();
-                ModdedVehicles.Update();
-                WhatsNew.Update();
-                Warmup.Update();
+                if (AutoTest.Active && what == (_failPart ??= AutoTest.Opt("fail_part", ""))) throw new Exception("self-test: this part made to fail");   // fail_part=<name>
+                using (Perf.T(what)) a();
             }
             catch (Exception e)
             {
-                Log.Error("Update failed: " + e);
+                _fails.TryGetValue(what, out int n);
+                _fails[what] = ++n;
+                if (n <= 3) Log.Error($"{what} failed (please send this log): {e}");
+                else if (n == 4) Log.Error($"{what} keeps failing, not logging it again");
             }
+            if (ArmorSimMenu.InMenu)
+            {
+                long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+                _frameTicks += dt;
+                _partTicks.TryGetValue(what, out long pt);
+                _partTicks[what] = pt + dt;
+            }
+        }
+
+        static readonly System.Collections.Generic.Dictionary<string, long> _partTicks = new System.Collections.Generic.Dictionary<string, long>();
+        static long _menuTicks, _frameTicks;
+        static int _menuFrames, _slowFrames;
+        static bool _menuCostSaid;
+
+        /// the mod's own cost in the main menu, looked at every ~600 frames: should be about 0.1 ms a frame. when most frames
+        /// take over 1 ms it says once which part (1.1.1 took 2-14 ms there, a game getter scanning the scene, and nobody saw
+        /// it in a log). not while a window of the mod is open (the report, F12 draw a lot on purpose), and one hitch
+        /// (saving a mission's hits as it ends) doesn't count
+        static void MenuCost()
+        {
+            long f = _frameTicks;
+            _frameTicks = 0;
+            if (!ArmorSimMenu.InMenu || AfterAction.IsOpen || ConfigMenu.IsOpen)
+            {
+                if (_menuFrames > 0) { _menuFrames = 0; _slowFrames = 0; _menuTicks = 0; _partTicks.Clear(); }
+                return;
+            }
+            _menuTicks += f;
+            if (f * 1000.0 / System.Diagnostics.Stopwatch.Frequency > 1.0) _slowFrames++;
+            if (++_menuFrames < 600) return;
+            double ms = _menuTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / _menuFrames;
+            if (_slowFrames > _menuFrames / 2 && !_menuCostSaid)
+            {
+                _menuCostSaid = true;
+                var top = _partTicks.OrderByDescending(kv => kv.Value).Take(3)
+                    .Select(kv => $"{kv.Key} {kv.Value * 1000.0 / System.Diagnostics.Stopwatch.Frequency / _menuFrames:0.00} ms");
+                Log.Warning($"Main menu: the mod takes {ms:0.0} ms a frame here, it should be about 0.1 ({string.Join(", ", top)}). Please send this log.");
+            }
+            else if (AutoTest.Active) Log.Msg($"Main menu: the mod takes {ms:0.00} ms a frame here ({_slowFrames} of {_menuFrames} frames over 1 ms)");
+            _menuFrames = 0; _slowFrames = 0; _menuTicks = 0; _partTicks.Clear();
+        }
+
+        static void Keys()
+        {
+            if (Hotkeys.Down(Settings.ToggleKey))
+            {
+                Settings.Enabled.Value = !Settings.Enabled.Value;
+                Log.Info("Hit cam " + (Settings.Enabled.Value ? "on" : "off"));
+                if (!Settings.Enabled.Value) HitCamPlayer.StopCurrent();
+            }
+            if (Hotkeys.Down(Settings.ReplayKey))
+                HitCamPlayer.ReplayLast();
+        }
+
+        public override void OnUpdate()
+        {
+            Run("main menu watch", ArmorSimMenu.Watch);
+            try { Perf.FrameStart(); MenuCost(); } catch { }
+            Run("keys", Keys);
+            Run("Arsenal.Update", Arsenal.Update);
+            Run("TestRange.Update", TestRange.Update);
+            Run("ArmorSim.Update", ArmorSim.Update);
+            Run("ProvingGround.Update", ProvingGround.Update);
+            Run("Recorder.Update", Recorder.Update);
+            Run("BlastSound.Update", BlastSound.Update);
+            Run("WorldDamage.Update", WorldDamage.Update);
+            Run("HitCamPlayer.Update", HitCamPlayer.Update);
+            Run("AfterAction.Update", AfterAction.Update);
+            Run("Archive.Update", Archive.Update);
+            Run("ConfigMenu.Update", ConfigMenu.Update);
+            Run("ArcadeHud.Update", ArcadeHud.Update);
+            Run("AutoTest.Update", AutoTest.Update);
+            Run("ModdedVehicles.Update", ModdedVehicles.Update);
+            Run("WhatsNew.Update", WhatsNew.Update);
+            Run("Warmup.Update", Warmup.Update);
         }
 
         public override void OnLateUpdate()
         {
-            try
-            {
-                using (Perf.T("HitCamPlayer.LateUpdate")) HitCamPlayer.LateUpdate();
-                using (Perf.T("AfterAction.LateUpdate")) AfterAction.LateUpdate();
-                using (Perf.T("ArmorSim.LateUpdate")) ArmorSim.LateUpdate();
-            }
-            catch (Exception e) { Log.Error("LateUpdate failed: " + e); }
+            Run("HitCamPlayer.LateUpdate", HitCamPlayer.LateUpdate);
+            Run("AfterAction.LateUpdate", AfterAction.LateUpdate);
+            Run("ArmorSim.LateUpdate", ArmorSim.LateUpdate);
         }
 
         public override void OnGUI()
         {
-            try
-            {
-                using (Perf.T("ArcadeHud.Draw")) if (!ArmorSim.Active) ArcadeHud.Draw();
-                using (Perf.T("HitCamUI.Draw")) HitCamUI.Draw();
-                // the settings window (F12) is on its own: the other windows step aside while it's open
-                bool cfg = ConfigMenu.IsOpen;
-                if (!cfg) using (Perf.T("Arsenal.Draw")) Arsenal.Draw();
-                if (!cfg) using (Perf.T("TestRange.Draw")) TestRange.Draw();
-                using (Perf.T("AfterAction.Draw")) AfterAction.Draw();
-                using (Perf.T("ArmorSim.Draw")) ArmorSim.Draw();
-                if (!cfg) using (Perf.T("ProvingGround.Draw")) ProvingGround.Draw();
-                using (Perf.T("ConfigMenu.Draw")) ConfigMenu.Draw();
-            }
-            catch (Exception e) { Log.Error("OnGUI failed: " + e); }
+            if (!ArmorSim.Active) Run("ArcadeHud.Draw", ArcadeHud.Draw);
+            Run("HitCamUI.Draw", HitCamUI.Draw);
+            // settings window (F12) is on its own: other windows step aside while it's open
+            bool cfg = ConfigMenu.IsOpen;
+            if (!cfg) Run("Arsenal.Draw", Arsenal.Draw);
+            if (!cfg) Run("TestRange.Draw", TestRange.Draw);
+            Run("AfterAction.Draw", AfterAction.Draw);
+            Run("ArmorSim.Draw", ArmorSim.Draw);
+            if (!cfg) Run("ProvingGround.Draw", ProvingGround.Draw);
+            Run("ConfigMenu.Draw", ConfigMenu.Draw);
         }
     }
 
@@ -160,7 +234,7 @@ namespace GHPCHitCam
         public static MelonPreferences_Entry<bool> PlayerShotsOnly;
         public static MelonPreferences_Entry<float> MinCaliberMm;
         public static MelonPreferences_Entry<bool> LightAutocannonCam;
-        /// Hits are recorded (HUD, kill feed, report, world damage) from this calibre up: machine guns aren't.
+        /// hits get recorded (HUD, kill feed, report, world damage) from this calibre up, machine guns don't
         public const float RecordMinCaliberMm = 15f;
         public static MelonPreferences_Entry<float> PipWidth;
         public static MelonPreferences_Entry<float> PipSize;
@@ -177,13 +251,15 @@ namespace GHPCHitCam
         public static MelonPreferences_Entry<bool> CrewPanic;
         public static MelonPreferences_Entry<bool> RodSoftBody;
         public static MelonPreferences_Entry<bool> AmmoExplosionKillsCrew;
+        public static MelonPreferences_Entry<string> CrewInAmmoExplosion;
+        public static MelonPreferences_Entry<bool> HitCamOnWrecks;
         public static MelonPreferences_Entry<bool> DebugLog;
-        /// Detail lines in the log (what each hit, blast and plate did): the DebugLog setting, or the self-test.
+        /// detail lines in the log (what each hit, blast and plate did): DebugLog setting or the self-test
         internal static bool Verbose => AutoTest.Active || (DebugLog != null && DebugLog.Value);
         public static MelonPreferences_Entry<string> HitCamAntiAliasing;
         public static MelonPreferences_Entry<int> ConfigVersion;
         public static MelonPreferences_Entry<string> UpdateCheck, LastSeenVersion, SkippedVersion;
-        /// No [HitCam] section in the settings file at start: a first install (the Quick setup welcomes it).
+        /// no [HitCam] section in the settings file at start = first install (Quick setup welcomes it)
         public static bool FreshInstall;
         public static MelonPreferences_Entry<bool> ShowAllSpall;
         public static MelonPreferences_Entry<bool> ArmorHoles;
@@ -212,27 +288,26 @@ namespace GHPCHitCam
         public static MelonPreferences_Entry<string> ArsenalPrevKey;
         public static MelonPreferences_Entry<string> ArsenalNextKey;
 
-        /// Old saved values that were the defaults then: moved to the new defaults once.
+        /// old saved values that were the defaults back then: moved to the new defaults once
         public static void Migrate()
         {
             if (ConfigVersion.Value >= 8) return;
             if (ConfigVersion.Value >= 3)
             {
-                // the 1.1 test builds (6) switched the blast wave's camera kick off with the calm defaults: it stays on
+                // the 1.1 test builds (6) turned the blast wave's camera kick off with the calm defaults, it stays on
                 if (ConfigVersion.Value == 6 && ShockwaveShake != null) ShockwaveShake.Value = true;
-                // 1.1.0: the keys move off the ones the game uses itself
+                // 1.1.0: keys move off the ones the game uses itself
                 Hotkeys.MigrateDefaults(Cat);
                 if (ConfigVersion.Value < 5)
                 {
-                // 1.1.0: a smaller proving ground (5 rows, 21 targets instead of 36, for the frame rate); 10 rows was the old
-                // default, 7 the one of the 1.1 test builds
+                // 1.1.0: smaller proving ground (5 rows, 21 targets instead of 36, for fps); 10 rows was the old default,
+                // 7 the one from the 1.1 test builds
                 if (ProvingGround.RowsPref != null && (ProvingGround.RowsPref.Value == 10 || ProvingGround.RowsPref.Value == 7)) ProvingGround.RowsPref.Value = 5;
-                // and the Armor Sim on the (empty) M1 training range instead of the gunnery duel, the old default
+                // and Armor Sim on the (empty) M1 training range instead of the gunnery duel, the old default
                 if (ArmorSimMenu.MissionPref != null && ArmorSimMenu.MissionPref.Value == "FG85_GT03,GT03_gunnery_duel") ArmorSimMenu.MissionPref.Value = "FG85_TR01,TR01_M1_Range";
                 }
-                // 1.1.0: calmer defaults, a War Thunder-like hit cam (steady camera, one constant slow motion, the crew stay in
-                // their seats, no cook-off replay; the blast wave's camera kick stays). Only for a config still on the old
-                // ones: choices made by hand stay.
+                // 1.1.0: calmer defaults, WT-like hit cam (steady camera, one constant slow-mo, crew stay in their seats, no cook-off
+                // replay; blast wave camera kick stays). only for a config still on the old ones, hand-made choices stay
                 if (ConfigVersion.Value < 6 && CinematicXray.Value && HitCamPace.Value == "Cinematic" && XrayPhysics.Value && CrewPanic.Value && CookOffReplay.Value)
                 {
                     CinematicXray.Value = false;
@@ -248,11 +323,11 @@ namespace GHPCHitCam
             }
             if (ConfigVersion.Value < 2)
             {
-                // 2026-10-20: a smaller hit cam (0.26 -> 0.2 of the screen height), the proving ground's big cam off
+                // 2026-10-20: smaller hit cam (0.26 -> 0.2 of screen height), proving ground's big cam off
                 if (Mathf.Abs(PipSize.Value - 0.26f) < 0.002f) PipSize.Value = 0.2f;
                 if (ProvingGround.BigCamPref != null) ProvingGround.BigCamPref.Value = false;
             }
-            // presets came in: start on the default one (the old defaults were the Cinematic preset's values)
+            // presets came in: start on the default one (old defaults were the Cinematic preset's values)
             Presets.Apply(Presets.Default);
             ConfigVersion.Value = 8;
             try { Cat.SaveToFile(false); } catch { }
@@ -263,6 +338,7 @@ namespace GHPCHitCam
             Cat = MelonPreferences.CreateCategory("HitCam", "GHPC HitCam");
             Enabled = Cat.CreateEntry("Enabled", true, description: "The hit cam: after each of your hits, an x-ray replay of the round going in, in a window in the corner.");
             PlayerShotsOnly = Cat.CreateEntry("PlayerShotsOnly", true, description: "Only your own shots get a hit cam. Off: hits by everyone (AI on AI too).");
+            HitCamOnWrecks = Cat.CreateEntry("HitCamOnWrecks", false, description: "Hit cam for shots at a vehicle that's already knocked out. Off: those hits still go into the After Action Report, only no hit cam plays.");
             MinCaliberMm = Cat.CreateEntry("MinCaliberMm", 15f, description: "Rounds smaller than this get no hit cam (machine guns). Their hits still count in the HUD and the report.");
             PipWidth = Cat.CreateEntry("PipWidth", 0.32f, description: "Old setting, not used any more (see Hit cam size).");
             PipSize = Cat.CreateEntry("PipSize", 0.2f, description: "Size of the hit cam window, as a part of the screen height (0.2 = a fifth of it).");
@@ -279,6 +355,7 @@ namespace GHPCHitCam
             LastSeenVersion = Cat.CreateEntry("LastSeenVersion", "", description: "The version that last ran (internal: What's new after an update).", is_hidden: true);
             SkippedVersion = Cat.CreateEntry("SkippedVersion", "", description: "A new version you chose to skip (internal).", is_hidden: true);
             AmmoExplosionKillsCrew = Cat.CreateEntry("AmmoExplosionKillsCrew", true, description: "When an ammo rack blows up inside a vehicle, the crew around it die (the game sometimes leaves one alive). This changes the game, not only the picture.");
+            CrewInAmmoExplosion = Cat.CreateEntry("CrewInAmmoExplosion", "Gone", description: "What the x-ray shows of the crew an ammo explosion kills: Gone (torn apart, they vanish in the flash), Outline (only their outline stays), Stay (the bodies stay and get thrown).");
             RodSoftBody = Cat.CreateEntry("RodSoftBody", true, description: "Long-rod rounds (APFSDS) erode, mushroom, bend and break like real metal. Off: a rigid rod that just gets shorter.");
             CrewPanic = Cat.CreateEntry("CrewPanic", false, description: "Crew still alive with fire in their compartment thrash in their seats.");
             CookOffReplay = Cat.CreateEntry("CookOffReplay", false, description: "If the ammo blows up after the hit cam closed, it opens again and shows the explosion (not when your hit had already knocked the vehicle out).");
@@ -318,15 +395,15 @@ namespace GHPCHitCam
 
 namespace GHPCHitCam
 {
-    /// The mod's log. Warnings and errors always go in; the detail lines (Msg: what each hit, blast and plate did) only
-    /// with the DebugLog setting or in the self-test. MelonLoader writes every line to its console window too, which
-    /// costs about a millisecond a line, several times per hit.
+    /// mod's log. warnings/errors always go in, detail lines (Msg: what each hit, blast and plate did) only with
+    /// DebugLog or in the self-test. melonloader also writes every line to its console window, ~1 ms a line,
+    /// several times per hit
     internal sealed class ModLog
     {
         readonly MelonLoader.MelonLogger.Instance _l;
         public ModLog(MelonLoader.MelonLogger.Instance l) { _l = l; }
         public void Msg(string s) { if (Settings.Verbose) _l.Msg(s); }
-        /// Always written (start-up, things the player asked for).
+        /// always written (startup, stuff the player asked for)
         public void Info(string s) => _l.Msg(s);
         public void Warning(string s) => _l.Warning(s);
         public void Error(string s) => _l.Error(s);

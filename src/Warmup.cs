@@ -10,11 +10,10 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Work the hit cam would otherwise do in the frame your round hits, done beforehand for the vehicle in your sight:
-    /// the parts of the scene that belong to it, its armour colliders, what a snapshot of it copies, and its crew models
-    /// baked in their pose (the hit takes the bake over if nobody has moved since). Every other vehicle of the mission
-    /// gets the same minus the crew bakes, in the background. One small step a frame, and none in a frame that is
-    /// already slow. On the proving ground every target is warmed up the same way.
+    /// does the hit cam's work ahead of time for the vehicle in your sight, else it all lands in the frame your round hits:
+    /// its scene parts, armour colliders, what a snapshot copies, and crew models baked in pose (the hit reuses the bake
+    /// if nobody moved since). every other mission vehicle gets the same minus crew bakes, in the background. one small
+    /// step a frame, none in a frame that's already slow. on the proving ground every target gets warmed up the same way
     internal static class Warmup
     {
         static readonly LinkedList<Action> _steps = new LinkedList<Action>();
@@ -36,7 +35,7 @@ namespace GHPCHitCam
 
         static bool _missionWarm;
 
-        /// A unit another mod has just rebuilt: what was read off it goes, and it's warmed up again from scratch.
+        /// unit another mod just rebuilt: drop what was read off it and warm it up again from scratch
         public static void Forget(Unit u)
         {
             if (u == null) return;
@@ -49,10 +48,10 @@ namespace GHPCHitCam
         public static void Update()
         {
             if (!Settings.Enabled.Value && !AutoTest.Active) return;
-            // vehicle mods rebuild the mission's vehicles as it starts: nothing is read off them before that's done
+            // vehicle mods rebuild the mission's vehicles at start: read nothing off them before that's done
             if (!ModdedVehicles.MissionConverted) return;
             float now = Time.unscaledTime;
-            // once a mission: the explosion sound's tables (the game's rounds and events), read on the first blast otherwise
+            // once per mission: explosion sound tables (game's rounds and events), else they get read on the first blast
             if (!_missionWarm && SceneUtil.Player != null && SceneUtil.Player.CurrentPlayerUnit != null)
             {
                 _missionWarm = true;
@@ -62,14 +61,14 @@ namespace GHPCHitCam
             {
                 _nextLook = now + 0.25f;
                 var u = Aimed();
-                // the vehicle in the sight: first in line. Again every couple of seconds while it stays there (a hit takes
-                // its crew bakes over, and the crew may have moved)
+                // vehicle in the sight goes first, and again every couple s while it stays there (a hit takes over its crew bakes,
+                // and the crew may have moved)
                 if (u != null && (u != _aim || now - _aimSince > 2f)) { _aim = u; _aimSince = now; Plan(u, true); }
-                // the game's model of the round you have loaded (the flying round in the hit cam)
+                // game's model of your loaded round (the flying round in the hit cam)
                 var a = LoadedAmmo();
                 if (a != null && a != _ammo) { _ammo = a; _steps.AddFirst(() => { using (Perf.T("Warmup/round model")) ShellModels.Prewarm(a); }); }
             }
-            // every vehicle of the mission, behind the aimed one (new arrivals every few seconds)
+            // every mission vehicle, after the aimed one (new arrivals every few s)
             if (_missionWarm && now >= _nextScan)
             {
                 _nextScan = now + 5f;
@@ -88,7 +87,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("Warm-up: " + e.Message); }
         }
 
-        /// Queue a vehicle's warm-up: in front of the others (aimed at) or behind them (the proving ground's targets).
+        /// queue a vehicle's warm-up: in front of the others (aimed at) or behind them (proving ground targets)
         public static void Plan(Unit u, bool first = false)
         {
             if (u == null || (!first && !_queued.Add(u))) return;
@@ -100,13 +99,13 @@ namespace GHPCHitCam
                 () => { using (Perf.T("Warmup/snapshot plan")) GhostSnapshot.PlanOf(u); },
                 () => { foreach (var mf in WorldDamage.UnitMeshes(u)) if (mf != null && mf.sharedMesh != null && mf.sharedMesh.isReadable) PlanMesh(mf.sharedMesh, first); },
                 () => { if (u != null && Settings.DetailedCrew.Value) foreach (var r in GhostSnapshot.CrewSkins(u)) PlanBake(r, first); },
-                () => { if (first) using (Perf.T("Warmup/breakable meshes")) foreach (var m in BreakableMeshes(u)) MeshCopy.Prewarm(m); },   // the one in the sight only (memory)
+                () => { if (first) using (Perf.T("Warmup/breakable meshes")) foreach (var m in BreakableMeshes(u)) MeshCopy.Prewarm(m); },   // only the one in the sight (memory)
             };
             if (first) for (int i = steps.Count - 1; i >= 0; i--) _steps.AddFirst(Guard(u, steps[i]));
             else foreach (var s in steps) _steps.AddLast(Guard(u, s));
         }
 
-        /// The rest of the mission: what a snapshot needs found, no crew bakes (they'd be stale by the time it's hit).
+        /// rest of the mission: find what a snapshot needs, no crew bakes (they'd be stale by the time it's hit)
         static readonly HashSet<Unit> _light = new HashSet<Unit>();
         static void PlanLight(Unit u)
         {
@@ -117,8 +116,8 @@ namespace GHPCHitCam
             _steps.AddLast(Guard(u, () => { using (Perf.T("Warmup/snapshot plan")) GhostSnapshot.PlanOf(u); }));
         }
 
-        /// The meshes a hit can break apart (tracks, the gun, a helicopter's body and boom): read back from the GPU ahead,
-        /// asynchronously, so the break itself doesn't stall on it.
+        /// meshes a hit can break apart (tracks, gun, heli body and boom): read back from the GPU ahead, async, so the break
+        /// itself doesn't stall on it
         static List<Mesh> BreakableMeshes(Unit u)
         {
             var list = new List<Mesh>();
@@ -162,7 +161,7 @@ namespace GHPCHitCam
 
         static Action Guard(Unit u, Action a) => () => { if (u != null) a(); };
 
-        /// What the player's view (the gunner's sight, or whatever camera is on) is pointing at.
+        /// what the player's view (gunner's sight or whatever camera is on) points at
         static Unit Aimed()
         {
             var cam = GHPC.Camera.CameraManager.MainCam;

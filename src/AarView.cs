@@ -5,9 +5,9 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// A hit replayed full screen: the hit cam's own Playback (x-ray copy, slow-motion round, plate, spall, ragdolls,
-    /// fires, events) on a free clock: pause, scrub (forward = fast-forward, backward = rebuild + fast-forward),
-    /// speed, and a mouse-orbit camera, rendered into a screen-sized texture.
+    /// hit replayed full screen: the hit cam's own Playback (x-ray copy, slow-mo round, plate, spall, ragdolls, fires,
+    /// events) on a free clock: pause, scrub (forward = fast-forward, back = rebuild + fast-forward), speed and a
+    /// mouse-orbit camera, rendered into a screen-sized texture
     internal class AarReplay
     {
         public readonly AarEntry Entry;
@@ -104,7 +104,7 @@ namespace GHPCHitCam
             _cam.enabled = true;
         }
 
-        /// Takes over from the scripted camera where it is: orbit around the point it looks at.
+        /// takes over from the scripted camera where it is: orbit around the point it looks at
         public void StartFreeCam()
         {
             if (P == null || Free) return;
@@ -143,7 +143,7 @@ namespace GHPCHitCam
                 _rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 4, name = "HitCam AAR RT" };
                 _rt.Create();
             }
-            if (_cam == null)   // also after the game's SceneCleanup destroyed every camera on a scene change
+            if (_cam == null)   // also after the game's SceneCleanup killed every camera on a scene change
             {
                 var go = new GameObject("HitCam AAR Camera");
                 UnityEngine.Object.DontDestroyOnLoad(go);
@@ -228,7 +228,7 @@ namespace GHPCHitCam
 
         static void OpenSession(AarArchive.Session s)
         {
-            // the current / last mission is already in memory with its full models
+            // current / last mission is already in memory with its full models
             var live = new[] { _mission, _last }.FirstOrDefault(x => x != null && x.Folder != null && string.Equals(x.Folder.TrimEnd('\\', '/'), s.Dir.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase));
             try { _shown = live ?? AarArchive.Load(s); }
             catch (Exception e) { HitCamMod.Log.Error("AAR: could not load " + s.Dir + ": " + e); return; }
@@ -392,7 +392,7 @@ namespace GHPCHitCam
             return v;
         }
 
-        /// HitCamMod.OnGUI, after everything else (drawn on top).
+        /// HitCamMod.OnGUI, after everything else (drawn on top)
         public static void Draw()
         {
             if (Enabled == null) return;
@@ -418,15 +418,30 @@ namespace GHPCHitCam
         {
             if (_hintUntil < 0f || Time.unscaledTime > _hintUntil || string.IsNullOrEmpty(_hint)) return;
             float a = Mathf.Clamp01((_hintUntil - Time.unscaledTime) / 1.5f);
-            float w = Mathf.Min(Screen.width - 40f, 920f * K), h = 40f * K;
-            var r = new Rect((Screen.width - w) * 0.5f, Screen.height * 0.16f, w, h);
+            // mission over / game's own AAR: the game's result text, its results panel and its AAR controls take the top
+            // middle and the bottom, so ours sits top left, under the compass
+            bool corner = _mission?.Result != null || GHPC.AarController.InAar;
+            var st = new GUIStyle(_bold) { alignment = corner ? TextAnchor.MiddleLeft : TextAnchor.MiddleCenter, wordWrap = corner };
+            Rect r, text;
+            if (corner)
+            {
+                float w = Mathf.Min(Screen.width * 0.28f, 560f * K);
+                float pad = 12f * K;
+                float th = st.CalcHeight(new GUIContent(_hint), w - pad * 2f);
+                r = new Rect(Screen.width * 0.012f, Screen.height * 0.11f, w, Mathf.Max(40f * K, th + 12f * K));
+                text = new Rect(r.x + pad, r.y, w - pad * 2f, r.height);
+            }
+            else
+            {
+                float w = Mathf.Min(Screen.width - 40f, 920f * K);
+                r = text = new Rect((Screen.width - w) * 0.5f, Screen.height * 0.16f, w, 40f * K);
+            }
             Fill(r, new Color(0f, 0f, 0f, 0.72f * a));
-            Fill(new Rect(r.x, r.y, 4f * K, h), new Color(Accent.r, Accent.g, Accent.b, a));
-            var st = new GUIStyle(_bold) { alignment = TextAnchor.MiddleCenter };
-            Label(r, _hint, st, new Color(1f, 0.92f, 0.75f, a), true);
+            Fill(new Rect(r.x, r.y, 4f * K, r.height), new Color(Accent.r, Accent.g, Accent.b, a));
+            Label(text, _hint, st, new Color(1f, 0.92f, 0.75f, a), true);
         }
 
-        /// Background, title, tabs.
+        /// background, title, tabs
         static void DrawFrame()
         {
             float W = Screen.width, H = Screen.height, k = K;
@@ -448,7 +463,7 @@ namespace GHPCHitCam
 
             float bw = 118f * k, bh = 30f * k, right = W - 24f * k, y = 18f * k;
             Rect Next(float w, float gap = 8f) { right -= w; var r = new Rect(right, y, w, bh); right -= gap * k; return r; }
-            if (Button(Next(bw), "CLOSE  " + KeyCode)) Close();
+            if (Button(Next(bw), "CLOSE  " + Hotkeys.Label(Key))) Close();
             if (Button(Next(bw + 24f * k), "PAST MISSIONS", _view == View.Past)) ShowPast();
             if (Button(Next(bw), "STATS", _view == View.Stats, _shown != null)) { _view = View.Stats; _scroll = 0f; }
             if (Button(Next(bw, 28f), "HITS", _view == View.Hits, _shown != null)) { _view = View.Hits; _scroll = 0f; }
@@ -480,7 +495,7 @@ namespace GHPCHitCam
 
         static readonly Dictionary<HitRecord, int> _titled = new Dictionary<HitRecord, int>();
 
-        /// Late events (a fire, the kill) can change the verdict after the hit was recorded.
+        /// late events (a fire, the kill) can change the verdict after the hit was recorded
         static void Retitle(AarEntry e)
         {
             if (e.Archived) return;
@@ -586,7 +601,7 @@ namespace GHPCHitCam
                 float bh = list.height * list.height / content;
                 Fill(new Rect(list.xMax - 4f * k, list.y + (list.height - bh) * (_scroll / (content - list.height)), 4f * k, bh), new Color(1f, 1f, 1f, 0.25f));
             }
-            Label(new Rect(m, H - 30f * k, W - 2 * m, 24f * k), $"Blue = your shots, red = hits on you.   In a replay: drag to orbit, right-drag to pan, wheel to zoom   ·   Space play / pause   ·   ← → previous / next hit   ·   ↑ ↓ speed   ·   R restart   ·   C camera   ·   Backspace list   ·   {KeyCode} close", _small, Grey);
+            Label(new Rect(m, H - 30f * k, W - 2 * m, 24f * k), $"Blue = your shots, red = hits on you.   In a replay: drag to orbit, right-drag to pan, wheel to zoom   ·   Space play / pause   ·   ← → previous / next hit   ·   ↑ ↓ speed   ·   R restart   ·   C camera   ·   Backspace list   ·   {Hotkeys.Label(Key)} close", _small, Grey);
         }
 
         static void DrawStats()
@@ -731,7 +746,7 @@ namespace GHPCHitCam
                 + "   ·   " + who + "   ·   " + (rec.Ammo?.Name ?? "?") + (e.Range > 0f ? $"   ·   {e.Range:0} m" : "");
             Label(new Rect(18f * k, 0, W - 420f * k, top.height), head, _bold, Text1, true);
             float bw = 120f * k, bh = 30f * k;
-            if (Button(new Rect(W - 16f * k - bw, 8f * k, bw, bh), "CLOSE  " + KeyCode)) { Close(); return; }
+            if (Button(new Rect(W - 16f * k - bw, 8f * k, bw, bh), "CLOSE  " + Hotkeys.Label(Key))) { Close(); return; }
             if (Button(new Rect(W - 24f * k - 2 * bw - 20f * k, 8f * k, bw + 20f * k, bh), "BACK TO LIST")) { StopReplay(); return; }
 
             if (p == null)
@@ -741,7 +756,7 @@ namespace GHPCHitCam
                 return;
             }
 
-            // verdict banner, WT style: appears when the round arrives
+            // verdict banner, WT style: shows up when the round arrives
             if (p.TitleWall >= 0f && !string.IsNullOrEmpty(p.TitleShown))
             {
                 float age = p.T - p.TitleWall;
@@ -856,7 +871,7 @@ namespace GHPCHitCam
             x += b * 1.25f + 12f * k;
             Label(new Rect(x, y, W - x - 16f * k, bh), "drag: orbit   ·   right-drag: pan   ·   wheel: zoom   ·   Space   ← →   ↑ ↓   R   C   Backspace", _small, Grey);
 
-            // scrub bar with the impact, the penetration slow motion and the end of the interior marked
+            // scrub bar with impact, pen slow-mo and end of the interior marked
             if (p == null) return;
             var track = new Rect(16f * k, bar.y + 22f * k, W - 32f * k - 120f * k, 8f * k);
             float dur = Mathf.Max(p.Duration, 0.01f);

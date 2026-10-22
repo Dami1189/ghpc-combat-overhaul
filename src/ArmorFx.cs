@@ -3,10 +3,10 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Procedural armor damage: glowing torn holes, petals, dents, ERA flashes, HE blasts and hull mesh cutting.
+    /// procedural armor damage: glowing torn holes, petals, dents, ERA flashes, HE blasts, hull mesh cutting
     internal static class ArmorFx
     {
-        /// Jagged ring around a hole, in the XY plane, facing +Z. Inner edge hot, outer edge dark.
+        /// jagged ring around a hole in the XY plane, facing +Z, inner edge hot, outer edge dark
         public static Mesh HoleRim(float r, float ragged, int seed)
         {
             var rnd = new System.Random(seed);
@@ -38,7 +38,7 @@ namespace GHPCHitCam
             return m;
         }
 
-        /// Petals: triangular shards of torn plate around the hole, bent along +Z (into the vehicle).
+        /// petals: triangle shards of torn plate around the hole, bent along +Z (into the vehicle)
         public static Mesh Petals(float r, int count, float bend, int seed)
         {
             var rnd = new System.Random(seed);
@@ -70,7 +70,7 @@ namespace GHPCHitCam
             return m;
         }
 
-        /// Copy of a hull mesh with every triangle near any of the holes removed (only if the game left the mesh CPU-readable).
+        /// copy of a hull mesh with every tri near any hole removed (only if the game left the mesh CPU-readable)
         public static Mesh CutHoles(Mesh src, Matrix4x4 meshToLocal, List<(Vector3 p, float r)> holes)
         {
             if (src == null || !src.isReadable || holes.Count == 0) return null;

@@ -3,37 +3,35 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// The pressure in a vehicle's hull while propellant burns in it, the same for the x-ray and the world (on any clock:
-    /// the x-ray's playback time or the game's). Gas from the burning charges comes in and leaves through every opening:
-    /// the leaks round the hatches and the gun, the holes the rounds made, the exits the game opened. Above ~1.8 x the
-    /// outside pressure the flow through an opening is choked (sonic), below it subsonic, and the hot gas loses its heat to
-    /// the steel round it. A detonation adds its quasi-static pressure. The pressure drives flame out of the holes.
+    /// hull pressure while propellant burns inside, same for x-ray and world (any clock: x-ray playback time or the game's).
+    /// gas from burning charges comes in and leaves through every opening (leaks round hatches and gun, holes the rounds
+    /// made, exits the game opened). above ~1.8 x outside pressure the flow is choked (sonic), below subsonic, and the hot
+    /// gas loses heat to the steel around it. a detonation adds its quasi-static pressure. pressure pushes flame out the holes
     internal class HullPressure
     {
         public const float Atm = 101325f;
         const float GasRT = 330f * 2400f;    // propellant gas: R ~330 J/kg K at ~2400 K
         const float Gamma = 1.25f;
         const float Cd = 0.8f;               // discharge coefficient of a ragged hole
-        const float Leak = 0.004f;           // m^2: gaps round the hatches, the gun, vision blocks, vents
-        const float CoolTau = 1f;            // s: the hot gas losing its heat to the steel round it
-        const float OpenTime = 0.06f;        // s: a hatch blown open / the turret lifting clears its opening over tens of ms
+        const float Leak = 0.004f;           // m^2: gaps round hatches, gun, vision blocks, vents
+        const float CoolTau = 1f;            // s: hot gas losing its heat to the steel around it
+        const float OpenTime = 0.06f;        // s: a blown hatch / lifting turret clears its opening over tens of ms
 
-        public readonly float V;             // the free air inside, m^3
+        public readonly float V;             // free air inside, m^3
         public float P { get; private set; } = Atm;
         public float Ratio => P / Atm;
         public float Clock { get; private set; } = float.NaN;
         public bool Started => !float.IsNaN(Clock);
         public float Gas { get; private set; }        // kg/s coming in at the last step
         public float Area { get; private set; }       // m^2 open at the last step
-        public float HoleArea { get; private set; }   // m^2 of the holes the rounds made
+        public float HoleArea { get; private set; }   // m^2 of holes the rounds made
         public readonly List<(Vector3 l, float t, float kg)> Charges = new List<(Vector3, float, float)>();
         readonly List<(Vector3 l, float area, float t0)> _exits = new List<(Vector3, float, float)>();
         float _boomT = float.MaxValue, _spikeRealT = float.NaN, _spikeKg;
 
         public HullPressure(float freeVolume) { V = freeVolume; }
 
-        /// The inner box the modules and crew take up (as the x-ray's walls): not the tracks, nothing bigger than 4 m,
-        /// 0.25 m round them.
+        /// inner box the modules and crew take up (like the x-ray's walls): no tracks, nothing over 4 m, 0.25 m round them
         public static Bounds InnerOf(GhostSnapshot s)
         {
             bool first = true;
@@ -51,11 +49,11 @@ namespace GHPCHitCam
             return inner;
         }
 
-        /// The air inside: that box less what fills it (ammunition, engine, crew, equipment).
+        /// air inside: that box minus what fills it (ammo, engine, crew, equipment)
         public static float FreeVolume(Bounds inner) => Mathf.Clamp(inner.size.x * inner.size.y * inner.size.z * 0.35f, 2.5f, 25f);
 
-        /// A charge (or the rack) burning: gas from about its mass over a few seconds. The mass is read off the size of the
-        /// burning thing (~580 kg per m^3 of its box: grains loaded in a case), 5 kg if unknown. False if already burning.
+        /// a charge (or the rack) burning: gas from about its mass over a few s. mass comes from the burning thing's size
+        /// (~580 kg per m^3 of its box: grains loaded in a case), 5 kg if unknown. false if already burning
         public bool AddCharge(Vector3 l, float t, Vector3 extent, bool rack)
         {
             foreach (var c in Charges) if ((c.l - l).sqrMagnitude < 0.04f) return false;
@@ -65,7 +63,7 @@ namespace GHPCHitCam
             return true;
         }
 
-        /// An opening the game made, of this area, clearing from time t (a bigger one at the same place replaces it).
+        /// opening the game made, this area, clearing from time t (a bigger one at the same spot replaces it)
         public void AddOpening(Vector3 l, float area, float t)
         {
             for (int i = 0; i < _exits.Count; i++)
@@ -77,10 +75,10 @@ namespace GHPCHitCam
             _exits.Add((l, area, t));
         }
 
-        /// A hole a round made, of this diameter.
+        /// hole a round made, this diameter
         public void AddHole(float d) => HoleArea += Mathf.PI * 0.25f * d * d;
 
-        /// What the game opened is open by time t (each clearing over OpenTime).
+        /// area the game opened that's open by time t (each clears over OpenTime)
         public float OpenArea(float t)
         {
             float a = 0f;
@@ -88,8 +86,8 @@ namespace GHPCHitCam
             return a;
         }
 
-        /// A detonation's pressure, once per detonation (its several reports, within 0.3 s, are the same one), at its full
-        /// TNT: its energy suddenly in the hull's air, quasi-static pressure ~(gamma-1) E / V. True if it raised the pressure.
+        /// detonation pressure, once per detonation (its several reports within 0.3 s are the same one), at full TNT: energy
+        /// dumped into the hull air at once, quasi-static pressure ~(gamma-1) E / V. true if it raised the pressure
         public bool Detonation(float realT, float tnt, float t)
         {
             if (tnt <= 0f) return false;
@@ -106,7 +104,7 @@ namespace GHPCHitCam
             return true;
         }
 
-        /// Another detonation, separate from any before (the rest of the rack going a moment later).
+        /// another detonation, separate from the ones before (rest of the rack going a moment later)
         public void Spike(float tnt, float t)
         {
             if (!Started) Clock = t;
@@ -114,8 +112,7 @@ namespace GHPCHitCam
             _boomT = Mathf.Min(_boomT, t);
         }
 
-        /// Gas from the burning charges at time t (kg/s): each burns hard for ~2.5 s, then down; less is left after a
-        /// detonation.
+        /// gas from the burning charges at time t (kg/s): each burns hard for ~2.5 s then dies down, less left after a detonation
         public float GasRate(float t)
         {
             float g = 0f;
@@ -129,7 +126,7 @@ namespace GHPCHitCam
             return t > _boomT ? g * 0.5f : g;
         }
 
-        /// On to time t, in steps of 4 ms at most.
+        /// step on to time t, 4 ms steps max
         public void StepTo(float t)
         {
             if (!Started) return;
@@ -148,7 +145,7 @@ namespace GHPCHitCam
             Clock = t;
         }
 
-        /// Gas out through an opening (kg/s): choked (sonic) above ~1.8 x outside pressure, else the subsonic flow.
+        /// gas out through an opening (kg/s): choked (sonic) above ~1.8 x outside pressure, else subsonic
         static float Outflow(float p, float area)
         {
             if (p <= Atm) return 0f;
@@ -159,9 +156,8 @@ namespace GHPCHitCam
             return Cd * area * p * Mathf.Sqrt(2f * Gamma / ((Gamma - 1f) * GasRT) * Mathf.Max(k, 0f));
         }
 
-        /// How far the flame reaches out of a hole of diameter d at this pressure ratio: an under-expanded jet spreads right
-        /// outside to about d sqrt(p / p_outside), and its fuel-rich gas burns on with the air it pulls in for about a dozen
-        /// of those.
+        /// how far flame reaches out of a hole of diameter d at this pressure ratio: an under-expanded jet spreads just outside
+        /// to about d sqrt(p / p_outside), and the fuel-rich gas keeps burning with the air it pulls in for about a dozen of those
         public static float Reach(float d, float pr)
         {
             if (pr <= 1.02f) return 0f;
@@ -169,12 +165,12 @@ namespace GHPCHitCam
             return 12f * d * Mathf.Sqrt(pr) * k;
         }
 
-        /// The longest it can be (at ~40 bar, at most 3.2 m).
+        /// longest it can get (at ~40 bar, max 3.2 m)
         public static float MaxReach(float d) => Mathf.Min(12f * d * Mathf.Sqrt(40f), 3.2f);
 
-        /// A hole the game opened into a compartment (a Breach event, target-local): how big it is (as the hole drawn in
-        /// that plate: the round's own hit on it, the thickest plate there) and which way the gas leaves it (along the
-        /// plate's normal, or along the round's channel through thick armour).
+        /// hole the game opened into a compartment (Breach event, target-local): how big (like the hole drawn in that plate:
+        /// the round's own hit on it, thickest plate there) and which way gas leaves (plate normal, or along the round's
+        /// channel through thick armour)
         public static void VentShape(HitEvent e, IEnumerable<ArmorHit> hits, out Vector3 dir, out float r, out ArmorHit plate, out float los)
         {
             Vector3 outL = e.HasDir && e.DirL.sqrMagnitude > 1e-6f ? e.DirL.normalized : Vector3.up;   // back out along the round's path

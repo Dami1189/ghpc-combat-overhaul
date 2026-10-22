@@ -9,22 +9,21 @@ using Heli = GHPC.Vehicle.HelicopterController;
 
 namespace GHPCHitCam
 {
-    /// A helicopter's tail boom as a structure: a thin aluminium shell (skin and stringers) carrying the tail rotor.
-    /// Every HE / HEAT burst near it tears a hole in the skin that grows with the charge (about W^(1/3)); the section's
-    /// remaining bending strength is worked out from what is left of the ring. When the boom has lost most of it at some
-    /// station and the game itself has lost the tail (the tail rotor drive / hub destroyed, or the helicopter killed), the
-    /// boom snaps there: everything aft of the break (boom, fin, tail rotor) leaves as one physics body with the
-    /// helicopter's own motion and the blast's push, torn edges and smoke at both ends. Cut out of the game's own model.
+    /// heli tail boom as a structure: thin aluminium shell (skin + stringers) carrying the tail rotor. every HE/HEAT burst
+    /// near it tears a hole in the skin that grows with the charge (~W^(1/3)), the section's leftover bending strength
+    /// comes from what's left of the ring. once the boom lost most of it at some station and the game itself lost the tail
+    /// (tail rotor drive/hub destroyed, or heli killed) it snaps there: everything aft (boom, fin, tail rotor) leaves as one
+    /// physics body with the heli's own motion + the blast's push, torn edges and smoke at both ends. cut out of the game's model
     internal sealed class WorldHeli
     {
         static readonly Dictionary<Unit, WorldHeli> _all = new Dictionary<Unit, WorldHeli>();
 
         Unit U;
-        Transform T;                    // the helicopter's root (the boom's frame)
-        Vector3 _rootL, _tipL;          // the boom's line, root to tail rotor, in T's space
+        Transform T;                    // heli's root (the boom's frame)
+        Vector3 _rootL, _tipL;          // boom's line, root to tail rotor, in T's space
         float _len;
         float[] _rad;                   // drawn boom radius every 10 cm along it
-        Vector2[] _off;                 // where the boom's own middle is, off the shaft line (the shaft runs along its top)
+        Vector2[] _off;                 // where the boom's own middle is, off the shaft line (shaft runs along its top)
         readonly List<Tear> _tears = new List<Tear>();
         bool _tailLost, _down, _broken;
         string _why;
@@ -55,7 +54,7 @@ namespace GHPCHitCam
         {
             var hc = U.GetComponentInChildren<Heli>(true);
             if (hc == null) return "no helicopter controller";
-            // the boom's line: the tail drive shaft hit zone runs down it, the tail rotor hub sits at its end
+            // boom's line: tail drive shaft hit zone runs down it, tail rotor hub sits at its end
             DC shaft = null, hub = null;
             foreach (var z in hc.TailRotorHitZones ?? new DC[0])
             {
@@ -71,7 +70,7 @@ namespace GHPCHitCam
             Bounds lb = col != null ? LocalBounds(col) : new Bounds();
             if (col != null && lb.size.magnitude > 1.5f)
             {
-                // the shaft zone's long axis
+                // shaft zone's long axis
                 Vector3 c = col.transform.TransformPoint(lb.center);
                 Vector3[] axes = { col.transform.TransformVector(new Vector3(lb.size.x, 0f, 0f)), col.transform.TransformVector(new Vector3(0f, lb.size.y, 0f)),
                                    col.transform.TransformVector(new Vector3(0f, 0f, lb.size.z)) };
@@ -81,7 +80,7 @@ namespace GHPCHitCam
             }
             else
             {
-                // no shape to the shaft zone: from the main rotor's mast to the tail rotor
+                // shaft zone has no shape: go from the main rotor's mast to the tail rotor
                 if (hub == null || hub.ComponentCollision == null) return "no tail rotor zone";
                 var head = U.GetComponentsInChildren<DC>(true).FirstOrDefault(z => z != null && z.ComponentCollision != null && (z.Name ?? "").ToLowerInvariant().Contains("rotor head"));
                 Vector3 mast = head != null ? WorldModules.ZoneBounds(head.ComponentCollision).center : U.transform.position;
@@ -96,7 +95,7 @@ namespace GHPCHitCam
             _tipL = T.InverseTransformPoint(a1);
             _len = (a1 - a0).magnitude;
             if (_len < 1.5f) return $"boom too short ({_len:0.0} m)";
-            // the drawn radius along it
+            // drawn radius along it
             int n10 = Mathf.CeilToInt(_len / 0.1f) + 1;
             _rad = new float[n10];
             _off = new Vector2[n10];
@@ -120,7 +119,7 @@ namespace GHPCHitCam
                     pts[Mathf.Clamp(Mathf.RoundToInt(s / 0.1f), 0, n10 - 1)].Add(q);
                 }
             }
-            // per station: the skin's own middle (medians, so a fin or a stabiliser doesn't pull it) and its radius round that
+            // per station: skin's own middle (medians so a fin or stabiliser doesn't pull it) and its radius round that
             for (int i = 0; i < n10; i++)
             {
                 var l = pts[i];
@@ -160,15 +159,15 @@ namespace GHPCHitCam
                     if (!(r is MeshRenderer) && !(r is SkinnedMeshRenderer)) continue;
                     if (!r.enabled || r.forceRenderingOff) continue;
                     if (r.GetComponentInParent<AarVisual>() != null || r.GetComponentInParent<AarModel>() != null) continue;
-                    // the main rotor's blades (a huge disc) stay
+                    // main rotor blades (huge disc) stay
                     if (r.bounds.size.magnitude > 30f) continue;
                     if (r.sharedMaterials.Any(m => m != null && m.shader != null && m.shader.name.Contains("Rotor")) && r.bounds.size.magnitude > 8f) continue;
                     yield return r;
                 }
         }
 
-        /// A world point against the boom: distance along it from the root, distance from its line, angle round it.
-        /// A world point against the shaft line: distance along it, and its offset across it (e1, e2).
+        /// world point vs the boom: distance along it from the root, distance from its line, angle round it
+        /// world point vs the shaft line: distance along it and its offset across it (e1, e2)
         void Raw(Vector3 w, out float s, out Vector2 q)
         {
             Vector3 a0 = T.TransformPoint(_rootL), a1 = T.TransformPoint(_tipL);
@@ -207,7 +206,7 @@ namespace GHPCHitCam
 
         float R(float s) => _rad[Mathf.Clamp(Mathf.RoundToInt(s / 0.1f), 0, _rad.Length - 1)];
 
-        /// What's left of the boom's bending strength at s, as a fraction (worst direction).
+        /// what's left of the boom's bending strength at s, as a fraction (worst direction)
         float Left(float s)
         {
             float worst = 1f;
@@ -250,7 +249,7 @@ namespace GHPCHitCam
         {
             var h = Get(u);
             if (h == null || h._broken || ammo == null) return;
-            // the same burst reported twice (its fuze on armour, then its detonation): once is enough
+            // same burst reported twice (fuze on armour, then detonation): once is enough
             if (Time.time - h._lastBurst < 0.15f && (point - h._lastAt).sqrMagnitude < 1f) return;
             h._lastAt = point;
             float W = Mathf.Max(ammo.TntEquivalentKg, 0.005f) * (ammo.Category == AmmoType.AmmoCategory.ShapedCharge ? 0.6f : 1f);
@@ -258,7 +257,7 @@ namespace GHPCHitCam
             if (s < -0.3f || s > h._len + 0.3f) return;
             s = Mathf.Clamp(s, 0.2f, h._len - 0.2f);
             float rb = h.R(s), standoff = Mathf.Max(0f, r - rb);
-            // the skin a burst tears open: about W^(1/3) across at contact, less with stand-off
+            // skin hole a burst tears: ~W^(1/3) across at contact, less with stand-off
             float hole = 1.0f * Mathf.Pow(W, 1f / 3f) * Mathf.Clamp01(1.2f - standoff / 1.5f);
             if (hole < 0.02f) return;
             float arc = Mathf.Min(Mathf.PI, hole * 0.5f / Mathf.Max(rb, 0.05f));
@@ -320,7 +319,7 @@ namespace GHPCHitCam
             float area = 0f;
             Vector3 cmAcc = Vector3.zero;
             float cmW = 0f;
-            // the piece's frame: at the break, along the boom
+            // piece's frame: at the break, along the boom
             var frame = Matrix4x4.TRS(cut, Quaternion.LookRotation(ax, T.up), Vector3.one);
             var w2l = frame.inverse;
             foreach (var r in Renderers().ToList())
@@ -345,7 +344,7 @@ namespace GHPCHitCam
                 if (!allAft)
                 {
                     mc.Slice(ax, k, (x, y, z) => Near(x) || Near(y) || Near(z));
-                    // the torn edge: ragged along the boom, both sides share it
+                    // torn edge: ragged along the boom, both sides share it
                     for (int v = 0; v < mc.Count; v++)
                     {
                         if (Mathf.Abs(Vector3.Dot(ax, mc.W[v]) - k) > 1e-3f || !Near(v)) continue;
@@ -383,7 +382,7 @@ namespace GHPCHitCam
             if (pieces.Count == 0) { HitCamMod.Log.Msg("World heli: nothing aft of the break to cut"); return; }
             foreach (var r in hide) r.forceRenderingOff = true;
 
-            // the tail leaves with the helicopter's motion at that point, the bursts' push and a tumble from the torn spar
+            // tail leaves with the heli's motion at that point, the bursts' push and a tumble from the torn spar
             var rb = U.GetComponent<Rigidbody>();
             Vector3 cm = cmW > 0f ? cmAcc / cmW : cut + ax * 2f;
             float mass = Mathf.Clamp(area * 12f + 60f, 30f, 900f);     // ~12 kg per m2 of drawn skin (skin, stringers, frames) + gearbox, rotor
@@ -435,7 +434,7 @@ namespace GHPCHitCam
                               (rb != null ? $" ({(vel - rb.GetPointVelocity(cm)).magnitude:0.0} m/s from the blasts)" : ""));
         }
 
-        /// A dark jagged disc closing the open shell at a break (so one doesn't look through the drawn skin), world space.
+        /// dark jagged disc closing the open shell at a break (so you can't see through the drawn skin), world space
         Mesh TornCap(Rigidbody rb, float s, int seed, int side)
         {
             Vector3 a0 = T.TransformPoint(_rootL), a1 = T.TransformPoint(_tipL);
@@ -460,7 +459,7 @@ namespace GHPCHitCam
         }
     }
 
-    /// Smoke from a torn or burning part, with the game's own smoke (the effect it uses for small holes / hatches).
+    /// smoke from a torn or burning part, using the game's own smoke (the fx it uses for small holes / hatches)
     internal static class Smoke
     {
         public static GameObject Attach(Transform parent, Vector3 at, Vector3 dir, float seconds, float ratio)

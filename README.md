@@ -9,7 +9,7 @@ a War Thunder style HUD, an Armor Sim, a proving ground and an After Action Repo
 
 ![GHPC](https://img.shields.io/badge/GHPC-build%2020261014-556b2f)
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.x-7b5ea7)
-![Version](https://img.shields.io/badge/version-1.1.1-2f6fb3)
+![Version](https://img.shields.io/badge/version-1.1.2-2f6fb3)
 ![Single player](https://img.shields.io/badge/single%20player-yes-777777)
 
 <img src="docs/images/killcam.webp" width="800" alt="Kill cam: 3BM32 through the side of a T-80B, the spall, the crew hit, the charges catching fire and the rack going off">
@@ -46,7 +46,7 @@ Everything that costs frame rate can be switched off, and there are presets for 
 
 1. Install MelonLoader into the game with the [MelonLoader installer](https://github.com/LavaGang/MelonLoader.Installer). Point it at `steamapps\common\Gunner HEAT PC\Bin\GHPC.exe` if it doesn't find the game.
 2. Start the game once and close it, so MelonLoader creates its folders.
-3. Download `GHPC-Combat-Overhaul-1.1.1.zip` from [Releases](../../releases/latest) and unzip it into `steamapps\common\Gunner HEAT PC\Bin\Mods` (or put `GHPCCombatOverhaul.dll` there yourself, it's the same file).
+3. Download `GHPC-Combat-Overhaul-1.1.2.zip` from [Releases](../../releases/latest) and unzip it into `steamapps\common\Gunner HEAT PC\Bin\Mods` (or put `GHPCCombatOverhaul.dll` there yourself, it's the same file).
 4. Start the game. If starting through Steam gives you trouble with MelonLoader, start `Bin\GHPC.exe` directly.
 
 To uninstall, delete `Mods\GHPCCombatOverhaul.dll`. Your settings stay in `Bin\UserData\MelonPreferences.cfg` under `[HitCam]` (delete that section to reset them), and any past missions you chose to keep in `Bin\UserData\HitCam`.

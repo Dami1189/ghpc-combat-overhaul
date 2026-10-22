@@ -17,17 +17,17 @@ using UnityEngine.SceneManagement;
 
 namespace GHPCHitCam
 {
-    /// One hit in the After Action Report.
+    /// one hit in the After Action Report
     internal class AarEntry
     {
         public HitRecord Rec;
-        public GhostSnapshot Full;          // the full x-ray model (live hits; null once released, or for archived hits)
-        public AarSchematic Schem;          // the same vehicle as boxes (fallback, and what the JSON keeps)
+        public GhostSnapshot Full;          // full x-ray model (live hits; null once released, or for archived hits)
+        public AarSchematic Schem;          // same vehicle as boxes (fallback, and what the JSON keeps)
         public GhostSnapshot SchemSnap;     // built from Schem on first use
-        public float MissionTime = -1f;     // s since the mission started, -1 = unknown
+        public float MissionTime = -1f;     // s since mission start, -1 = unknown
         public float Distance = -1f;
         public bool OnPlayer, Friendly, Archived;
-        public bool CreditKill, CreditKo;   // the target died / was knocked out later and this was your last damaging hit on it
+        public bool CreditKill, CreditKo;   // target died / got knocked out later and this was your last damaging hit on it
         public float Added;
         public string StampText;
         string _damage;
@@ -48,7 +48,7 @@ namespace GHPCHitCam
         }
     }
 
-    /// Everything recorded during one mission (or loaded back from its folder).
+    /// everything recorded in one mission (or loaded back from its folder)
     internal class AarMission
     {
         public string Name = "Mission", Folder, Result, PlayerName;
@@ -75,19 +75,18 @@ namespace GHPCHitCam
         public readonly List<(string ammo, int fired, int hits, int pens)> ByAmmo = new List<(string, int, int, int)>();
     }
 
-    /// After Action Report: every recorded hit of the mission with its 3D replay, mission stats and past missions.
-    /// Core (recording, mission bookkeeping, stats, pause, lifetime of the models); the panel is in AarView.cs.
+    /// After Action Report: every recorded hit of the mission with its 3D replay, mission stats, past missions
+    /// core stuff here (recording, mission bookkeeping, stats, pause, model lifetime), the panel is in AarView.cs
     internal static partial class AfterAction
     {
         public static MelonPreferences_Entry<bool> Enabled;
         public static MelonPreferences_Entry<string> Key;
         public static MelonPreferences_Entry<bool> PauseGame;
         public static MelonPreferences_Entry<int> FullModels;
-        public static KeyCode KeyCode = KeyCode.F11;
 
-        static AarMission _mission;     // the mission being played
-        static AarMission _last;        // the one before it (still browsable from the main menu)
-        static object _sumRef;          // the mission's SceneUnitsManager: a new one = a new mission
+        static AarMission _mission;     // mission being played
+        static AarMission _last;        // the one before (still browsable from main menu)
+        static object _sumRef;          // mission's SceneUnitsManager: new one = new mission
         static readonly Dictionary<HitRecord, AarEntry> _byRec = new Dictionary<HitRecord, AarEntry>();
         static float _hintUntil = -1f, _factionCheck, _missionCheck;
         static string _hint;
@@ -123,7 +122,7 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ recording
 
-        /// Recorder asks: keep this hit? Your own hits always; with PlayerShotsOnly the others only when they hit you.
+        /// Recorder asks: keep this hit? own hits always; with PlayerShotsOnly the others only if they hit you
         public static bool Accept(HitRecord rec, Unit target)
         {
             if (rec.PlayerShot || !Settings.PlayerShotsOnly.Value) return true;
@@ -136,7 +135,7 @@ namespace GHPCHitCam
             catch { return false; }
         }
 
-        /// Counts every round fired (hits, misses): your shots and the rounds aimed at you.
+        /// counts every round fired (hits, misses): your shots and the ones aimed at you
         static void RoundInitPostfix(LiveRound __instance)
         {
             try
@@ -159,7 +158,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Error("AAR shot count: " + e.Message); }
         }
 
-        /// A hit is complete (Timeline built): keep it for the report.
+        /// hit is done (Timeline built): keep it for the report
         public static void OnRecordReady(HitRecord rec)
         {
             if (!Recording || rec == null || rec.Snapshot == null) return;
@@ -183,7 +182,7 @@ namespace GHPCHitCam
 
         public static AarEntry EntryOf(HitRecord rec) => rec != null && _byRec.TryGetValue(rec, out var e) ? e : null;
 
-        /// For the JSON: the hit's vehicle as boxes.
+        /// for the JSON: hit's vehicle as boxes
         public static AarSchematic SchematicOf(HitRecord rec)
         {
             var e = EntryOf(rec);
@@ -193,7 +192,7 @@ namespace GHPCHitCam
 
         static bool _releaseLogged;
 
-        /// The full models own baked meshes (crew poses, skinned parts): keep the newest N, older hits replay on boxes.
+        /// full models own baked meshes (crew poses, skinned parts): keep newest N, older hits replay on boxes
         static void ReleaseOld(AarMission m)
         {
             int cap = Mathf.Max(4, FullModels.Value);
@@ -201,7 +200,7 @@ namespace GHPCHitCam
             if (full.Count <= cap) return;
             var playing = HitCamPlayer.Current?.Records.ToList() ?? new List<HitRecord>();
             var old = full.Take(full.Count - cap).ToList();
-            // an autocannon burst's hits share one copy of the target: it's freed only when none that keeps it uses it
+            // autocannon burst hits share one copy of the target: freed only when none that keeps it still uses it
             var kept = new HashSet<GhostSnapshot>(full.Skip(full.Count - cap).Select(x => x.Full));
             foreach (var e in old)
                 if (Time.unscaledTime - e.Added < 60f || playing.Contains(e.Rec) || (_replay != null && _replay.Entry == e)) kept.Add(e.Full);
@@ -215,7 +214,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// The record a replay plays: the original with its full model when that is still intact, else a copy on boxes.
+        /// record a replay plays: the original with its full model if still intact, else a copy on boxes
         internal static HitRecord ReplayRecord(AarEntry e, out bool schematic)
         {
             schematic = e.Archived;
@@ -279,7 +278,7 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg($"AAR: mission \"{m.Name}\" closed: {m.Entries.Count} hits, {m.Shots} shots fired");
         }
 
-        /// HitCamMod: the mission scene went away (main menu, restart). Its objects are gone: stop the replay, keep the data.
+        /// HitCamMod: mission scene went away (main menu, restart), its objects are gone: stop the replay, keep the data
         public static void OnGameplayGone()
         {
             try
@@ -321,7 +320,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("AAR: casualty count failed: " + e.Message); }
         }
 
-        /// Writes every hit not saved yet plus mission.json (name, result, shots, losses) into the mission's folder.
+        /// writes every unsaved hit + mission.json (name, result, shots, losses) into the mission's folder
         static void SaveAll(AarMission m)
         {
             if (m == null || m.Archived || !Archive.Keeping) return;
@@ -359,7 +358,7 @@ namespace GHPCHitCam
                 m.EndTime = Time.time;
                 RefreshCasualties(m);
                 SaveAll(m);
-                Hint($"MISSION OVER ({m.Result})  ·  press {KeyCode} for the After Action Report: {m.Entries.Count} hits, each replayable in 3D", 25f);
+                Hint($"MISSION OVER ({m.Result})  ·  press {Hotkeys.Label(Key)} for the After Action Report: {m.Entries.Count} hit{(m.Entries.Count == 1 ? "" : "s")}, each replayable in 3D", 25f);
                 HitCamMod.Log.Msg("AAR: mission over, " + m.Result);
             }
             catch (Exception e) { HitCamMod.Log.Error("AAR: mission end: " + e.Message); }
@@ -368,7 +367,7 @@ namespace GHPCHitCam
         static void GameAarPostfix()
         {
             var m = _mission;
-            if (m != null && m.Entries.Count > 0) Hint($"Press {KeyCode} for the After Action Report ({m.Entries.Count} hits in 3D)", 12f);
+            if (m != null && m.Entries.Count > 0) Hint($"Press {Hotkeys.Label(Key)} for the After Action Report ({m.Entries.Count} hit{(m.Entries.Count == 1 ? "" : "s")} in 3D)", 12f);
         }
 
         static void Hint(string text, float seconds)
@@ -400,8 +399,8 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg($"AAR opened: {(_shown != null ? _shown.Entries.Count + " hits of \"" + _shown.Name + "\"" : "no mission")}, game paused by us: {_wePaused}");
         }
 
-        /// The game's own pause (TimeController: time scale 0, audio muted, gunner and camera input off), only in a
-        /// running mission and not inside the game's AAR (that one freezes the world itself).
+        /// game's own pause (TimeController: time scale 0, audio muted, gunner and camera input off), only in a running
+        /// mission and not inside the game's AAR (that one freezes the world itself)
         static void TryPause()
         {
             try
@@ -419,7 +418,7 @@ namespace GHPCHitCam
             if (!_open) return;
             StopReplay();
             _open = false;
-            // the hits of finished missions it showed go (Past missions kept); a running mission keeps its own
+            // hits of finished missions it showed get dropped (Past missions kept), a running mission keeps its own
             bool running = false;
             try { var m = Current(); running = m != null && m.Result == null && SceneUtil.Player != null && SceneUtil.Player.CurrentPlayerUnit != null; } catch { }
             Archive.Prune(running);
@@ -439,7 +438,7 @@ namespace GHPCHitCam
             if (Enabled == null) return;
             try
             {
-                // outside a mission SceneUnitsManager.Instance runs FindObjectOfType on every call: look twice a second only
+                // outside a mission SceneUnitsManager.Instance does FindObjectOfType every call: only look twice a second
                 if (_mission != null || Time.unscaledTime >= _missionCheck)
                 {
                     if (_mission != null && SceneUtil.IsGameplayGone()) EndMission();
@@ -453,7 +452,8 @@ namespace GHPCHitCam
                     var pu = SceneUtil.Player?.CurrentPlayerUnit;
                     if (pu != null) { m.Faction = pu.Allegiance; m.PlayerName = Recorder.SafeName(pu); }
                 }
-                if (Hotkeys.Down(Key)) { if (_open) Close(); else Open(); }
+                // works in the game's own AAR too: the hint there says to press it (game's AAR keys are F5-F8, no clash)
+                if (Hotkeys.Down(Key, evenInGameAar: true)) { if (_open) Close(); else Open(); }
                 if (!_open) return;
                 Cursor.visible = true;
                 Cursor.lockState = CursorLockMode.None;
@@ -525,9 +525,9 @@ namespace GHPCHitCam
             return s;
         }
 
-        /// The game marks a kill on the shot only when the round itself kills; an ammo fire or a crew bailing out comes
-        /// later (often after the recorder's 25 s window). So: a target that is destroyed / neutralized now credits your
-        /// last hit on it that did real damage (HIT or worse).
+        /// game marks a kill on the shot only when the round itself kills, an ammo fire or crew bailing comes later (often
+        /// after the recorder's 25 s window). so a target that's destroyed / neutralized now credits your last hit on it
+        /// that did real damage (HIT or worse)
         static void ResolveKills(AarMission m)
         {
             var groups = m.Entries.Where(e => e.Rec.PlayerShot && !ReferenceEquals(e.Rec.Target, null)).GroupBy(e => e.Rec.Target);
@@ -550,7 +550,7 @@ namespace GHPCHitCam
             return c != ModCat.Other && c != ModCat.Radio;
         }
 
-        /// "Gunner killed · Engine destroyed · Fire", worst first.
+        /// "Gunner killed · Engine destroyed · Fire", worst first
         public static string DamageSummary(HitRecord rec)
         {
             var crew = new Dictionary<string, float>();
@@ -587,16 +587,16 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ self-test (AutoTest)
 
-        /// Opens the report after the self-test shots, replays the hits and photographs the list, the stats and the
-        /// replay (mid-penetration, interior, free camera, after a backwards seek); then, from the main menu, the same
-        /// mission again (are the models still there after the scene unloaded?) and a replay loaded from the JSON.
+        /// opens the report after the self-test shots, replays the hits and screenshots the list, stats and replay
+        /// (mid-pen, interior, free camera, after a backwards seek); then from main menu the same mission again (models
+        /// still there after the scene unloaded?) and a replay loaded from the JSON
         public static IEnumerator SelfTest(string outDir, bool menu)
         {
             yield return new WaitForSecondsRealtime(1.5f);
             var m = _mission;
             if (m == null) { HitCamMod.Log.Warning("AAR TEST: no mission data"); yield break; }
             HitCamMod.Log.Msg($"AAR TEST: {m.Entries.Count} hits, shots {m.Shots}, incoming {m.Incoming}; full-model vertices: " + string.Join(", ", m.Entries.Select(e => e.Rec.Id + ":" + Schematic.OwnedVertices(e.Full))));
-            // per-instance meshes (renamed "... Instance") die with their object; shared asset meshes live as long as the scene's assets
+            // per-instance meshes (renamed "... Instance") die with their object, shared asset meshes live as long as the scene's assets
             foreach (var e in m.Entries.Where(x => x.Full != null))
                 HitCamMod.Log.Msg($"AAR TEST: hit #{e.Rec.Id} {e.Rec.TargetName}: {e.Full.Exterior.Count} hull meshes ({e.Full.Exterior.Count(p => p.Mesh != null && p.Mesh.name.Contains("Instance"))} per-instance, {e.Full.Exterior.Count(p => p.OwnsMesh)} baked), target destroyed: {e.Rec.Target == null || e.Rec.Target.Destroyed}, broken now: {Schematic.Broken(e.Full)}");
             // a round at the player from the nearest enemy (damage taken; must not pop up in the hit cam with PlayerShotsOnly)
@@ -608,7 +608,7 @@ namespace GHPCHitCam
             {
                 int before = m.Entries.Count;
                 Arsenal.PrepareForFire(incoming);
-                AutoTest.Fire(enemy, player, incoming.Ammo, "top");   // from above: a platoon mate beside you could take a side shot
+                AutoTest.Fire(enemy, player, incoming.Ammo, "top");   // from above: a platoon mate next to you could take a side shot
                 HitCamMod.Log.Msg($"AAR TEST: {incoming.Ammo.Name} fired by {Recorder.SafeName(enemy)} at the player's {Recorder.SafeName(player)}");
                 float t0 = Time.realtimeSinceStartup;
                 while (Time.realtimeSinceStartup - t0 < 5f && m.Entries.Count == before) yield return null;
@@ -618,7 +618,7 @@ namespace GHPCHitCam
             }
             else HitCamMod.Log.Warning($"AAR TEST: no incoming shot (player {player != null}, enemy {enemy != null}, ammo {incoming != null})");
 
-            // the mission ends: the report is offered on screen
+            // mission ends: report gets offered on screen
             var srm = ScenarioResultManager.Instance;
             if (srm != null && player != null)
             {
@@ -678,7 +678,7 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg("AAR TEST: back to the main menu");
             sc.LoadMainMenu();
             float w0 = Time.realtimeSinceStartup;
-            while (Time.realtimeSinceStartup - w0 < 90f && !(SceneUtil.IsGameplayGone() && SceneManager.GetActiveScene().name.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0)) yield return null;
+            while (Time.realtimeSinceStartup - w0 < 90f && !(SceneUtil.IsGameplayGone() && SceneUtil.IsMenuScene(SceneManager.GetActiveScene().name))) yield return null;
             yield return new WaitForSecondsRealtime(6f);
             HitCamMod.Log.Msg($"AAR TEST: menu scene '{SceneManager.GetActiveScene().name}', last mission {_last?.Entries.Count ?? -1} hits; meshes broken: " + string.Join(", ", (_last?.Entries ?? new List<AarEntry>()).Select(e => e.Rec.Id + ":" + (e.Full == null ? "released" : Schematic.Broken(e.Full) ? "BROKEN" : "ok"))));
             Open();
@@ -695,14 +695,14 @@ namespace GHPCHitCam
                 }
                 else HitCamMod.Log.Warning("AAR TEST: menu replay failed: " + _replay?.Error);
             }
-            // a past mission from its JSON (box model)
+            // past mission from its JSON (box model)
             ShowPast();
             yield return Frames(3);
             yield return Shot(outDir, "aar_past");
             var sessions = AarArchive.Sessions();
             if (sessions.Count > 0)
             {
-                // strictly from the files (OpenSession would pick the copy still in memory)
+                // only from the files (OpenSession would pick the copy still in memory)
                 var s0 = sessions.FirstOrDefault(x => _last?.Folder != null && x.Dir.TrimEnd('\\', '/') == _last.Folder.TrimEnd('\\', '/')) ?? sessions[0];
                 _shown = AarArchive.Load(s0);
                 _view = View.Hits;

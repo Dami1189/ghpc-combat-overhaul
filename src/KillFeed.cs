@@ -13,14 +13,14 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// War Thunder style kill feed. WT's damage tiers (official wiki, "destroy rules"): a vehicle is destroyed when it
-    /// explodes or is left without enough crew; "active fire" is credited to whoever set it alight; "critical damage" =
-    /// a crew member, the gun, the engine or the transmission knocked out (red); "serious damage" = engine, transmission,
-    /// barrel or breech damaged (grey); anything else that hurts is a "hit". A vehicle that dies later (fire, cook-off,
-    /// bail-out) is credited to the earlier hit, here for KillCreditSeconds.
-    /// Messages stack on the right, kills also get a short banner at the top centre, and HudSfx plays the hit / pen / kill sounds.
-    /// Own Harmony postfixes on the game's notifications (Unit.NotifyStruck / NotifyDestroyed / NotifyIncapacitated /
-    /// NotifyAbandoned, FlammableItem.Ignite, FlammablesManager.NotifyDidBurst, Compartment.NotifyExplosion); UI only.
+    /// War Thunder style kill feed. WT damage tiers (official wiki, "destroy rules"): destroyed = explodes or not enough
+    /// crew left; "active fire" goes to whoever set it alight; "critical damage" = crew member, gun, engine or
+    /// transmission knocked out (red); "serious damage" = engine, transmission, barrel or breech damaged (grey); anything
+    /// else that hurts is a "hit". vehicle dying later (fire, cook-off, bail-out) goes to the earlier hit, here for
+    /// KillCreditSeconds
+    /// messages stack on the right, kills also get a short banner top centre, HudSfx plays the hit / pen / kill sounds
+    /// own Harmony postfixes on the game's notifications (Unit.NotifyStruck / NotifyDestroyed / NotifyIncapacitated /
+    /// NotifyAbandoned, FlammableItem.Ignite, FlammablesManager.NotifyDidBurst, Compartment.NotifyExplosion), UI only
     internal static class KillFeed
     {
         class Credit
@@ -98,7 +98,7 @@ namespace GHPCHitCam
             return c;
         }
 
-        /// Credit for a vehicle you hit recently enough, else null.
+        /// credit for a vehicle you hit recently enough, else null
         static Credit Recent(Unit u)
         {
             if (u == null || !_credit.TryGetValue(u, out var c)) return null;
@@ -109,7 +109,7 @@ namespace GHPCHitCam
         {
             try
             {
-                // your rounds' strikes, for the miss messages (a non-penetrating hit never shows in the shot's HitUnits)
+                // your rounds' hits, for the miss messages (a non-pen hit never shows in the shot's HitUnits)
                 if (!isSpall && __instance != null && shooter != null && (object)shooter == Player && __instance.Type != UnitType.Infantry)
                 {
                     _strikes.Add((__instance, Time.time));
@@ -121,7 +121,7 @@ namespace GHPCHitCam
                 if (shooter != null && (object)shooter == me)
                 {
                     var c = Get(__instance);
-                    bool newRound = Time.time - c.LastHit > 0.15f;   // one round strikes several plates
+                    bool newRound = Time.time - c.LastHit > 0.15f;   // one round hits several plates
                     c.LastHit = Time.time;
                     float cal = ammoType != null ? Mathf.Max(ammoType.Caliber, ammoType.Radius * 2000f) : 0f;
                     if (newRound && cal >= Settings.RecordMinCaliberMm && !c.Dead && !c.Out) HudSfx.Hit();
@@ -132,7 +132,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("Kill feed (struck): " + e.Message); }
         }
 
-        /// A player's hit is fully recorded (ArcadeHud.OnRecordReady): what tier of damage it did.
+        /// player's hit is fully recorded (ArcadeHud.OnRecordReady): what tier of damage it did
         public static void OnRecordReady(HitRecord rec)
         {
             try
@@ -142,7 +142,7 @@ namespace GHPCHitCam
                 c.LastHit = Mathf.Max(c.LastHit, rec.FirstImpactReal);
                 if (c.Dead || c.Out) return;
 
-                // critical: crew knocked out, or the gun / engine / transmission destroyed; serious: one of those damaged
+                // critical: crew knocked out, or gun / engine / transmission destroyed; serious: one of those damaged
                 string crit = null, sev = null;
                 foreach (var e in rec.Events)
                 {
@@ -158,7 +158,7 @@ namespace GHPCHitCam
                 }
                 string t = rec.Title ?? "";
                 bool pen = t != "NON-PENETRATION" && t != "RICOCHET" && t != "SHELL SHATTERED" && t != "FUZE NOT ARMED";
-                if (t == "TARGET DESTROYED" || t == "AMMUNITION EXPLODED" || t == "CREW KNOCKED OUT") return;   // the kill hooks report those (and play the kill sound)
+                if (t == "TARGET DESTROYED" || t == "AMMUNITION EXPLODED" || t == "CREW KNOCKED OUT") return;   // kill hooks report those (and play the kill sound)
                 if (crit != null) { Add($"{c.Name}  ·  CRITICALLY DAMAGED  ({Trim(crit)})", Red); HudSfx.Pen(); }
                 else if (sev != null) { Add($"{c.Name}  ·  SEVERELY DAMAGED  ({Trim(sev)})", Grey); HudSfx.Pen(); }
                 else if (pen && (t == "PENETRATION" || t == "HIT" || t == "CRITICAL HIT" || t == "FIRE" || t == "AMMUNITION FIRE")) { Add($"{c.Name}  ·  HIT", White); HudSfx.Pen(); }
@@ -187,7 +187,7 @@ namespace GHPCHitCam
                 bool firstKill = !c.Dead && !c.Out;
                 if (destroyed) c.Dead = true; else c.Out = true;
 
-                // someone else's round landed after yours and just before the end: that's their kill, your assist
+                // someone else's round landed after yours, right before the end: their kill, your assist
                 if (c.LastOther > c.LastHit + 0.05f && now - c.LastOther < 3f)
                 {
                     Add($"{c.Name}  ·  ASSIST  ({how})", Assist);
@@ -231,8 +231,8 @@ namespace GHPCHitCam
         static readonly List<GHPC.Weapons.ShotInfo> _gone = new List<GHPC.Weapons.ShotInfo>();
         static readonly List<(Unit u, float t)> _strikes = new List<(Unit, float)>();
 
-        /// Did this round touch a vehicle or a helicopter? The game lists only its "vehicles" in HitUnits; a helicopter (or a
-        /// round that didn't get in) shows up only as the armour a shot frame struck.
+        /// did this round touch a vehicle or a helicopter? game only lists its "vehicles" in HitUnits, a helicopter (or a
+        /// round that didn't get in) only shows up as the armour a shot frame hit
         static bool StruckVehicle(GHPC.Weapons.ShotInfo si)
         {
             foreach (var u in si.HitUnits) if (u is Unit hu && hu.Type != UnitType.Infantry) return true;
@@ -251,7 +251,7 @@ namespace GHPCHitCam
             return false;
         }
 
-        /// Did one of your rounds strike a vehicle near p since t (this round, as far as we can tell)?
+        /// did one of your rounds hit a vehicle near p since t (this round, as far as we can tell)?
         static bool StruckNear(Vector3 p, float since)
         {
             foreach (var (u, t) in _strikes)
@@ -260,7 +260,7 @@ namespace GHPCHitCam
         }
         static readonly Dictionary<GHPC.Weapons.ShotInfo, Aimed> _aimed = new Dictionary<GHPC.Weapons.ShotInfo, Aimed>();
 
-        /// One of your main-gun rounds leaves: remember what was under the crosshair.
+        /// one of your main-gun rounds leaves: remember what was under the crosshair
         static void FiredPostfix(LiveRound __instance, LiveRound parentRound)
         {
             try
@@ -270,7 +270,7 @@ namespace GHPCHitCam
                 if (me == null || __instance == null || (object)__instance.Shooter != me || __instance.ShotInfo == null) return;
                 var a = __instance.Info;
                 if (a == null || Mathf.Max(a.Caliber, a.Radius * 2000f) < Settings.RecordMinCaliberMm) return;
-                // what you're shooting at: under the crosshair, under the impact cross, or the marker nearest the crosshair (a lob)
+                // what you're shooting at: under the crosshair, under the impact cross, or the marker nearest the crosshair (lob)
                 var u = ArcadeHud.AimedEnemy(out Vector3 at);
                 if (u == null) { if (AutoTest.Active) HitCamMod.Log.Msg("Miss tracking: no enemy under the crosshair / cross / within 3 deg of the sight"); return; }
                 _aimed[__instance.ShotInfo] = new Aimed { Unit = u, Range = Vector3.Distance(__instance.transform.position, at), Name = Recorder.SafeName(u), Round = __instance, At = Time.time };
@@ -280,7 +280,7 @@ namespace GHPCHitCam
             catch { }
         }
 
-        /// It's done: if it never touched a vehicle, say whether it fell short or flew over what you aimed at.
+        /// it's done: if it never touched a vehicle, say if it fell short or flew over what you aimed at
         static void ShotEndedPostfix(GHPC.Weapons.ShotInfo __instance)
         {
             try
@@ -307,8 +307,8 @@ namespace GHPCHitCam
             catch { }
         }
 
-        /// A round that is already well past what you aimed at without touching a vehicle went over: say so now, not when it
-        /// comes down kilometres further on (a long zero, or the proving ground's deck edge with the map 30 m below).
+        /// round already well past what you aimed at without touching a vehicle went over: say so now, not when it comes
+        /// down km further on (long zero, or the proving ground's deck edge with the map 30 m below)
         static void CheckOvershoots()
         {
             if (_aimed.Count == 0) return;
@@ -325,7 +325,7 @@ namespace GHPCHitCam
                     float d = run.magnitude;
                     if (d < 1f) continue;
                     if (StruckVehicle(si) || StruckNear(rp, aim.At)) { _gone.Add(si); continue; }   // it hit something on the way
-                    // past the target where it is now, along the round's own way (a moving target is wherever it has got to)
+                    // past the target where it is now, along the round's own path (moving target = wherever it got to)
                     float past = d - aim.Range;
                     if (aim.Unit != null && !aim.Unit.Destroyed)
                     {
@@ -367,7 +367,7 @@ namespace GHPCHitCam
             CheckOvershoots();
             if (!Active) return;
             float now = Time.time;
-            // an ammunition explosion that didn't (yet) finish it off
+            // ammo explosion that didn't (yet) finish it off
             foreach (var kv in _credit)
             {
                 var c = kv.Value;
@@ -399,7 +399,7 @@ namespace GHPCHitCam
             if (AutoTest.Active) HitCamMod.Log.Msg("Kill feed: " + text);
         }
 
-        /// Config menu preview: example lines when nothing is happening.
+        /// config menu preview: example lines when nothing is happening
         static readonly Msg[] _sample =
         {
             new Msg { Text = "T-72M1  ·  CRITICALLY DAMAGED  (engine)", Color = Red },
@@ -417,7 +417,7 @@ namespace GHPCHitCam
             if (n == 0) return;
             bool right = !string.Equals(Settings.KillFeedSide.Value, "Left", StringComparison.OrdinalIgnoreCase);
             float h = 15f * k, w = 420f * k;
-            // right: just above the minimap (bottom right by default), like War Thunder's battle log; left: above GHPC's weapon panel
+            // right: just above the minimap (bottom right by default) like WT's battle log; left: above GHPC's weapon panel
             float mm = Settings.ArcadeMinimap.Value && (Settings.MinimapCorner.Value ?? "").Contains("Bottom") && !(Settings.MinimapCorner.Value ?? "").Contains("Left") == right
                 ? Mathf.Clamp(Settings.MinimapSize.Value, 0.1f, 0.6f) * Screen.height + 14f : 0f;
             float bottom = right ? Screen.height - 14f - mm - 6f * k : Screen.height * 0.75f;

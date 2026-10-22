@@ -10,17 +10,17 @@ using DC = GHPC.Equipment.DestructibleComponent;
 
 namespace GHPCHitCam
 {
-    // ------------------------------------------------------------------ the vehicle as boxes
+    // ------------------------------------------------------------------ vehicle as boxes
 
-    /// One primitive in target-local space (0 cube, 1 sphere, 2 capsule; the matrix scales the unit primitive).
+    /// one primitive in target-local space (0 cube, 1 sphere, 2 capsule; matrix scales the unit primitive)
     [Serializable] internal class AarShape { public int prim; public Vector4 c0, c1, c2, c3; }
     [Serializable] internal class AarModule { public string name; public string cat; public float hp = 100f; public List<AarShape> shapes = new List<AarShape>(); [NonSerialized] public DC comp; }
     [Serializable] internal class AarCrewPart { public string part; public AarShape shape; [NonSerialized] public DC comp; }
     [Serializable] internal class AarCrew { public string label; public string status; public List<AarCrewPart> parts = new List<AarCrewPart>(); }
     [Serializable] internal class AarAmmo { public List<AarShape> shapes = new List<AarShape>(); [NonSerialized] public AmmoVisual visual; }
 
-    /// The x-ray model reduced to primitives: every hull part as its bounding box, module / crew hit zones, ammo.
-    /// Small (a few KB of JSON), owns no game meshes, so it survives destroyed vehicles, scene unloads and restarts.
+    /// x-ray model cut down to primitives: every hull part as its bounding box, module/crew hit zones, ammo
+    /// small (a few KB of JSON), owns no game meshes, so it survives destroyed vehicles, scene unloads and restarts
     [Serializable]
     internal class AarSchematic
     {
@@ -32,7 +32,7 @@ namespace GHPCHitCam
         public List<AarAmmo> ammo = new List<AarAmmo>();
     }
 
-    /// What a hit's JSON keeps of the vehicle (see Schematic.ToDto).
+    /// what a hit's JSON keeps of the vehicle (see Schematic.ToDto)
     [Serializable]
     internal class AarBoxesDto
     {
@@ -58,7 +58,7 @@ namespace GHPCHitCam
         {
             if (s == null) return null;
             var sc = new AarSchematic { unit = s.UnitName, boundsCenter = s.LocalBounds.center, boundsSize = s.LocalBounds.size };
-            // hull: biggest parts first (bolts, tools and tow cables don't matter in a schematic)
+            // hull: biggest parts first (bolts, tools, tow cables don't matter in a schematic)
             var parts = new List<(AarShape sh, float vol)>();
             var fit = s.LocalBounds;
             fit.Expand(1.5f);
@@ -68,7 +68,7 @@ namespace GHPCHitCam
                 if (sh == null) continue;
                 float v = Mathf.Abs(Mat(sh).determinant);
                 var box = Aabb(Mat(sh));
-                // a box much bigger than the vehicle (stale bounds, effect volumes) would swallow the picture
+                // box way bigger than the vehicle (stale bounds, effect volumes) would swallow the picture
                 if (v > 2e-4f && fit.Contains(box.min) && fit.Contains(box.max)) parts.Add((sh, v));
             }
             foreach (var x in parts.OrderByDescending(x => x.vol).Take(MaxHull)) sc.hull.Add(x.sh);
@@ -95,7 +95,7 @@ namespace GHPCHitCam
 
         static AarShape Shape(MeshPart p)
         {
-            if (p == null || p.Mesh == null) return null;   // Unity null: destroyed since the snapshot
+            if (p == null || p.Mesh == null) return null;   // unity null: destroyed since the snapshot
             try
             {
                 int prim = p.Mesh == Prims.Cube ? Cube : p.Mesh == Prims.Sphere ? Sphere : p.Mesh == Prims.Capsule ? Capsule : -1;
@@ -114,7 +114,7 @@ namespace GHPCHitCam
 
         static Matrix4x4 Mat(AarShape s) => new Matrix4x4(s.c0, s.c1, s.c2, s.c3);
 
-        /// Axis-aligned box of a unit cube transformed by m.
+        /// AABB of a unit cube transformed by m
         static Bounds Aabb(Matrix4x4 m)
         {
             var b = new Bounds(m.MultiplyPoint3x4(Vector3.zero), Vector3.zero);
@@ -123,8 +123,8 @@ namespace GHPCHitCam
             return b;
         }
 
-        // ---- the JSON form: flat lists of numbers and strings (13 floats per box), compact in the hit files.
-        const int Floats = 13;   // prim + the 3x4 affine matrix, row by row
+        // ---- JSON form: flat lists of numbers and strings (13 floats per box), compact in the hit files
+        const int Floats = 13;   // prim + 3x4 affine matrix, row by row
 
         static void Put(List<float> to, AarShape s)
         {
@@ -185,8 +185,8 @@ namespace GHPCHitCam
         static MeshPart Part(AarShape s, string name) =>
             new MeshPart { Mesh = s.prim == Sphere ? Prims.Sphere : s.prim == Capsule ? Prims.Capsule : Prims.Cube, M = Mat(s), Name = name };
 
-        /// A ghost snapshot built from boxes. Live schematics keep their game references (modules, crew parts, ammo),
-        /// so the hit's events still find what they hit; archived ones are matched by name later.
+        /// ghost snapshot built from boxes. live schematics keep their game refs (modules, crew parts, ammo) so the hit's
+        /// events still find what they hit, archived ones get matched by name later
         public static GhostSnapshot ToSnapshot(AarSchematic sc, Bounds fallback)
         {
             var s = new GhostSnapshot { UnitName = sc?.unit ?? "?" };
@@ -195,7 +195,7 @@ namespace GHPCHitCam
             s.LocalBounds = b;
             if (sc == null || sc.hull == null || sc.hull.Count == 0)
             {
-                // nothing but the bounds: one box hull (the bounds were grown by 0.5 m around the hit zones)
+                // only the bounds: one box hull (bounds were grown by 0.5 m around the hit zones)
                 var size = Vector3.Max(b.size - Vector3.one * 0.8f, b.size * 0.6f);
                 s.Exterior.Add(new MeshPart { Mesh = Prims.Cube, M = Matrix4x4.TRS(b.center, Quaternion.identity, size), Name = "hull box" });
             }
@@ -235,7 +235,7 @@ namespace GHPCHitCam
             return Enum.TryParse(s, true, out T v) ? v : d;
         }
 
-        /// True when one of the game meshes the snapshot borrowed has been destroyed (vehicle gone, scene unloaded).
+        /// true when a game mesh the snapshot borrowed got destroyed (vehicle gone, scene unloaded)
         public static bool Broken(GhostSnapshot s)
         {
             if (s == null) return true;
@@ -246,7 +246,7 @@ namespace GHPCHitCam
             return s.Ammo.Any(a => a.Shapes.Any(Dead));
         }
 
-        /// Destroys the meshes the snapshot baked itself (crew poses, skinned parts). Game meshes are left alone.
+        /// destroys the meshes the snapshot baked itself (crew poses, skinned parts), game meshes are left alone
         public static int Release(GhostSnapshot s)
         {
             if (s == null) return 0;
@@ -258,6 +258,8 @@ namespace GHPCHitCam
                 UnityEngine.Object.Destroy(p.Mesh);
             }
             foreach (var p in s.Exterior) Kill(p);
+            foreach (var p in s.Fixtures) Kill(p);
+            foreach (var mp in s.Modules) foreach (var p in mp.Detail) Kill(p);
             foreach (var c in s.Crew) { foreach (var p in c.Visuals) Kill(p); foreach (var p in c.Shapes) Kill(p); }
             foreach (var a in s.Ammo) foreach (var p in a.Shapes) Kill(p);
             return verts;
@@ -269,6 +271,8 @@ namespace GHPCHitCam
             int n = 0;
             void Add(MeshPart p) { if (p != null && p.OwnsMesh && p.Mesh != null) n += p.Mesh.vertexCount; }
             foreach (var p in s.Exterior) Add(p);
+            foreach (var p in s.Fixtures) Add(p);
+            foreach (var mp in s.Modules) foreach (var p in mp.Detail) Add(p);
             foreach (var c in s.Crew) { foreach (var p in c.Visuals) Add(p); foreach (var p in c.Shapes) Add(p); }
             foreach (var a in s.Ammo) foreach (var p in a.Shapes) Add(p);
             return n;
@@ -276,8 +280,8 @@ namespace GHPCHitCam
     }
 
 
-    /// JSON for the hit files. Unity's JsonUtility silently drops every nested class (fragments, armor hits, events were
-    /// never in the saved files), so the hit files go through Newtonsoft.Json, which the game ships.
+    /// JSON for the hit files. unity's JsonUtility silently drops every nested class (fragments, armor hits, events were
+    /// never in the saved files), so it goes through Newtonsoft.Json which the game ships
     internal static class AarJson
     {
         static Newtonsoft.Json.JsonSerializerSettings _settings;
@@ -293,7 +297,7 @@ namespace GHPCHitCam
 
         public static T Read<T>(string json) => Newtonsoft.Json.JsonConvert.DeserializeObject<T>(json, Settings);
 
-        /// Vectors as {x, y, z(, w)}: the default contract would walk normalized / magnitude.
+        /// vectors as {x, y, z(, w)}: default contract would walk normalized / magnitude
         class VecConverter : Newtonsoft.Json.JsonConverter
         {
             public override bool CanConvert(Type t) => t == typeof(Vector2) || t == typeof(Vector3) || t == typeof(Vector4);
@@ -368,7 +372,7 @@ namespace GHPCHitCam
 
         public class Session { public string Dir, Name, When; public int Hits; public AarMissionDto Info; }
 
-        /// Mission folders, newest first.
+        /// mission folders, newest first
         public static List<Session> Sessions()
         {
             var list = new List<Session>();
@@ -404,7 +408,7 @@ namespace GHPCHitCam
                 catch { }
             }
             if (!string.IsNullOrEmpty(d.ammo) && _ammo.TryGetValue(d.ammo, out var at)) return at;
-            // not loaded right now (other theatre / main menu): a stand-in with the saved numbers
+            // not loaded right now (other theatre / main menu): stand-in with the saved numbers
             var cat = Enum.TryParse(d.ammoCategory, out AmmoType.AmmoCategory c) ? c : AmmoType.AmmoCategory.Penetrator;
             var t = new AmmoType { Name = d.ammo ?? "?", Category = cat, Caliber = d.caliber, RhaPenetration = d.penetration, TntEquivalentKg = d.ammoTnt };
             if (d.ammoMass > 0f) t.Mass = d.ammoMass;
@@ -443,7 +447,7 @@ namespace GHPCHitCam
                     e.Friendly = s.Info.friendlyIds != null && s.Info.friendlyIds.Contains(e.Rec.Id);
                 }
             m.Unplayable = _noPaths;
-            // old files have no mission time: keep the file order
+            // old files have no mission time: keep file order
             if (m.Entries.All(x => x.MissionTime <= 0f)) for (int i = 0; i < m.Entries.Count; i++) m.Entries[i].MissionTime = -1f;
             return m;
         }
@@ -552,7 +556,7 @@ namespace GHPCHitCam
             return best;
         }
 
-        /// Same rule as Timeline.Build: the main round's time inside the vehicle gets most of the slow motion.
+        /// same rule as Timeline.Build: main round's time inside the vehicle gets most of the slow-mo
         static float CoreEnd(HitRecord rec, Bounds b)
         {
             b.Expand(1f);

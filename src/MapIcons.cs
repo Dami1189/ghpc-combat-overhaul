@@ -5,10 +5,9 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// The vehicle class of a unit, War Thunder style, and our own icon for it (drawn in code into one small atlas; no
-    /// War Thunder assets). The class comes from the game's own unit data: UnitType (ground / air / emplacement / infantry)
-    /// and the short name its crews call it by (TargetShortNameUs: Tank, Pc, Truck, Antitank, Antiair, Troops, Chopper,
-    /// FastMover, ...); tanks are split light / medium / heavy by mass.
+    /// WT style vehicle class of a unit + our own icon for it (drawn in code into one small atlas, no WT assets).
+    /// class comes from the game's unit data: UnitType (ground / air / emplacement / infantry) and the crew short name
+    /// (TargetShortNameUs: Tank, Pc, Truck, Antitank, Antiair, Troops, Chopper, FastMover, ...), tanks split light/medium/heavy by mass
     internal enum MapClass { LightTank, MediumTank, HeavyTank, TankDestroyer, Spaa, Ifv, Truck, Infantry, AntiTankTeam, Emplacement, Helicopter, Plane, Unknown }
 
     internal static class MapIcons
@@ -62,18 +61,18 @@ namespace GHPCHitCam
                 case TargetShortNameUs.Chopper: return MapClass.Helicopter;
                 case TargetShortNameUs.FastMover: return MapClass.Plane;
             }
-            // a tank: by weight (PT-76 ~14 t light; T-55 .. M1 medium, as War Thunder files them; heavier than 62 t heavy)
+            // tanks by weight (PT-76 ~14 t light, T-55 .. M1 medium like WT files them, over 62 t heavy)
             float t = 40f;
             try
             {
                 var rb = u.GetComponent<Rigidbody>() ?? u.GetComponentInChildren<Rigidbody>();
-                if (rb != null && rb.mass > 5000f) t = rb.mass / 1000f;   // a believable vehicle mass, else leave it medium
+                if (rb != null && rb.mass > 5000f) t = rb.mass / 1000f;   // only if the mass looks real, else it stays medium
             }
             catch { }
             return t < 25f ? MapClass.LightTank : t > 62f ? MapClass.HeavyTank : MapClass.MediumTank;
         }
 
-        /// The icon's part of the atlas (for GUI.DrawTextureWithTexCoords and GL texture coordinates).
+        /// icon's spot in the atlas (for GUI.DrawTextureWithTexCoords and GL tex coords)
         public static Rect Uv(MapClass c)
         {
             int i = (int)c;
@@ -114,7 +113,7 @@ namespace GHPCHitCam
         static float Line(Vector2 p, Vector2 a, Vector2 b, float t) => Seg(p, a, b) - t * 0.5f;
         static float U(float a, float b) => Mathf.Min(a, b);
 
-        /// The shape of each class (distance < 0 = ink).
+        /// shape of each class (distance < 0 = ink)
         static float Shape(MapClass c, Vector2 p)
         {
             const float T = 0.17f;
@@ -144,14 +143,14 @@ namespace GHPCHitCam
             }
         }
 
-        /// White ink with a dark rim (tinting with GUI.color / GL colour keeps the rim dark), anti-aliased.
+        /// white ink with a dark rim, anti-aliased (tinting with GUI.color / GL colour keeps the rim dark)
         static void Build()
         {
             int rows = (Enum.GetValues(typeof(MapClass)).Length + Cols - 1) / Cols;
             int w = Cols * Cell, h = Cols * Cell;
             _atlas = new Texture2D(w, h, TextureFormat.RGBA32, true) { hideFlags = HideFlags.HideAndDontSave, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear };
             var px = new Color32[w * h];
-            float unit = Cell * 0.5f / 1.12f;          // pixels per icon unit (a little margin for the rim)
+            float unit = Cell * 0.5f / 1.12f;          // pixels per icon unit (bit of margin for the rim)
             float rim = 2.6f / unit;                    // dark rim width in icon units
             foreach (MapClass c in Enum.GetValues(typeof(MapClass)))
             {

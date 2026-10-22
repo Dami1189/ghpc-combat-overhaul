@@ -4,9 +4,9 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// The game resolves a whole penetration inside one frame, so frame timestamps are useless.
-    /// We rebuild a physical clock instead: distance travelled / speed of each fragment,
-    /// with spall starting at the moment its parent passed the spot it was born at.
+    /// game resolves a whole penetration in one frame so frame timestamps are useless.
+    /// we rebuild a physical clock instead: distance travelled / speed of each fragment,
+    /// spall starts when its parent passed the spot the spall was born at
     internal static class Timeline
     {
         public static void Build(HitRecord rec)
@@ -19,7 +19,7 @@ namespace GHPCHitCam
 
             float vMain = main.StartSpeed > 50 ? main.StartSpeed : (rec.Ammo != null ? rec.Ammo.MuzzleVelocity : 1000f);
 
-            // first impact that is actually on/near the target
+            // first impact that's actually on/near the target
             int i0 = -1;
             for (int i = 0; i < main.Points.Count; i++)
                 if (main.Points[i].Impact && b.Contains(main.Points[i].L)) { i0 = i; break; }
@@ -47,7 +47,7 @@ namespace GHPCHitCam
                 main.StartSim = main.Points[0].Sim;
             main.EndSim = main.Points[main.Points.Count - 1].Sim;
 
-            // spall, parents before children (creation order already guarantees that)
+            // spall, parents before children (creation order already does that)
             foreach (var f in rec.Fragments)
             {
                 if (f == main) continue;
@@ -84,7 +84,7 @@ namespace GHPCHitCam
                 if (p.Sim >= 0 && b.Contains(p.L)) mainInside = Mathf.Max(mainInside, p.Sim);
             rec.CoreEnd = Mathf.Clamp(Mathf.Max(mainInside * 1.6f, 0.0025f), 0.0015f, rec.InteriorEnd);
 
-            // approach: the last ~7 m before impact
+            // approach: last ~7 m before impact
             float approachDist = Mathf.Clamp(b.size.magnitude * 0.7f, 5f, 10f);
             rec.ApproachStart = Mathf.Max(-approachDist / vMain, main.StartSim);
 
@@ -98,9 +98,9 @@ namespace GHPCHitCam
             ComputeTitle(rec);
         }
 
-        /// The game can crush a round on the first surface before a single point of its flight is logged. Its impact is
-        /// then where its first plate is, or where the spall it threw started; its way in comes from where it was fired,
-        /// else from the spall cone (thrown along the round's line). Without this the replay had no direction at all.
+        /// game can crush a round on the first surface before a single flight point is logged. impact is then its first
+        /// plate or where its spall started, way in comes from where it was fired, else from the spall cone (thrown along
+        /// the round's line). without this the replay had no direction at all
         static void Synthesize(HitRecord rec, Fragment main)
         {
             Vector3 at = Vector3.zero;
@@ -127,7 +127,7 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg($"Hit cam: the round left no path (crushed on the first surface): rebuilt from {(ah != null ? "its plate" : $"{n} spall starts")}, along {(ah != null ? "the plate hit" : main.HasStart ? "the line it was fired on" : "the spall cone")}");
         }
 
-        /// Simulation time at which a fragment was closest to a local point.
+        /// sim time when a fragment was closest to a local point
         public static float SimAt(Fragment f, Vector3 l)
         {
             if (f.Points.Count == 0) return f.StartSim;
@@ -154,14 +154,13 @@ namespace GHPCHitCam
             if (e.Frag != null && e.HasPos && e.Frag.Points.Count > 0)
                 e.Sim = SimAt(e.Frag, e.L);
             else if (e.Kind == EvKind.Kill || e.Kind == EvKind.Knockout || e.RealT - rec.FirstImpactReal > 0.05f || e.Frag == null)
-                e.Sim = float.PositiveInfinity;    // happened after the round was done: aftermath
+                e.Sim = float.PositiveInfinity;    // happened after the round was done = aftermath
             else
                 e.Sim = 0f;
         }
 
-        /// The verdict, War Thunder style: "PENETRATION" only when the round got in AND did real damage. A hole that
-        /// only scratched a stowage bin or the radio rack is "PENETRATED, NO DAMAGE"; damage without a penetration
-        /// (HE blast on tracks / optics) is a "HIT".
+        /// verdict WT style: "PENETRATION" only if the round got in AND did real damage. a hole that only scratched a
+        /// stowage bin or the radio rack is "PENETRATED, NO DAMAGE", damage without a pen (HE blast on tracks / optics) is a "HIT"
         public static void ComputeTitle(HitRecord rec)
         {
             var ev = rec.Events;
@@ -188,8 +187,8 @@ namespace GHPCHitCam
             else Set(rec, "NON-PENETRATION", grey);
         }
 
-        /// A propellant charge / case burning (the game's non-explosive ammo flammables: "3BM15 casing hit zone",
-        /// "throwing charge hit zone", "propellant casing"): it vents as a jet and often cooks off the rack seconds later.
+        /// propellant charge / case burning (game's non-explosive ammo flammables: "3BM15 casing hit zone",
+        /// "throwing charge hit zone", "propellant casing"): vents as a jet and often cooks off the rack seconds later
         internal static bool Propellant(HitEvent e) => e.Kind == EvKind.Fire && IsPropellantName(e.Subject);
 
         internal static bool IsPropellantName(string n)
@@ -199,8 +198,8 @@ namespace GHPCHitCam
             return n.Contains("casing") || n.Contains("charge") || n.Contains("propellant") || n.Contains("powder") || n.Contains("cartridge");
         }
 
-        /// The game reports the round's own warhead going off inside a compartment as a compartment explosion (same
-        /// TNT as the shell's filler, at the moment of impact): that is not the vehicle's ammunition exploding.
+        /// game reports the round's own warhead going off in a compartment as a compartment explosion (same TNT as the
+        /// shell filler, at impact time): that's not the vehicle's ammo going up
         internal static bool OwnWarhead(HitRecord rec, HitEvent e)
         {
             if (e.Kind != EvKind.Explosion || rec.Ammo == null) return false;
@@ -208,14 +207,14 @@ namespace GHPCHitCam
             return tnt > 0f && Mathf.Abs(e.After - tnt) <= tnt * 0.01f + 1e-3f && e.RealT - rec.FirstImpactReal < 0.5f;
         }
 
-        /// A module whose loss changes how the vehicle fights or moves (not stowage bins, boxes, the radio rack).
+        /// module whose loss changes how the vehicle fights or moves (not stowage bins, boxes, the radio rack)
         internal static bool Matters(HitEvent e)
         {
             var cat = GhostSnapshot.Classify(e.Subject);
             return cat != ModCat.Other && cat != ModCat.Radio;
         }
 
-        /// Real damage: a module that matters destroyed, or knocked down by at least 15 points / below 60 %.
+        /// real damage: a module that matters destroyed, or knocked down by 15+ points / below 60 %
         internal static bool Real(HitEvent e)
         {
             if (!Matters(e)) return false;
@@ -229,7 +228,7 @@ namespace GHPCHitCam
             "CRITICAL HIT", "AMMUNITION FIRE", "CREW KNOCKED OUT", "AMMUNITION EXPLODED", "TARGET DESTROYED",
         };
 
-        /// How bad a verdict is (for showing the worst result of a burst).
+        /// how bad a verdict is (to show the worst result of a burst)
         public static int Rank(string title) => System.Array.IndexOf(_order, title ?? "");
 
         static void Set(HitRecord rec, string title, Color c)

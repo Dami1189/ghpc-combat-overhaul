@@ -4,14 +4,14 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// The flying projectile as the real thing, built from the round's own data (calibre, penetrator radius, mass,
-    /// category, guidance, speed). Nose at the origin, tail toward -Z (the round's position is where its nose is).
-    /// - APFSDS: the long rod (length from its mass and tungsten's density), windshield, tracer cup, six tail fins
+    /// the flying projectile as the real thing, built from the round's own data (calibre, penetrator radius, mass,
+    /// category, guidance, speed). nose at the origin, tail toward -Z (round's position is where its nose is)
+    /// - APFSDS: long rod (length from its mass and tungsten density), windshield, tracer cup, six tail fins
     /// - full-bore AP / APHE: boat tail, brass driving band, ogive, ballistic cap
     /// - HEAT-FS: stand-off probe, nose cone, warhead body, tail boom, six fins
     /// - HE-FRAG: boat tail, driving band, ogive, nose fuze (115-125 mm smoothbore rounds get tail fins)
     /// - ATGMs / rockets: body, nose cone, four big fins; bombs: ogive, body, tail cone, box fins
-    /// Colours follow the usual markings (black AP, olive HE, grey tungsten rod, brass bands), shading baked per face.
+    /// colours follow the usual markings (black AP, olive HE, grey tungsten rod, brass bands), shading baked per face
     internal static class ShellModels
     {
         static readonly Dictionary<AmmoType, Mesh> _cache = new Dictionary<AmmoType, Mesh>();
@@ -33,18 +33,18 @@ namespace GHPCHitCam
         static float _roundsAt = -999f;
         static readonly Dictionary<string, GHPC.AarVisual> _found = new Dictionary<string, GHPC.AarVisual>();
 
-        /// Looked up ahead (Warmup, for the round you have loaded): the search below is ~30 ms.
+        /// looked up ahead (Warmup, for the loaded round): the search below takes ~30 ms
         public static void Prewarm(AmmoType a) { if (a != null) FindRound(a); }
 
-        /// GHPC's x-ray model of this round (what its after-action replay draws in the racks), found by designation
-        /// ("M774" for "M774 APFSDS-T"). Remembered per round; the scene is searched again only for a round not seen yet.
+        /// GHPC's x-ray model of this round (what its AAR draws in the racks), found by designation ("M774" for
+        /// "M774 APFSDS-T"). cached per round, scene only gets searched again for a round not seen yet
         static GHPC.AarVisual FindRound(AmmoType a)
         {
             string key = a.Name ?? "";
             if (_found.TryGetValue(key, out var known))
             {
                 if (known != null) return known;                                                              // still there
-                if (ReferenceEquals(known, null) && Time.realtimeSinceStartup - _roundsAt < 30f) return null;   // none for it, looked lately
+                if (ReferenceEquals(known, null) && Time.realtimeSinceStartup - _roundsAt < 30f) return null;   // none for it, looked recently
             }
             var av = Search(a);
             _found[key] = av;
@@ -75,8 +75,8 @@ namespace GHPCHitCam
             return null;
         }
 
-        /// The flying round from the game's own model: the projectile parts only (the case stays in the gun, sabot
-        /// petals and obturator fall away at the muzzle), turned so its nose is at the origin pointing +Z.
+        /// flying round from the game's own model: projectile parts only (case stays in the gun, sabot petals and
+        /// obturator fall away at the muzzle), turned so the nose is at the origin pointing +Z
         public static bool GameModel(AmmoType a, Transform parent, out float length)
         {
             length = 0f;
@@ -98,7 +98,7 @@ namespace GHPCHitCam
                 parts.Add((mf.sharedMesh, rel, r.name));
             }
             if (parts.Count == 0) return false;
-            // the round lies along one of its model's axes: the longest side of its bounds; the nose is the end away from the case
+            // round lies along one of its model's axes (longest side of its bounds), nose is the end away from the case
             Bounds b = default;
             bool first = true;
             foreach (var (m, rel, _) in parts)
@@ -153,7 +153,7 @@ namespace GHPCHitCam
             if (cal < 0.001f) cal = 0.1f;
             if (rod)
             {
-                // in flight only the rod is left (the sabot petals fall away at the muzzle); ~75 % of the listed mass
+                // in flight only the rod is left (sabot petals fall away at the muzzle), ~75 % of the listed mass
                 float L = Mathf.Clamp(0.75f * Mathf.Max(a.Mass, 0.1f) / (17600f * Mathf.PI * 0.25f * d * d), 14f * d, 32f * d);
                 float r = 0.5f * d;
                 rings.Add(new Ring(-L, 0.25f * d, Tungsten));
@@ -257,7 +257,7 @@ namespace GHPCHitCam
                 for (int k = 0; k < N; k++)
                     Quad(P(a.Z, a.R, k), P(b.Z, b.R, k), P(b.Z, b.R, k + 1), P(a.Z, a.R, k + 1), b.C);
             }
-            // the base disc
+            // base disc
             var r0 = rings[0];
             for (int k = 0; k < N; k++) Quad(new Vector3(0f, 0f, r0.Z), P(r0.Z, r0.R, k + 1), P(r0.Z, r0.R, k), new Vector3(0f, 0f, r0.Z), r0.C);
             foreach (var f in fins)

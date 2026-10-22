@@ -9,12 +9,11 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Which vehicles the arcade HUD marks. GHPC has real spotting: every unit's TargetSensor keeps the enemies it has
-    /// spotted (protected HashSet _activeTargets, filled after a spot delay of ~1-8 s that grows with range), the player's
-    /// own vehicle included (PlayerInput.FixedUpdate keeps updating it while you drive). We mark what any friendly
-    /// (or friendly helicopter, HelicopterAIController._targetsInSight) has spotted, and keep it for MarkerMemorySeconds after
-    /// it drops out. MarkerSource=LineOfSight instead marks enemies the game's own LOS test (VisibilityManager.IsPositionVisible,
-    /// terrain / trees / smoke) can see from your sight within MarkerRange.
+    /// which vehicles the arcade HUD marks. GHPC has real spotting: each unit's TargetSensor keeps what it spotted
+    /// (protected HashSet _activeTargets, ~1-8 s spot delay that grows with range), player's own vehicle too (PlayerInput.FixedUpdate
+    /// keeps it updated while you drive). we mark whatever any friendly or friendly heli (HelicopterAIController._targetsInSight)
+    /// spotted and keep it MarkerMemorySeconds after it drops out. MarkerSource=LineOfSight instead uses the game's own LOS test
+    /// (VisibilityManager.IsPositionVisible: terrain / trees / smoke) from your sight within MarkerRange
     internal static class Contacts
     {
         internal class Contact
@@ -41,7 +40,7 @@ namespace GHPCHitCam
 
         public static readonly List<Contact> All = new List<Contact>();         // enemies
         public static readonly List<Contact> Friends = new List<Contact>();     // for the minimap
-        public static readonly List<Contact> Troops = new List<Contact>();      // infantry of both sides: the minimap only
+        public static readonly List<Contact> Troops = new List<Contact>();      // infantry of both sides, minimap only
         static readonly Dictionary<Unit, Contact> _by = new Dictionary<Unit, Contact>();
         static float _nextSync, _nextSpot;
         static int _losCursor;
@@ -99,7 +98,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// New units (spawns, reinforcements) join; the mission's own list includes dead ones.
+        /// new units (spawns, reinforcements) join, the mission's own list has the dead ones too
         static void Sync(Unit player)
         {
             var sum = SceneUnitsManager.Instance;
@@ -128,8 +127,8 @@ namespace GHPCHitCam
             try { return u.Destroyed || u.Neutralized; } catch { return u.Destroyed; }
         }
 
-        /// The vehicle's middle (the game's own aim / visibility point, Unit.Center: 1.5 m up its root) and how far its top is
-        /// above that, once. Renderer bounds alone are not trusted for the middle: the T-72M1's skinned hull reports ~75 m.
+        /// vehicle's middle (game's own aim / visibility point, Unit.Center: 1.5 m up from root) and how far its top is above it,
+        /// once. renderer bounds alone aren't trusted for the middle: the T-72M1's skinned hull reports ~75 m
         static void Locate(Contact c)
         {
             var t = c.Unit.transform;
@@ -199,7 +198,7 @@ namespace GHPCHitCam
                 var friends = lists[f];
                 for (int i = 0; i < friends.Count; i++) sensors += Collect(friends[i], now) ? 1 : 0;
             }
-            // the player's own vehicle (it leaves the live list when knocked out, the sensor stays)
+            // player's own vehicle (leaves the live list when knocked out, the sensor stays)
             if (lists == null || f < 0 || f >= lists.Length || lists[f] == null || !lists[f].Contains(player)) sensors += Collect(player, now) ? 1 : 0;
             UsingGameSpotting = sensors > 0;
             int n = 0;

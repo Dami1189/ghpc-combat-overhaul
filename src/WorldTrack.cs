@@ -9,27 +9,26 @@ using DC = GHPC.Equipment.DestructibleComponent;
 
 namespace GHPCHitCam
 {
-    /// A track the game has broken (its track hit zone destroyed): the real track model, cut at the break, becomes a
-    /// chain of links (pin-jointed, about 12 cm apart) that hangs on what is under it. The chain keeps its length; gravity
-    /// pulls it; the road wheels, sprocket and idler (the space inside the track's own loop, moving with the vehicle) and
-    /// the ground hold it up. With the loop open nothing keeps it tight any more: the broken ends slide off the sprocket
-    /// or idler and drop, a slack top run settles on the wheels, and if the vehicle moves off it, it is left lying on the
-    /// ground. The model's vertices ride on the links. It settles in a few seconds and then rests (woken again if the
-    /// vehicle moves).
+    /// track the game broke (its track hit zone destroyed): the real track model, cut at the break, turns into a chain of
+    /// links (pin-jointed, ~12 cm apart) hanging on whatever is under it. chain keeps its length, gravity pulls it, road
+    /// wheels / sprocket / idler (space inside the track's own loop, moves with the vehicle) and the ground hold it up.
+    /// loop is open so nothing keeps it tight: broken ends slide off sprocket or idler and drop, slack top run settles on
+    /// the wheels, and if the vehicle drives off it's left lying on the ground. model vertices ride on the links.
+    /// settles in a few s then rests (woken again if the vehicle moves)
     internal class WorldTrack : MonoBehaviour
     {
         const float Pitch = 0.12f;
         const float Step = 1f / 60f;
 
         Unit _u;
-        Transform _h;                       // the hull: the space the wheels move in
+        Transform _h;                       // hull: the space the wheels move in
         Renderer _src;
         MeshCopy _mc;
         Mesh _mesh;
-        Vector3 _lat;                       // the track's lateral axis (world, at the break)
+        Vector3 _lat;                       // track's lateral axis (world, at the break)
         float _xMid, _halfW, _thick;
-        Vector2[] _inside;                  // the solid inside the loop (wheels, sprocket, idler): hull (z, y)
-        Vector3[] _x, _xp;                  // the chain's links (world)
+        Vector2[] _inside;                  // solid inside the loop (wheels, sprocket, idler): hull (z, y)
+        Vector3[] _x, _xp;                  // chain links (world)
         float[] _rest;
         // each vertex rides on a link: segment, place along it, offsets across / sideways, normal and tangent in its frame
         int[] _seg; float[] _t, _on, _ol; Vector3[] _nf, _tf; float[] _tw;
@@ -40,8 +39,8 @@ namespace GHPCHitCam
 
         public static void Break(Unit u, DC dc, Vector3? hitW)
         {
-            // not inside the game's damage call, and without the stalling read-back of a GPU-only track mesh (~120 ms):
-            // the mesh is asked for now and the track breaks a few frames later, when it has come back
+            // not inside the game's damage call, and no stalling read-back of a GPU-only track mesh (~120 ms):
+            // mesh gets requested now and the track breaks a few frames later when it's back
             var best = Model(u, dc, out var lods, out float bestD);
             if (best == null || bestD > 1.2f) { HitCamMod.Log.Msg($"World track {Recorder.SafeName(u)} '{dc.Name}': no track model found"); return; }
             var mesh = PartKit.MeshOf(best);
@@ -62,7 +61,7 @@ namespace GHPCHitCam
             Make(u, dc, best, lods, local.HasValue ? h.TransformPoint(local.Value) : (Vector3?)null);
         }
 
-        /// The track model a track hit zone belongs to (and its other LODs).
+        /// track model a track hit zone belongs to (plus its other LODs)
         static Renderer Model(Unit u, DC dc, out List<Renderer> lods, out float bestD)
         {
             var col = dc.ComponentCollision;
@@ -114,13 +113,13 @@ namespace GHPCHitCam
             var full = MeshCopy.Read(mesh, out why);
             if (full == null) return false;
             full.Pose(src);
-            // the model as drawn now, in world space
+            // model as drawn now, world space
             _mc = full.StaticCopy("HitCam broken track", full.Tris, Matrix4x4.identity, out var tris, out _);
             int nv = _mc.Count;
             var P = new Vector3[nv];
             for (int v = 0; v < nv; v++) P[v] = _mc.Pos(v);
             _lat = _h.right;
-            // the loop in the hull's side view: (z, y)
+            // loop in the hull's side view: (z, y)
             var hz = new Vector2[nv];
             float xs = 0f;
             for (int v = 0; v < nv; v++)
@@ -135,7 +134,7 @@ namespace GHPCHitCam
             Vector2 C = Vector2.zero;
             foreach (var p in hz) C += p;
             C /= nv;
-            // the track's middle line: per direction from the loop's middle, halfway between its inner and outer faces
+            // track's middle line: per direction from the loop's middle, halfway between inner and outer face
             const int NB = 360;
             var rMin = new float[NB]; var rMax = new float[NB];
             for (int i = 0; i < NB; i++) { rMin[i] = float.MaxValue; rMax[i] = -1f; }
@@ -148,7 +147,7 @@ namespace GHPCHitCam
                 if (r > rMax[b]) rMax[b] = r;
             }
             foreach (var p in hz) Sample(p);
-            // along every triangle edge too: the long straight runs have few vertices
+            // along every triangle edge too, the long straight runs have few vertices
             foreach (var tl in tris)
                 for (int i = 0; i + 2 < tl.Count; i += 3)
                     for (int e = 0; e < 3; e++)
@@ -179,14 +178,14 @@ namespace GHPCHitCam
                 float a = (i + 0.5f) / NB * Mathf.PI * 2f - Mathf.PI;
                 line.Add(C + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * sm[i]);
             }
-            // links every Pitch along it
+            // a link every Pitch along it
             float total = 0f;
             for (int i = 0; i < NB; i++) total += (line[(i + 1) % NB] - line[i]).magnitude;
             int n = Mathf.Max(24, Mathf.RoundToInt(total / Pitch));
             float step = total / n;
             var q = new List<Vector2>(n);
             for (int k = 0; k < n; k++) q.Add(Along(line, k * step));
-            // the solid inside the loop: the middle line moved in by half the track's thickness
+            // solid inside the loop: middle line moved in by half the track thickness
             var inside = new Vector2[n];
             for (int k = 0; k < n; k++)
             {
@@ -197,13 +196,13 @@ namespace GHPCHitCam
             }
             _inside = inside;
 
-            // the break: the link nearest the hit (else the front of the top run), and the link it destroyed
+            // break: link nearest the hit (else front of the top run), and the link it destroyed
             Vector3 hit = hitW ?? _h.TransformPoint(new Vector3(_xMid, q.OrderByDescending(p => p.x + p.y).First().y, q.OrderByDescending(p => p.x + p.y).First().x));
             Vector3 hl = _h.InverseTransformPoint(hit);
             int kb = 0;
             float bd = float.MaxValue;
             for (int k = 0; k < n; k++) { float d = (q[k] - new Vector2(hl.z, hl.y)).sqrMagnitude; if (d < bd) { bd = d; kb = k; } }
-            int m = n - 1;                                   // the open chain: links kb+1 .. kb-1
+            int m = n - 1;                                   // open chain: links kb+1 .. kb-1
             _x = new Vector3[m]; _xp = new Vector3[m]; _rest = new float[m - 1];
             for (int j = 0; j < m; j++)
             {
@@ -229,7 +228,7 @@ namespace GHPCHitCam
                     float d = (pp - (a + ab * t)).sqrMagnitude;
                     if (d < bdist) { bdist = d; bj = j; bt = t; }
                 }
-                // vertices of the destroyed link (within about half a link of the break, along the loop) go with it
+                // vertices of the destroyed link (within ~half a link of the break, along the loop) go with it
                 Vector3 hv = _h.InverseTransformPoint(p);
                 Vector2 v2 = new Vector2(hv.z, hv.y);
                 float bestL = float.MaxValue; int li = 0; float lt = 0f;
@@ -271,7 +270,7 @@ namespace GHPCHitCam
             var mr = gameObject.AddComponent<MeshRenderer>();
             PartKit.CopyLook(src, mr);
 
-            // the ground under it
+            // ground under it
             Bounds wb = src.bounds;
             wb.Expand(new Vector3(4f, 0f, 4f));
             _g0 = new Vector2(wb.min.x, wb.min.z);
@@ -283,7 +282,7 @@ namespace GHPCHitCam
             for (int i = 0; i < _gw; i++)
                 for (int j = 0; j < _gh; j++)
                 {
-                    // the ground's colliders (terrain, a test pad), else the terrain height
+                    // ground colliders (terrain, a test pad), else terrain height
                     Vector3 from = new Vector3(_g0.x + i * _gStep, wb.max.y + 3f, _g0.y + j * _gStep);
                     if (terrainMask != 0 && Physics.Raycast(from, Vector3.down, out var gh, 60f, terrainMask, QueryTriggerInteraction.Ignore)) { _ground[i, j] = gh.point.y; continue; }
                     var gp = GHPC.Utility.CodeUtils.GetPositionOnTerrain(new Vector3(from.x, wb.max.y + 50f, from.z), out bool ok, 400f);
@@ -361,7 +360,7 @@ namespace GHPCHitCam
             if (_x[j].y < g)
             {
                 _x[j].y = g;
-                _xp[j] = new Vector3(_x[j].x, g, _x[j].z);           // the ground holds it where it lies
+                _xp[j] = new Vector3(_x[j].x, g, _x[j].z);           // ground holds it where it lies
             }
         }
 
@@ -408,8 +407,8 @@ namespace GHPCHitCam
             if (steps == 0) return;
             _awakeFor += steps * Step;
             _quiet = moved < 0.0008f ? _quiet + steps * Step : 0f;
-            // the mesh (thousands of vertices, sent to the GPU) again only when the track moved where it shows, at most
-            // 30 times a second unless it's moving fast (rounds hitting the vehicle kept it awake: ~4 ms every frame)
+            // re-send the mesh (thousands of verts to the GPU) only when the track moved where it shows, max 30x a second
+            // unless it's moving fast (rounds hitting the vehicle kept it awake: ~4 ms every frame)
             _sinceDraw += steps * Step;
             float shown = 0f;
             if (_drawnX == null || _drawnX.Length != _x.Length) { _drawnX = new Vector3[_x.Length]; shown = float.MaxValue; }
@@ -424,7 +423,7 @@ namespace GHPCHitCam
             {
                 _asleep = true;
                 _sleepPos = _h.position; _sleepRot = _h.rotation;
-                Draw();   // where it came to rest exactly
+                Draw();   // exactly where it came to rest
                 if (_drawnX != null && _drawnX.Length == _x.Length) System.Array.Copy(_x, _drawnX, _x.Length);
                 for (int j = 0; j < _x.Length; j++) _xp[j] = _x[j];
             }

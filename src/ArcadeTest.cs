@@ -13,13 +13,12 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Self-test part for the arcade HUD (runs from AutoTest when autotest.cfg exists, hud=false skips it).
-    /// Full-screen PNGs in UserData/HitCam/autotest: hud_callout*.png during the shots, then at the end a test-range wave and
-    /// hud_*.png for the markers, the impact cross's pen colours (the judged round swapped to get green / yellow / red), the
-    /// zeroing test on a far target (lased / range too short = undershoot / aimed higher until it drops onto it / range too
-    /// long = overshoot), the lead marker on a helicopter, live callouts + kill feed, off-screen markers, both minimap modes,
-    /// and the settings window.
-    /// Only the player's own aim / range / camera are moved, the same way the player's controls move them.
+    /// arcade HUD self-test (runs from AutoTest when autotest.cfg exists, hud=false skips it)
+    /// full-screen PNGs in UserData/HitCam/autotest: hud_callout*.png during the shots, then a test-range wave and hud_*.png
+    /// for markers, impact cross pen colours (judged round swapped to get green / yellow / red), zeroing on a far target
+    /// (lased / range too short = undershoot / aimed higher until it drops on / range too long = overshoot), lead marker on
+    /// a helicopter, live callouts + kill feed, off-screen markers, both minimap modes and the settings window
+    /// only moves the player's own aim / range / camera, same way the player's controls do
     internal static class ArcadeTest
     {
         static string Dir => Path.Combine(HitCamMod.DataDir, "autotest");
@@ -54,11 +53,11 @@ namespace GHPCHitCam
             return $"[{ArcadeHud.Ammo?.Name}] {probe}{imp}{lead}; markers {shown} (spotted now {spotted}, destroyed {dead}, game spotting {Contacts.UsingGameSpotting}); callout '{call?.Title}' {(call != null ? string.Join(" | ", call.Lines) : "")}{feed}{sfx}{view}; " + (ArcadeHud.Visible ? "HUD visible" : "HUD hidden: " + ArcadeHud.HiddenWhy);
         }
 
-        /// The hit cam picked up a shot: the callout is up now.
+        /// hit cam picked up a shot: callout is up now
         public static void OnShotHitCam(int shot)
         {
-            // skinforce=true: every crewman forced limp under an extra blast for the skin-stretch check (off by default, so
-            // the self-test replays show what a player sees: only the crew the game took out ragdoll)
+            // skinforce=true: every crewman forced limp under an extra blast for the skin-stretch check (off by default so the
+            // replays show what a player sees: only crew the game took out ragdoll)
             MelonCoroutines.Start(SkinWatch(shot, force: AutoTest.Opt("skinforce", "false") == "true"));
             if (!Settings.ArcadeHud.Value) return;
             MelonCoroutines.Start(CalloutShots(shot));
@@ -69,15 +68,15 @@ namespace GHPCHitCam
         class SkinRest { public int[] Tris; public Vector3[] Rest; public BoneWeight[] W; }
         static readonly Dictionary<SkinnedMeshRenderer, SkinRest> _rest = new Dictionary<SkinnedMeshRenderer, SkinRest>();
 
-        /// While the hit cam plays, how far the crew skins' triangle edges stretch against their rest pose (max / 99th
-        /// percentile, normalised by the median so the copy's scale cancels), and between which body parts the worst one sits.
-        /// force: every crewman of the replay goes limp under a small blast in the middle of the hull (the replay's own
-        /// ragdolls only, nothing in the game), so each seat's skin is checked in a limp pose whatever the shot did.
+        /// while the hit cam plays: how far crew skin tri edges stretch vs the rest pose (max / 99th percentile, over the
+        /// median so the copy's scale cancels) and between which body parts the worst one is
+        /// force: every crewman in the replay goes limp under a small blast mid hull (replay ragdolls only, nothing in the
+        /// game), so each seat's skin gets checked limp whatever the shot did
         static IEnumerator SkinWatch(int shot, Playback after = null, bool waitNew = false, float firedAt = -1f, bool force = false)
         {
             yield return null;
             var pb = HitCamPlayer.Current;
-            // a live shot: its hit cam starts a moment later (and not an earlier shot's that is still queued)
+            // live shot: its hit cam starts a moment later (not an earlier shot's still in the queue)
             bool Mine(Playback x) => x != null && x != after && (firedAt < 0f || (x.Rec != null && x.Rec.CreatedReal >= firedAt - 0.2f));
             for (float w0 = Time.realtimeSinceStartup; waitNew && !Mine(pb) && Time.realtimeSinceStartup - w0 < 15f; pb = HitCamPlayer.Current) yield return null;
             if (pb == null || (waitNew && !Mine(pb))) { Log($"shot {shot} crew skin stretch: no hit cam"); yield break; }
@@ -162,7 +161,7 @@ namespace GHPCHitCam
         static IEnumerator CalloutShots(int shot)
         {
             yield return new WaitForSecondsRealtime(0.45f);
-            // the self-test's own shots run in the planning phase with the map open: the HUD is hidden then, just log the verdict
+            // self-test shots run in the planning phase with the map open: HUD is hidden then, just log the verdict
             if (!ArcadeHud.Visible) { Log($"shot {shot} callout (not drawn): {State()}"); yield break; }
             yield return Shot($"hud_callout{shot}_a");
             yield return new WaitForSecondsRealtime(1.3f);
@@ -176,7 +175,7 @@ namespace GHPCHitCam
             try { return u != null ? u.Velocity.magnitude : 0f; } catch { return 0f; }
         }
 
-        /// Switch the player's weapon the way the weapon-select key does (the gunner's active weapon system).
+        /// switch the player's weapon like the weapon-select key does (gunner's active weapon system)
         static bool SelectWeapon(Func<WeaponSystemInfo, bool> pick, out WeaponSystemInfo was)
         {
             was = null;
@@ -193,8 +192,8 @@ namespace GHPCHitCam
             catch (Exception e) { Log("weapon switch failed: " + e.Message); return false; }
         }
 
-        /// Keep the sight on the lead circle of this aircraft (the FCS lays the gun like the gunner's controls) until the
-        /// cross comes up on it, or the time runs out.
+        /// keep the sight on this aircraft's lead circle (FCS lays the gun like the gunner's controls) until the cross comes
+        /// up on it or time runs out
         static IEnumerator OnLead(Unit u, float timeout)
         {
             float t0 = Time.realtimeSinceStartup, onSince = -1f;
@@ -210,7 +209,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Proving ground: one helicopter flying a 300 m loop 60 m over the deck, 700 m down range (moving-target checks).
+        /// proving ground: one helicopter flying a 300 m loop 60 m over the deck, 700 m down range (moving-target checks)
         static IEnumerator Flyer(List<Unit> got)
         {
             var me = ArcadeHud.Player;
@@ -235,7 +234,7 @@ namespace GHPCHitCam
             got.Add(u);
         }
 
-        /// Turn the exterior (orbit) camera to look at a point, like the player's mouse (TraverseBy also holds off its auto-centring).
+        /// turn the orbit camera to look at a point like the player's mouse (TraverseBy also holds off its auto-centring)
         static void FaceCamera(GHPC.Camera.CameraManager cm, Vector3 at)
         {
             try
@@ -257,7 +256,7 @@ namespace GHPCHitCam
             return c != null ? c.Center : u.transform.position + Vector3.up * 1.4f;
         }
 
-        /// Point the player's gun at a world point (the FCS slews the turret like the gunner's controls do) and wait for it.
+        /// point the player's gun at a world point (FCS slews the turret like the gunner's controls) and wait for it
         static IEnumerator Aim(Func<Vector3> at, float timeout, bool lase = true)
         {
             float t0 = Time.realtimeSinceStartup;
@@ -285,7 +284,7 @@ namespace GHPCHitCam
 
         static void Log(string m) => HitCamMod.Log.Msg("AUTOTEST HUD: " + m);
 
-        /// A round out of the player's own barrel, the way WeaponSystem.Fire launches one (muzzle, barrel direction, own velocity).
+        /// round out of the player's own barrel, like WeaponSystem.Fire launches one (muzzle, barrel dir, own velocity)
         static void FireFromGun(Arsenal.Entry e)
         {
             var me = ArcadeHud.Player;
@@ -307,14 +306,14 @@ namespace GHPCHitCam
             round.Init(null, null);
         }
 
-        /// Fire it, wait for whatever the HUD says about it (a hit's callout or a miss callout), photograph it.
+        /// fire it, wait for whatever the HUD says (hit callout or miss callout), screenshot it
         static IEnumerator FireAndWait(Arsenal.Entry e, string shot, Unit expect)
         {
             var before = ArcadeHud.Current;
             float u0 = Time.unscaledTime, r0 = Time.realtimeSinceStartup;
             var cross = ArcadeHud.Cross;
             FireFromGun(e);
-            // until the HUD says something about it: the hit's callout, or a miss message
+            // until the HUD says something: hit callout or a miss message
             while (Time.realtimeSinceStartup - r0 < 7f && (ArcadeHud.Current == null || ArcadeHud.Current.Last < u0)
                 && (ArcadeHud.Toasts.Count == 0 || ArcadeHud.Toasts[0].Updated < u0)) yield return null;
             yield return new WaitForSecondsRealtime(0.3f);
@@ -326,7 +325,7 @@ namespace GHPCHitCam
             yield return Shot(shot);
         }
 
-        /// Two passive targets (a side-on T-72M1 and an M1IP facing us) on a spot the sight has a clear line to.
+        /// two passive targets (side-on T-72M1 and an M1IP facing us) on a spot the sight can clearly see
         static List<Unit> SpawnInView(Unit me, Vector3 eye, float[] distances = null, string keyA = "T72M1", string keyB = "M1IP")
         {
             var list = new List<Unit>();
@@ -378,7 +377,7 @@ namespace GHPCHitCam
             try
             {
                 if (ArcadeHud.Player == null || Fcs == null) { Log("no player gun / FCS, skipped"); yield break; }
-                // the mission still sits in its planning phase with the map open: start it like the START MISSION button
+                // mission still in its planning phase with the map open: start it like the START MISSION button
                 var msc = GHPC.State.MissionStateController.Instance;
                 if (msc != null && GHPC.State.MissionStateController.CurrentState == GHPC.State.MissionState.Planning)
                 {
@@ -391,8 +390,8 @@ namespace GHPCHitCam
                     + $"masks: live round {PenProbe.Mask:X}, aim vector {Fcs.AimWorldVector} vs aim transform fwd {(Fcs.AimTransform != null ? Fcs.AimTransform.forward : Vector3.zero)}");
                 Log("contacts: " + string.Join(", ", Contacts.All.Select(c => $"{c.Label}{(c.SeenNow ? " (spotted)" : "")}")));
 
-                // targets: on the proving ground (the default) its own rows every 100 m and hovering helicopters, plus one
-                // helicopter flying a loop over the deck for the moving-target checks; on the mission's ground a test-range wave
+                // targets: on the proving ground (default) its own rows every 100 m and hovering helis, plus one heli flying a loop
+                // over the deck for the moving-target checks; on the mission's ground a test-range wave
                 bool pg = ProvingGround.Active;
                 List<Unit> ground, helis;
                 if (pg)
@@ -413,7 +412,7 @@ namespace GHPCHitCam
                     ground = TestRange.Spawned.Where(u => u != null && u.Type == UnitType.GroundVehicle).ToList();
                     helis = TestRange.Spawned.Where(u => u != null && u.Type == UnitType.AirVehicle && !u.Destroyed).ToList();
                 }
-                // targets the sight has a clear line to (a hay bale or a crest hides some), side-on and facing us
+                // targets the sight can clearly see (a hay bale or crest hides some), side-on and facing us
                 var me = ArcadeHud.Player;
                 Vector3 eye = Fcs.AimTransform != null ? Fcs.AimTransform.position : me.transform.position + Vector3.up * 2.4f;
                 bool Clear(Unit u)
@@ -428,10 +427,10 @@ namespace GHPCHitCam
                 float Facing(Unit u) => Mathf.Abs(Vector3.Dot(u.transform.forward, (CenterOf(u) - eye).normalized));
                 bool Tank(Unit u) { var mc = MapIcons.Classify(u); return mc == MapClass.LightTank || mc == MapClass.MediumTank || mc == MapClass.HeavyTank; }
                 float Dist(Unit u) => Vector3.Distance(eye, CenterOf(u));
-                // the proving ground: the nearest tanks first (its rows are 100 m apart; far ones are for the zeroing test)
+                // proving ground: nearest tanks first (rows are 100 m apart, far ones are for the zeroing test)
                 var clear = (pg ? ground.Where(Tank).OrderBy(Dist).Take(6) : ground).Where(Clear).ToList();
                 Log("clear line to: " + string.Join(", ", clear.Select(u => Recorder.SafeName(u))) + " (of " + ground.Count + ")");
-                // on this map the wave can land behind a crest or a hay bale: add a side-on T-72 and an M1 facing us where the sight sees them
+                // here the wave can land behind a crest or hay bale: add a side-on T-72 and an M1 facing us where the sight sees them
                 var placed = pg ? new List<Unit>() : SpawnInView(me, eye);
                 if (placed.Count > 0)
                 {
@@ -451,9 +450,9 @@ namespace GHPCHitCam
                 if (cm != null && !cm.ExteriorMode) cm.ToggleCameraSlotSet();
                 yield return Aim(() => CenterOf(side), 9f);
                 float t0 = Time.realtimeSinceStartup;
-                while (Time.realtimeSinceStartup - t0 < 9f && Contacts.All.Count(c => c.SeenNow) < 3) yield return null;   // the crew's spot delay
-                // a hit cam from the shot list may still be up; the exterior camera keeps whatever way it last looked (on the
-                // proving ground: away from the rows): turn it to the target the way the mouse does
+                while (Time.realtimeSinceStartup - t0 < 9f && Contacts.All.Count(c => c.SeenNow) < 3) yield return null;   // crew spot delay
+                // a hit cam from the shot list may still be up, and the exterior cam keeps looking wherever it last did (on the
+                // proving ground: away from the rows): turn it to the target like the mouse does
                 for (float w0 = Time.realtimeSinceStartup; HitCamPlayer.Current != null && Time.realtimeSinceStartup - w0 < 15f; ) yield return null;
                 for (int i = 0; i < 4; i++) { FaceCamera(cm, CenterOf(side)); yield return null; }
                 yield return Shot("hud_1_exterior");
@@ -476,14 +475,14 @@ namespace GHPCHitCam
                             var e = Arsenal.Find($"{k} {c} mm");
                             if (e != null && e.Ammo != null && e.Ammo.Name == $"{k} {c} mm" && !cands.Contains(e.Ammo)) cands.Add(e.Ammo);
                         }
-                    // each round meets the plate on its own arc (a slower one drops lower, hits another plate at another angle):
-                    // try them from about the right pen and keep the first that really comes out green / yellow / red / blue
+                    // every round has its own arc (slower ones drop lower, hit another plate at another angle): start near the right pen
+                    // and keep the first that really comes out green / yellow / red / blue
                     var want = new Dictionary<PenVerdict, string> { { PenVerdict.Pen, "green" }, { PenVerdict.Maybe, "yellow" }, { PenVerdict.NoPen, "red" }, { PenVerdict.Ricochet, "blue" } };
                     var got = new HashSet<PenVerdict>();
                     foreach (var pick in cands.OrderBy(a => Mathf.Abs(Mathf.Log(Mathf.Max(PenProbe.PenAtRange(a, range), 1f) / los))))
                     {
                         ArcadeHud.TestAmmo = pick;
-                        for (int i = 0; i < 4; i++) { ArcadeHud.ProbeNow(); yield return null; }   // the cross switches after two agreeing updates
+                        for (int i = 0; i < 4; i++) { ArcadeHud.ProbeNow(); yield return null; }   // cross only switches after two agreeing updates
                         var v = ArcadeHud.CrossVerdict;
                         if (ArcadeHud.Cross != ArcadeHud.CrossKind.Armour || !want.ContainsKey(v) || got.Contains(v)) continue;
                         got.Add(v);
@@ -495,15 +494,15 @@ namespace GHPCHitCam
                 }
                 else Log("no armour under the crosshair for the colour test");
 
-                // 3b. the facing target's front with the loaded round
+                // 3b. facing target's front with the loaded round
                 if (front != null && front != side)
                 {
                     yield return Aim(() => CenterOf(front), 6f);
                     yield return Shot("hud_3_pen_front");
                 }
 
-                // 4. zeroing on a far target (zeroed short, the target further out): the proving ground's farthest
-                // tank with a clear line, else a pair placed 650-1600 m out
+                // 4. zeroing on a far target (zeroed short, target further out): farthest proving ground tank with a clear line,
+                // else a pair placed 650-1600 m out
                 // nothing nearer within half a hull + 1 m of the line of fire (from the muzzle)
                 bool LineFree(Unit u)
                 {
@@ -533,14 +532,14 @@ namespace GHPCHitCam
                     float real = Fcs.CurrentRange > 1f ? Fcs.CurrentRange : ArcadeHud.AimRange;
                     Log($"far target {Recorder.SafeName(tgt)} at {Vector3.Distance(eye, CenterOf(tgt)):0} m, lased {real:0} m");
                     yield return Shot("hud_8_far_lased");
-                    // a. a much slower round on a gun laid for APFSDS (like a T-55 zeroed short): it lands in front of it
+                    // a. much slower round on a gun laid for APFSDS (like a T-55 zeroed short): lands in front of it
                     var slowE = Arsenal.Find("HE 125 mm") ?? Arsenal.Find("HEAT 125 mm");
                     var slow = slowE?.Ammo;
                     ArcadeHud.TestAmmo = slow;
                     Log($"slow round for the zeroing test: {slow?.Name} ({slow?.MuzzleVelocity:0} m/s)");
                     for (int i = 0; i < 6; i++) { Fcs.SetAimWorldPosition(CenterOf(tgt)); ArcadeHud.ProbeNow(); yield return null; }
                     yield return Shot("hud_9_far_zeroed_short");
-                    // fire it for real: it lands short of the T-72 -> the miss is named once, after the shot
+                    // fire it for real: lands short of the T-72 -> miss gets named once, after the shot
                     if (slowE != null) yield return FireAndWait(slowE, "hud_9b_fired_short", tgt);
                     // b. same gun, aim higher until the arc drops onto it: double the height while it falls short, then halve the gap
                     float hit = -1f, lo = 0f, hi = -1f, h = 0.5f;
@@ -548,7 +547,7 @@ namespace GHPCHitCam
                     {
                         float hh = h;
                         float l0 = Time.realtimeSinceStartup;
-                        // let the turret settle on the new point (the FCS slews the gun like the gunner's controls)
+                        // let the turret settle on the new point (FCS slews the gun like the gunner's controls)
                         while (Time.realtimeSinceStartup - l0 < 2f)
                         {
                             Vector3 aimAt = CenterOf(tgt) + Vector3.up * hh;
@@ -567,7 +566,7 @@ namespace GHPCHitCam
                     }
                     if (hit > 0f)
                     {
-                        // the window's edges: bisect towards the short side and the over side, then take its middle
+                        // window edges: bisect toward the short side and the over side, then take the middle
                         float loIn = hit, loOut = lo, hiIn = hit, hiOut = hi > 0f ? hi : hit * 2f;
                         for (int side2 = 0; side2 < 2; side2++)
                             for (int step = 0; step < 3; step++)
@@ -602,7 +601,7 @@ namespace GHPCHitCam
                     yield return Shot("hud_10_far_aimed_high");
                     if (slowE != null)
                     {
-                        // the game's own round from the same aim: does it land where the cross said?
+                        // game's own round from the same aim: does it land where the cross said?
                         if (hit > 0f) yield return FireAndWait(slowE, "hud_10b_fired_on_it", tgt);
                         float over = (hit > 0f ? hit : 10f) * 2.5f;
                         for (int i = 0; i < 60; i++) { Fcs.SetAimWorldPosition(CenterOf(tgt) + Vector3.up * over); yield return null; }
@@ -622,9 +621,9 @@ namespace GHPCHitCam
                 }
                 else Log("no far spot with a clear line: zeroing test skipped");
 
-                // 5. a helicopter: brackets with name + km, the lead circle for the main gun, then for the coax (another round,
-                // another lead), the sight laid on the lead until the cross comes up on it, and the main gun fired from there
-                // a moving one first (the proving ground's own two hover)
+                // 5. helicopter: brackets with name + km, lead circle for the main gun, then for the coax (other round, other lead),
+                // sight laid on the lead until the cross comes up on it, main gun fired from there
+                // a moving one first (the proving ground's own two just hover)
                 var heli = helis.Where(h => h != null && !h.Destroyed).OrderBy(h => SpeedOf(h) > 5f ? 0 : 1).ThenBy(h => Vector3.Distance(h.transform.position, ArcadeHud.Player.transform.position)).FirstOrDefault();
                 if (heli != null)
                 {
@@ -645,13 +644,13 @@ namespace GHPCHitCam
                     }
                     Log($"lead on {hn} with {ArcadeHud.Gun?.name} / {ArcadeHud.Ammo?.Name} ({ArcadeHud.Ammo?.MuzzleVelocity:0} m/s): {LeadOf(heli)}");
                     yield return Shot("hud_5_lead");
-                    // the coax: its own round, its own lead (on a helicopter inside its reach; they fly loops, so wait for one)
+                    // coax: own round, own lead (on a heli inside its reach, they fly loops so wait for one)
                     if (SelectWeapon(w => w.Role == WeaponSystemRole.Coaxial, out var mainW))
                     {
-                        for (int i = 0; i < 3; i++) { ArcadeHud.ProbeNow(); yield return null; }   // the HUD picks up the new weapon
+                        for (int i = 0; i < 3; i++) { ArcadeHud.ProbeNow(); yield return null; }   // HUD picks up the new weapon
                         var mg = ArcadeHud.Ammo;
                         Log($"weapon switched to {ArcadeHud.Gun?.name} / {mg?.Name} ({mg?.MuzzleVelocity:0} m/s, max range {mg?.MaximumRange:0} m)");
-                        // a flying helicopter inside the coax's reach (it loops in and out of it), else after 20 s any one
+                        // flying heli inside coax reach (it loops in and out of it), else any one after 20 s
                         Unit near = null;
                         for (float w0 = Time.realtimeSinceStartup; Time.realtimeSinceStartup - w0 < 20f; )
                         {
@@ -671,7 +670,7 @@ namespace GHPCHitCam
                             yield return Shot("hud_5b_lead_coax");
                             if (coaxOn && mg != null)
                             {
-                                // the hit cam skips MG calibres (MinCaliberMm): record this one so the log can tell a hit
+                                // hit cam skips MG calibres (MinCaliberMm): record this one so the log can tell a hit
                                 float minCal = Settings.MinCaliberMm.Value;
                                 Settings.MinCaliberMm.Value = 5f;
                                 yield return FireAndWait(new Arsenal.Entry { Ammo = mg, Label = mg.Name }, "hud_5b2_coax_fired", near);
@@ -689,7 +688,7 @@ namespace GHPCHitCam
                         }
                     }
                     else Log("no coax to switch to");
-                    // main gun on the lead: the cross on the helicopter, then the game's own round from there
+                    // main gun on the lead: cross on the heli, then the game's own round from there
                     if (heli != null && !heli.Destroyed)
                     {
                         yield return OnLead(heli, 8f);
@@ -722,7 +721,7 @@ namespace GHPCHitCam
                     yield return new WaitForSecondsRealtime(2.5f);
                 }
 
-                // 5b2. a 152 mm HE round into the side-on target's crew compartment: crew killed -> ragdolls go limp (skin stretch check)
+                // 5b2. 152 mm HE into the side-on target's crew compartment: crew dead -> ragdolls go limp (skin stretch check)
                 var he = Arsenal.Find("HE 152 mm");
                 var heTgt = new[] { side, front }.FirstOrDefault(u => u != null && !u.Destroyed);
                 if (he != null && heTgt != null)
@@ -735,7 +734,7 @@ namespace GHPCHitCam
                     while (watch.MoveNext()) yield return watch.Current;   // wait for the whole replay
                 }
 
-                // 5c. the sounds play: our source's own samples (an audio filter on it), and the game's master volume they go through
+                // 5c. sounds play: our source's own samples (audio filter on it) and the game master volume they go through
                 foreach (var (snd, play) in new (string, Action)[] { ("hit", HudSfx.Hit), ("pen", HudSfx.Pen), ("kill", HudSfx.Kill) })
                 {
                     yield return new WaitForSecondsRealtime(0.3f);
@@ -785,7 +784,7 @@ namespace GHPCHitCam
                 Settings.MinimapEnemies.Value = enemies0;
                 Minimap.Zoom = zoom0;
 
-                // 8. the settings window (opens paused, HUD previews behind it), a bigger callout / kill feed scale, the keys tab, the gear
+                // 8. settings window (opens paused, HUD previews behind it), bigger callout / kill feed scale, keys tab, the gear
                 float sc = Settings.HudScaleCallouts.Value, sk = Settings.HudScaleKillFeed.Value;
                 ConfigMenu.Open();
                 ConfigMenu.Tab = ConfigMenu.TabIndex("HUD");
@@ -805,7 +804,7 @@ namespace GHPCHitCam
                 yield return Shot("hud_14_gear");
                 Cursor.visible = cv;
 
-                // 9. the game's own menu -> Options: the HitCam tab is there, and it opens the settings window
+                // 9. game's own menu -> Options: HitCam tab is there and opens the settings window
                 var mc = UnityEngine.Object.FindObjectOfType<GHPC.UI.MenuController>();
                 if (mc != null)
                 {
@@ -815,7 +814,7 @@ namespace GHPCHitCam
                     var opt = mmp != null ? HarmonyLib.AccessTools.Field(typeof(GHPC.UI.Menu.MainMenuPanel), "buttonOptions")?.GetValue(mmp) as UnityEngine.UI.Button : null;
                     Log($"game menu open: {mc.HasActiveMenu}, options button {(opt != null ? opt.name : "not found")}");
                     if (opt != null) opt.onClick.Invoke();
-                    yield return new WaitForSecondsRealtime(1.5f);   // the tab is added within a second
+                    yield return new WaitForSecondsRealtime(1.5f);   // tab gets added within a second
                     var tab = UnityEngine.Object.FindObjectOfType<OptionsTab>();
                     Log($"options open, HitCam tabs added so far {OptionsHook.Added}, visible tab {(tab != null ? tab.name : "none")}");
                     yield return Shot("hud_15_game_options");

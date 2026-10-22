@@ -9,9 +9,9 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// War Thunder-style arcade aids, each behind its own setting (master: Settings.ArcadeHud, key F6):
-    /// shot callouts, a pen-indicator crosshair, enemy markers, the predicted impact point and a lead marker.
-    /// Spotting lives in Contacts.cs, the minimap in Minimap.cs. UI only: nothing here touches damage or ballistics.
+    /// WT-style arcade aids, each behind its own setting (master: Settings.ArcadeHud, key F6): shot callouts,
+    /// pen-indicator crosshair, enemy markers, predicted impact point and a lead marker.
+    /// spotting is in Contacts.cs, minimap in Minimap.cs. UI only, nothing here touches damage or ballistics
     internal static class ArcadeHud
     {
         // ------------------------------------------------------------------ player context (refreshed every frame)
@@ -21,34 +21,34 @@ namespace GHPCHitCam
         public static FireControlSystem Fcs;
         public static AmmoType Ammo;
         public static Camera Cam;
-        public static bool Visible;    // the game's HUD is up (no menu, map, pause or AAR)
+        public static bool Visible;    // game's HUD is up (no menu, map, pause or AAR)
         public static string HiddenWhy = "";
 
         public static bool On => Settings.ArcadeHud.Value;
-        /// The callouts need the recorder even when the hit cam itself is switched off.
+        /// callouts need the recorder even when the hit cam itself is off
         public static bool WantsRecords => Settings.ArcadeHud.Value && Settings.ArcadeCallouts.Value;
 
-        // the sight line: what's under the crosshair
+        // sight line: what's under the crosshair
         public static PenResult Probe;
-        public static bool HasProbe;          // the sight ray hit something within range
-        public static Vector3 AimPoint;       // what's under the crosshair (or the sight line at the FCS range)
+        public static bool HasProbe;          // sight ray hit something in range
+        public static Vector3 AimPoint;       // what's under the crosshair (or the sight line at FCS range)
         public static Vector3 SightPos, SightDir;
         public static bool HasAim;
         public static float AimRange;         // m from the muzzle
-        // the round's real flight (ImpactArc): the cross carries the pen verdict, the ring is where the barrel points.
-        // As in War Thunder the cross is only there while the round would hit a vehicle or a helicopter.
+        // the round's real flight (ImpactArc): cross carries the pen verdict, ring is where the barrel points.
+        // like WT the cross only shows while the round would hit a vehicle or a helicopter
         public enum CrossKind { None, Armour, Friendly }
         public static ArcResult Arc;
         public static bool HasArc;
-        public static Vector3 ImpactPoint;    // where the cross is drawn
+        public static Vector3 ImpactPoint;    // where the cross gets drawn
         public static bool HasImpact;
         public static CrossKind Cross;        // debounced, with CrossVerdict
         public static PenVerdict CrossVerdict;
         public static Vector3 GunRingPoint;
         public static bool HasGunRing;
-        public static Vector3 LeadPoint, LeadFrom;   // the lead nearest the sight (self-test log)
+        public static Vector3 LeadPoint, LeadFrom;   // lead nearest the sight (self-test log)
         public static bool HasLead;
-        static Unit _impactUnit;                      // the cross rides on this vehicle between the 30 Hz updates
+        static Unit _impactUnit;                      // cross rides on this vehicle between the 30 Hz updates
         static Vector3 _impactLocal;
         static float _nextProbe;
         internal static AmmoType TestAmmo;   // self-test: judge with this round instead of the loaded one
@@ -118,7 +118,7 @@ namespace GHPCHitCam
             Visible = why.Length == 0;
         }
 
-        /// The round the next shot will be: the arsenal's pick while it is on, else what's in the breech.
+        /// round the next shot will be: arsenal's pick while it's on, else what's in the breech
         static AmmoType LoadedAmmo(WeaponSystem gun, FireControlSystem fcs)
         {
             if (TestAmmo != null) return TestAmmo;
@@ -147,7 +147,7 @@ namespace GHPCHitCam
             _bc = null; _bcFor = a; _bcMax = 0f;
             try
             {
-                // the FCS registers the rounds it carries; anything else (arsenal) gets its table built once, quietly
+                // FCS registers the rounds it carries, anything else (arsenal) gets its table built once, quietly
                 if (!BallisticComputerRepository._precalculatedComputers.TryGetValue(a, out _bc))
                     _bc = BallisticComputerRepository.Instance.RegisterAmmoType(a);
                 var pts = _bc?.AllSimPoints;
@@ -195,7 +195,7 @@ namespace GHPCHitCam
             SightPos = sightPos;
             SightDir = sightDir.normalized;
 
-            // the sight line: what the crosshair is on (misses after a shot, kill credit, the minimap)
+            // sight line: what the crosshair is on (misses after a shot, kill credit, minimap)
             float offset = Vector3.Distance(sightPos, muzzle.position);
             HasProbe = PenProbe.Probe(sightPos, sightDir, maxDist, Ammo, Player, Player.Allegiance, out Probe, default, -1f, offset);
             if (HasProbe) { AimPoint = Probe.Point; HasAim = true; }
@@ -206,7 +206,7 @@ namespace GHPCHitCam
 
             if (Ammo.Guidance != 0)
             {
-                // a missile flies to the sight: judge what's under it
+                // missile flies to the sight: judge what's under it
                 HasArc = false;
                 Arc = default;
                 if (HasProbe) { Arc.Hit = true; Arc.Point = Probe.Point; Arc.Probe = Probe; Arc.Pen = Probe.Pen; Arc.Armed = true; Arc.Unit = Probe.Unit; }
@@ -214,13 +214,13 @@ namespace GHPCHitCam
             else
             {
                 March(muzzle, own, maxDist * 1.05f);
-                // the barrel's straight line out to where the round comes down
+                // barrel's straight line out to where the round comes down
                 GunRingPoint = muzzle.position + muzzle.forward * (Arc.Hit ? Vector3.Distance(muzzle.position, Arc.Point) : AimRange > 1f ? AimRange : 1000f);
                 HasGunRing = true;
             }
 
-            // the cross: only while the round would hit a vehicle or a helicopter (a moving one met in its own frame, so
-            // the cross sits where it would really be hit if fired now); ground, scenery and sky get nothing
+            // cross only while the round would hit a vehicle or heli (a moving one is met in its own frame so the cross sits
+            // where it would really get hit if fired now); ground, scenery and sky get nothing
             CrossKind kind = CrossKind.None;
             PenVerdict verdict = PenVerdict.None;
             Unit hit = Arc.Hit ? (Arc.Unit != null ? Arc.Unit : Arc.Probe.Unit) : null;
@@ -235,14 +235,14 @@ namespace GHPCHitCam
                 else
                 {
                     kind = CrossKind.Armour;
-                    verdict = pr.Plates > 0 ? pr.Verdict : PenVerdict.Pen;   // no armour on that line (a helicopter's skin, a truck): it goes in
+                    verdict = pr.Plates > 0 ? pr.Verdict : PenVerdict.Pen;   // no armour on that line (heli skin, a truck): it goes in
                 }
             }
             SetCross(kind, verdict);
             UpdateLeads(muzzle, own, maxDist);
         }
 
-        /// Vehicles and helicopters on the move within the gun's reach: the arc meets each one in its own moving frame.
+        /// moving vehicles and helis within gun reach: the arc meets each one in its own moving frame
         static void FillMoving(Vector3 from, float reach)
         {
             ImpactArc.Moving.Clear();
@@ -275,13 +275,13 @@ namespace GHPCHitCam
         public static readonly LeadMark[] Leads = new LeadMark[6];
         public static int LeadCount;
 
-        // the barrel's offset from the sight (zeroing, the FCS's own lead): azimuth / elevation in degrees, sight frame
+        // barrel offset from the sight (zeroing, FCS's own lead): azimuth / elevation in degrees, sight frame
         static float _offAz, _offEl;
 
-        /// For every enemy helicopter / aircraft in reach: where to put the sight so the selected weapon's round (its own
-        /// muzzle velocity, drag and drop, out of its own muzzle, plus our own speed) meets it. The flight time is iterated
-        /// against the aircraft's velocity; the sight-to-barrel offset the FCS holds (zeroing, its own lead) is kept. That
-        /// offset is only taken while it is small: while the turret is still slewing after the sight the last one stands.
+        /// for every enemy heli / aircraft in reach: where to put the sight so the selected weapon's round (its own muzzle
+        /// velocity, drag and drop, out of its own muzzle, plus our own speed) meets it. flight time is iterated against the
+        /// aircraft's velocity; the sight-to-barrel offset the FCS holds (zeroing, its own lead) is kept, but only taken
+        /// while it's small: while the turret is still slewing after the sight the last one stays
         static void UpdateLeads(Transform muzzle, Vector3 own, float reach)
         {
             LeadCount = 0;
@@ -312,7 +312,7 @@ namespace GHPCHitCam
                     at = p + v * t + Vector3.up * drop;
                 }
                 if (!ok) continue;
-                // the barrel must point at `at`: the sight goes that much lower / to the side
+                // barrel has to point at `at`: sight goes that much lower / to the side
                 Vector3 need = at - m;
                 float dist = need.magnitude;
                 need /= dist;
@@ -325,7 +325,7 @@ namespace GHPCHitCam
             }
         }
 
-        // the arc is reused while the gun, the round and what it hit barely move
+        // arc gets reused while the gun, the round and what it hit barely move
         static Vector3 _cPos, _cFwd, _cOwn, _cUnitPos;
         static AmmoType _cAmmo;
         static Unit _cUnit;
@@ -347,7 +347,7 @@ namespace GHPCHitCam
             if (_cUnit != null) _cUnitPos = _cUnit.transform.position;
         }
 
-        // the cross's state only switches after two updates in a row agree (no flicker on plate edges)
+        // cross state only switches after two updates in a row agree (no flicker on plate edges)
         static CrossKind _candKind;
         static PenVerdict _candVerdict;
         static int _candCount;
@@ -392,7 +392,7 @@ namespace GHPCHitCam
         public static Callout Current => _call;
         const float CallSeconds = 2.5f;
 
-        /// A player's shot finished (Recorder: the record is complete and its verdict computed).
+        /// a player's shot finished (Recorder: record complete, verdict computed)
         public static void OnRecordReady(HitRecord rec)
         {
             try
@@ -418,7 +418,7 @@ namespace GHPCHitCam
             if (c == null) return;
             float now = Time.unscaledTime;
             if (now - c.Last > CallSeconds + 1f) { _call = null; return; }
-            // late events (kill, knock-out, cook-off) arrive after the record was handed over: refresh the verdict
+            // late events (kill, knock-out, cook-off) come after the record was handed over: refresh the verdict
             int n = 0;
             foreach (var r in c.Recs) n += r.Events.Count;
             if (n != c.EventCount)
@@ -426,7 +426,7 @@ namespace GHPCHitCam
                 string before = c.Title;
                 foreach (var r in c.Recs) Timeline.ComputeTitle(r);
                 Rebuild(c);
-                if (c.Title != before) { c.Last = now; ToastFromCallout(c); }   // a new, worse verdict: show it again
+                if (c.Title != before) { c.Last = now; ToastFromCallout(c); }   // new, worse verdict: show it again
             }
         }
 
@@ -444,7 +444,7 @@ namespace GHPCHitCam
             c.Color = worst != null ? worst.TitleColor : Color.white;
             if (c.Recs.Count > 1) c.Title += "  ×" + c.Recs.Count;
 
-            // what actually got hurt: the same filter as the verdict (Timeline.Matters / Real), worst state per part
+            // what actually got hurt: same filter as the verdict (Timeline.Matters / Real), worst state per part
             var best = new Dictionary<string, (string text, int sev, float t)>();
             foreach (var r in c.Recs)
                 foreach (var e in r.Events)
@@ -490,7 +490,7 @@ namespace GHPCHitCam
             if (!On || Event.current.type != EventType.Repaint) return;
             if (Player == null || !Visible) return;
             HudGfx.Init();
-            // War Thunder proportions: sizes are pixels at 1080p, scaled by the screen height only (3440x1440 = x1.33)
+            // WT proportions: sizes are px at 1080p, scaled by screen height only (3440x1440 = x1.33)
             float k = Mathf.Max(Screen.height / 1080f, 0.6f);
             HudGfx.Styles(k);
             var old = GUI.color;
@@ -514,7 +514,7 @@ namespace GHPCHitCam
 
         public static float Scale(MelonLoader.MelonPreferences_Entry<float> e) => e != null ? Mathf.Clamp(e.Value, 0.4f, 3f) : 1f;
 
-        // the cross's text is rebuilt only when what it says changes (10 mm / 1 degree steps)
+        // cross text only gets rebuilt when what it says changes (10 mm / 1 degree steps)
         static string _crossText = "";
         static int _crossKey = int.MinValue;
         static readonly Color CrossGrey = new Color(0.78f, 0.8f, 0.83f, 0.95f);
@@ -550,7 +550,7 @@ namespace GHPCHitCam
                         _crossText = CrossVerdict == PenVerdict.Ricochet ? $"RICOCHET  {ang}° < {a.Probe.RicochetAngle:0}°"
                             : (a.Armed ? "" : "fuze not armed  ") + $"{pen10 * 10} / {los10 * 10} mm";
                     break;
-                // a miss is only named after a real shot (ShowMiss); the cross just stays grey where the round would land
+                // a miss only gets named after a real shot (ShowMiss), the cross just stays grey where the round would land
                 case CrossKind.Friendly: key = -4; if (key != _crossKey) _crossText = "FRIENDLY"; break;
                 default: return;
             }
@@ -565,7 +565,7 @@ namespace GHPCHitCam
             HudGfx.Ring(s, r, new Color(0.92f, 0.94f, 0.96f, 0.55f));
         }
 
-        /// War Thunder's air lead: a plain thin circle where to put the crosshair, nothing joining it to the aircraft.
+        /// WT air lead: plain thin circle where to put the crosshair, nothing joining it to the aircraft
         static void DrawLeads(float k)
         {
             for (int i = 0; i < LeadCount; i++)
@@ -579,13 +579,13 @@ namespace GHPCHitCam
             }
         }
 
-        /// An aircraft / helicopter (War Thunder): thin corner brackets round it, its name above in red, the range in km below.
+        /// aircraft / heli (WT): thin corner brackets round it, name above in red, range in km below
         static void DrawAir(Contacts.Contact c, float k, float a)
         {
             if (!ToScreen(c.Center, out Vector2 s)) return;
             float px = Screen.height / (2f * Mathf.Max(c.Distance, 1f) * Mathf.Tan(Cam.fieldOfView * 0.5f * Mathf.Deg2Rad));
             float h = Mathf.Clamp(Mathf.Max(c.HalfHeight * 2.2f, 4f) * px, 9f * k, 42f * k);
-            // hairline thin, as War Thunder draws them, with only a faint dark edge to read against a bright sky
+            // hairline thin like WT draws them, only a faint dark edge to read against a bright sky
             float len = Mathf.Max(h * 0.35f, 4f * k), t = Mathf.Max(0.75f * k, 1f);
             Color red = new Color(1f, 0.25f, 0.2f, a), dark = new Color(0f, 0f, 0f, 0.3f * a);
             for (int pass = 0; pass < 2; pass++)
@@ -606,7 +606,7 @@ namespace GHPCHitCam
             HudGfx.Text(new Rect(s.x - 150f * k, s.y + h + 3f * k, 300f * k, 14f * k), c.KmLabel, f, red);
         }
 
-        // off-screen markers already placed this frame (to keep them from piling up on one spot of the edge)
+        // off-screen markers already placed this frame (so they don't pile up on one spot of the edge)
         static readonly Vector2[] _placed = new Vector2[48];
         static int _placedN;
 
@@ -639,7 +639,7 @@ namespace GHPCHitCam
             float m = 26f * k;
             Rect inner = new Rect(m, m, Screen.width - 2 * m, Screen.height - 2 * m);
             Vector2 centre = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
-            // the one nearest the crosshair also gets its distance (War Thunder keeps the rest to a name)
+            // the one nearest the crosshair also gets its distance (WT keeps the rest to a name)
             Vector2 aim = HasImpact && ToScreen(ImpactPoint, out Vector2 ip) ? ip : centre;
             Contacts.Contact nearest = null;
             float best = 90f * k;
@@ -684,14 +684,14 @@ namespace GHPCHitCam
                 }
                 else
                 {
-                    // off screen: on the edge, with an arrow towards it
+                    // off screen: on the edge, with an arrow toward it
                     Vector2 d = s - centre;
                     if (behind) d = -d;
                     if (d.sqrMagnitude < 1f) d = Vector2.down;
                     float sx = d.x != 0f ? (inner.width * 0.5f) / Mathf.Abs(d.x) : float.MaxValue;
                     float sy = d.y != 0f ? (inner.height * 0.5f) / Mathf.Abs(d.y) : float.MaxValue;
                     Vector2 e = Unpile(centre + d * Mathf.Min(sx, sy), inner, k);
-                    float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg + 90f;   // the triangle points up at 0
+                    float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg + 90f;   // triangle points up at 0
                     HudGfx.Triangle(e, 6.5f * k, ang, new Color(0f, 0f, 0f, 0.45f * a));
                     HudGfx.Triangle(e, 5.5f * k, ang, red);
                 }
@@ -700,7 +700,7 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ War Thunder style message stack (top centre)
 
-        /// One line of the stack: what happened (sentence case, coloured) and a short grey detail line under it.
+        /// one line of the stack: what happened (sentence case, coloured) plus a short grey detail line under it
         internal class Toast
         {
             public string Title, Sub;
@@ -714,7 +714,7 @@ namespace GHPCHitCam
         const float ToastSeconds = 3.6f;
         static readonly Color MissGrey = new Color(0.82f, 0.84f, 0.88f);
 
-        /// Push (or, with the same key, update) a message. War Thunder shows hit results and kills this way, small, under the compass.
+        /// push (or update, same key) a message. WT shows hit results and kills like this, small, under the compass
         public static void PushToast(string title, Color c, string sub, object key = null)
         {
             Toast t = null;
@@ -741,31 +741,31 @@ namespace GHPCHitCam
             return i < 0 ? sub : sub.Substring(0, i);
         }
 
-        /// One of your rounds came down without touching a vehicle: name the miss (only after a real shot, as War Thunder).
+        /// one of our rounds came down without touching a vehicle: name the miss (only after a real shot, like WT)
         public static void ShowMiss(string title, string vehicle)
         {
             if (!WantsRecords) return;
             PushToast(Sentence(title), MissGrey, vehicle ?? "");
         }
 
-        /// The enemy the player is shooting at: under the crosshair, under the impact cross, or the marked one nearest the crosshair.
+        /// enemy the player is shooting at: under the crosshair, under the impact cross, or the marked one nearest the crosshair
         public static Unit AimedEnemy(out Vector3 center)
         {
             center = default;
             var me = Player;
             if (me == null) return null;
-            // what the round will hit (the arc, moving targets in their own frame) first: with the sight held on a lead
-            // the sight line can run past another vehicle
+            // what the round will hit first (the arc, moving targets in their own frame): with the sight held on a lead the
+            // sight line can run past another vehicle
             if (HasArc && Arc.Hit && Arc.Probe.Unit != null && Arc.Probe.Unit != me && Arc.Probe.Unit.Allegiance != me.Allegiance && !Arc.Probe.Unit.Destroyed)
             {
-                // a moving target is met where the round and it get to together (the arc's point at that flight distance)
+                // moving target is met where the round and it get to together (arc's point at that flight distance)
                 center = Arc.Moving && ImpactArc.PointAtPath(Arc.Path, out Vector3 meet, out _) ? meet : Arc.Point;
                 return Arc.Probe.Unit;
             }
             if (HasProbe && Probe.Unit != null && Probe.Unit != me && Probe.Unit.Allegiance != me.Allegiance && !Probe.Unit.Destroyed)
             { center = Probe.Point; return Probe.Unit; }
-            // aiming over it (a lob) or beside it: the marked enemy closest to the sight line, by angle (a zoomed sight
-            // makes pixel distances meaningless)
+            // aiming over it (lob) or beside it: marked enemy closest to the sight line by angle (zoomed sight makes pixel
+            // distances meaningless)
             Contacts.Contact best = null;
             float bd = 3f;
             if (SightDir.sqrMagnitude > 0.5f)
@@ -780,7 +780,7 @@ namespace GHPCHitCam
             return best.Unit;
         }
 
-        /// "CRITICAL HIT" -> "Critical hit".
+        /// "CRITICAL HIT" -> "Critical hit"
         static string Sentence(string s)
         {
             if (string.IsNullOrEmpty(s)) return s;
@@ -793,7 +793,7 @@ namespace GHPCHitCam
             var worst = c.Recs[0];
             foreach (var r in c.Recs) if (Timeline.Rank(r.Title) > Timeline.Rank(worst.Title)) worst = r;
             string title = Sentence(worst.Title) + (c.Recs.Count > 1 ? "  ×" + c.Recs.Count : "");
-            // the kill hooks announce kills themselves ("Target destroyed"); here the detail: what it did, two items at most
+            // kill hooks announce kills themselves ("Target destroyed"), here just the detail: what it did, two items max
             string sub = "";
             int n = 0;
             for (int i = 0; i < c.Lines.Count && n < 2; i++) { if (c.Sev[i] <= 0) continue; sub += (n > 0 ? "  ·  " : "") + c.Lines[i]; n++; }
@@ -842,7 +842,7 @@ namespace GHPCHitCam
         }
     }
 
-    /// IMGUI drawing helpers for the arcade HUD (procedural textures, rotated shapes), allocation-free per frame.
+    /// IMGUI helpers for the arcade HUD (procedural textures, rotated shapes), no allocations per frame
     internal static class HudGfx
     {
         public static Texture2D White, RingTex, DotTex, TriTex, GearTex;
@@ -857,7 +857,7 @@ namespace GHPCHitCam
             White.Apply();
             RingTex = Make(64, (x, y) => { float d = Mathf.Sqrt(x * x + y * y); return Mathf.Clamp01(1.5f - Mathf.Abs(d - 27f)); });
             DotTex = Make(32, (x, y) => Mathf.Clamp01(15f - Mathf.Sqrt(x * x + y * y)));
-            // a gear: 8 teeth on a ring with a hole
+            // gear: 8 teeth on a ring with a hole
             GearTex = Make(64, (x, y) =>
             {
                 float d = Mathf.Sqrt(x * x + y * y), ang = Mathf.Atan2(y, x);
@@ -865,7 +865,7 @@ namespace GHPCHitCam
                 float outer = 21f + 8f * tooth;
                 return Mathf.Clamp01(outer - d + 0.5f) * Mathf.Clamp01(d - 9f + 0.5f);
             });
-            // a triangle pointing up (towards -y in GUI space)
+            // triangle pointing up (toward -y in GUI space)
             TriTex = Make(64, (x, y) =>
             {
                 float yy = -y;            // texture rows go up
@@ -902,7 +902,7 @@ namespace GHPCHitCam
 
         static readonly Dictionary<int, GUIStyle> _fonts = new Dictionary<int, GUIStyle>();
 
-        /// A bold label style of this pixel size and alignment (cached; one per size the HUD scales use).
+        /// bold label style of this px size and alignment (cached, one per size the HUD scales use)
         public static GUIStyle Font(float px, TextAnchor anchor, bool bold = true)
         {
             int size = Mathf.Clamp(Mathf.RoundToInt(px), 6, 120);
@@ -933,7 +933,7 @@ namespace GHPCHitCam
             GUI.DrawTexture(new Rect(s.x - R, s.y - R, 2 * R, 2 * R), DotTex);
         }
 
-        /// Triangle centred on s, pointing up at angle 0 (degrees, clockwise).
+        /// triangle centred on s, pointing up at angle 0 (degrees, clockwise)
         public static void Triangle(Vector2 s, float r, float angle, Color c)
         {
             var m = GUI.matrix;
@@ -944,7 +944,7 @@ namespace GHPCHitCam
             GUI.matrix = m;
         }
 
-        /// A vehicle class icon (MapIcons atlas: white ink, dark rim) tinted with c, centred on s.
+        /// vehicle class icon (MapIcons atlas: white ink, dark rim) tinted with c, centred on s
         public static void Icon(Vector2 s, float half, MapClass cls, Color c)
         {
             GUI.color = c;

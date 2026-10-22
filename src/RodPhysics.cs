@@ -5,14 +5,14 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// What a long-rod penetrator does on its way through armour, from terminal ballistics:
-    /// - Erosion (Tate-Alekseevskii with strength): 1/2 rho_p (v-u)^2 + Y_p = 1/2 rho_t u^2 + R_t. The nose goes into the
-    ///   plate at u while the rest of the rod still pushes on at v, so the nose is used up at (v-u) and flows back out of
-    ///   the crater as a mushroom and a spray of debris. Target RHA: rho 7850, R_t 5.5 GPa (Anderson et al.).
-    /// - A plate that stops it uses it up: the rest of the rod erodes in the crater until only a stub is left.
-    /// - It bends where its channel turns (the game normalises a penetrating rod by up to 5 deg) and from the side load of
-    ///   an oblique entry (~2 deg x tan(obliquity)^1.5: ~5 deg at 60, ~9 deg at 70). Bent past what its alloy takes, it breaks.
-    /// - A ricochet, a shatter (the game's verdict) or heavy ERA (flyer plates) break it too.
+    /// what a long-rod penetrator does going through armour, from terminal ballistics:
+    /// - erosion (Tate-Alekseevskii with strength): 1/2 rho_p (v-u)^2 + Y_p = 1/2 rho_t u^2 + R_t. nose goes into the
+    ///   plate at u while the rest still pushes at v, so the nose wears off at (v-u) and flows back out of the crater as a
+    ///   mushroom + debris spray. target RHA: rho 7850, R_t 5.5 GPa (Anderson et al.)
+    /// - a plate that stops it uses it up: rest of the rod erodes in the crater until just a stub is left
+    /// - bends where its channel turns (game normalises a penetrating rod by up to 5 deg) and from the side load of an
+    ///   oblique entry (~2 deg x tan(obliquity)^1.5: ~5 deg at 60, ~9 deg at 70). bent past what its alloy takes, it breaks
+    /// - ricochet, shatter (game's verdict) or heavy ERA (flyer plates) break it too
     internal static class RodPhysics
     {
         public enum Alloy { DU, WHA, SteelWC }
@@ -25,7 +25,7 @@ namespace GHPCHitCam
             public Color Color, Hot, Spark;
         }
 
-        // depleted-uranium rods (U-3/4Ti) and steel-bodied rods with a carbide slug; everything else tungsten heavy alloy
+        // DU rods (U-3/4Ti) and steel-bodied rods with a carbide slug, everything else tungsten heavy alloy
         static readonly string[] Du = { "M774", "M833", "M829", "M900", "M735A1", "3BM32", "3BM48", "3BM29", "3BM59", "3BM60" };
         static readonly string[] Steel = { "3BM9", "3BM12", "3BM15", "3BM17", "3BM22" };
 
@@ -41,8 +41,8 @@ namespace GHPCHitCam
 
         public const float RhoT = 7850f, Rt = 5.5e9f;
 
-        /// The speed the nose goes into RHA at (Tate): u = (v - mu sqrt(v^2 + A)) / (1 - mu^2), mu^2 = rho_t / rho_p,
-        /// A = 2 (R_t - Y_p)(1 - mu^2) / rho_t. Zero below the threshold (~670 m/s for DU): it only erodes.
+        /// nose speed into RHA (Tate): u = (v - mu sqrt(v^2 + A)) / (1 - mu^2), mu^2 = rho_t / rho_p,
+        /// A = 2 (R_t - Y_p)(1 - mu^2) / rho_t. zero below the threshold (~670 m/s for DU), then it only erodes
         public static float PenVelocity(Mat m, float v)
         {
             float mu2 = RhoT / m.Rho, mu = Mathf.Sqrt(mu2);
@@ -51,11 +51,10 @@ namespace GHPCHitCam
         }
     }
 
-    /// The rod in the x-ray from its first contact on: a body that follows its own channel through the plates (bent
-    /// where the channel turns, plus the residual bend of an oblique entry), eroded from the nose by Tate's rate, a hot
-    /// mushroom at the nose while it erodes, the eroded material spraying back out of the crater, the fins and the
-    /// tracer at the tail, and the pieces once it breaks. Drawn over the armour (the x-ray sees the rod inside the plate,
-    /// as a flash radiograph does).
+    /// the rod in the x-ray from first contact on: body follows its own channel through the plates (bent where the
+    /// channel turns + residual bend of an oblique entry), eroded from the nose at Tate's rate, hot mushroom at the nose
+    /// while eroding, eroded stuff spraying back out of the crater, fins + tracer at the tail, and the pieces once it
+    /// breaks. drawn over the armour (x-ray sees the rod inside the plate, like a flash radiograph)
     internal class RodRig
     {
         public struct Bite
@@ -77,12 +76,12 @@ namespace GHPCHitCam
         Vector3 _bendAxis;
         float _stopSim = float.MaxValue;
 
-        // the game's path as arc length
+        // game's path as arc length
         Vector3[] _p;
         float[] _s, _t;
         float _vStart = 1500f, _vEnd = 1500f;
         float _endSim;
-        // a ricochet: the nose slides in the groove the plate shows, then lifts off (and nothing goes under the plate)
+        // ricochet: nose slides in the groove the plate shows, then lifts off (nothing goes under the plate)
         bool _ric;
         Vector3 _ricP, _ricN;
         float _ricSlideStart, _ricSlideEnd, _ricTurn, _ricLen, _grooveLen;
@@ -103,18 +102,18 @@ namespace GHPCHitCam
         readonly Vector3[] _node;
         readonly float[] _rad;
         readonly Color[] _col;
-        readonly bool _deform;                     // mushroom, flexural wave, curled lip (off: a clean rigid rod)
-        readonly float _flare;                     // how wide its head flares while it erodes (x radius), by alloy
-        float _waveA, _waveStart = float.MaxValue; // the flexural wave an oblique entry sets off along it
+        readonly bool _deform;                     // mushroom, flexural wave, curled lip (off = clean rigid rod)
+        readonly float _flare;                     // how wide the head flares while eroding (x radius), by alloy
+        float _waveA, _waveStart = float.MaxValue; // flexural wave an oblique entry sets off along it
         float _erodeEnd = -1f;
-        // the pieces once it breaks: each keeps the shape it had, in its own frame
+        // pieces once it breaks, each keeps its shape in its own frame
         class Piece { public Vector3[] Local; public float[] Rad; public Color[] Col; public int Count; public float Offset; public Vector3 Side, Axis; public float Spin; public bool Front, Back; }
         Piece[] _pieces;
         Quaternion _breakRot;
         float _breakE = -1f, _breakLen;
         public string SoftSummary { get; private set; } = "";
 
-        /// soft: 0 = a rigid rod cut down from the nose, 1 = deforming (the live hit cam), 2 = deforming in full detail
+        /// soft: 0 = rigid rod cut down from the nose, 1 = deforming (live hit cam), 2 = deforming in full detail
         /// (Armor Sim, proving ground, AAR)
         public RodRig(Transform parent, HitRecord rec, AmmoType ammo, float modelLen, float v0, int soft = 0, float grooveLen = -1f)
         {
@@ -163,9 +162,9 @@ namespace GHPCHitCam
             _capGlow = Vis.Child(root, "erosion glow", Vis.SoftDisc, Matrix4x4.identity, Vis.Additive).GetComponent<Renderer>();
             _tracer = Vis.Child(root, "tracer", Vis.SoftDisc, Matrix4x4.identity, Vis.Additive).GetComponent<Renderer>();
             _debris = new Sparks(root, soft == 2 ? 420 : 260) { Gravity = 0f, Drag = 0.4f };
-            // a uranium rod self-sharpens (adiabatic shear sheds the head): a small mushroom; tungsten and steel flare wide
+            // DU rod self-sharpens (adiabatic shear sheds the head) so small mushroom, tungsten and steel flare wide
             _flare = Mat.A == RodPhysics.Alloy.DU ? 1.35f : Mat.A == RodPhysics.Alloy.WHA ? 1.8f : 1.9f;
-            // the flexural wave of the most oblique entry: up to half a calibre, by how close it came to breaking
+            // flexural wave of the most oblique entry: up to half a calibre, by how close it came to breaking
             foreach (var b in Bites)
             {
                 float bend = Mathf.Max(b.Bend, b.Turn);
@@ -177,7 +176,7 @@ namespace GHPCHitCam
             Hide();
         }
 
-        /// The game's path has at least two points in time order (what the rig needs to move along).
+        /// game's path has at least two points in time order (what the rig needs to move along)
         public static bool HasPath(HitRecord rec)
         {
             if (rec?.Main?.Points == null) return false;
@@ -203,16 +202,15 @@ namespace GHPCHitCam
             foreach (var ah in hits)
             {
                 float sPlate = ArcAtSim(ah.Sim);
-                // the first plate at the game's arrival speed; after it the rod's own: the game slows the round by
-                // energy (v' = v sqrt(1 - LOS/pen)), a real rod mostly gets shorter and its rear only decelerates by
-                // Y_p / (rho_p L) while it works through (tens of m/s per plate)
+                // first plate at the game's arrival speed, after that the rod's own: game slows the round by energy
+                // (v' = v sqrt(1 - LOS/pen)), a real rod mostly gets shorter and its rear only slows by Y_p / (rho_p L)
+                // while working through (tens of m/s per plate)
                 float v = vPhys > 0f ? vPhys : Mathf.Max(ah.Speed > 50f ? ah.Speed : v0, v0 * 0.85f);
-                float tStart = SimAtArc(sPlate);          // the nose is where the game's round is: it meets the plate with it
+                float tStart = SimAtArc(sPlate);          // nose is where the game's round is, meets the plate with it
                 if (ah.Ricochet)
                 {
-                    // the nose slides along the groove (wearing a little), the rod slaps onto the plate and whips as it
-                    // turns out; it breaks at the lift-off if that turn is more than its alloy takes (or the game says
-                    // it shattered), else it flies off bent
+                    // nose slides along the groove (wears a bit), rod slaps onto the plate and whips as it turns out. breaks at
+                    // lift-off if that turn is more than its alloy takes (or the game says shattered), else flies off bent
                     float slide = Mathf.Max(_ricSlideEnd - _ricSlideStart, 1e-6f);
                     var rb = new Bite { Plate = ah.Name, SimStart = tStart, V = v, Dur = slide, Obliquity = 90f - HoleFx.ImpactAngle(ah) };
                     rb.Loss = _ric ? Mathf.Min(0.12f * L, 3f * D) : 0f;
@@ -236,11 +234,10 @@ namespace GHPCHitCam
                 float u = RodPhysics.PenVelocity(Mat, v);
                 float tate = u > 1f ? (v - u) / u * los : L;
                 float obl = Mathf.Clamp(90f - HoleFx.ImpactAngle(ah), 0f, 89f);
-                // the nose goes through the plate on the game's path at the game's pace (that is where the hole opens and
-                // where the spall comes from); the rear keeps the rod's own speed v, so the rod gets shorter by as much as
-                // the rear catches up with the nose, never more than Tate's figure for that plate. (The game slows the
-                // whole round by energy at once; tied to that pace, the rear stood still in the air while the nose was
-                // eaten away.)
+                // nose goes through the plate on the game's path at the game's pace (that's where the hole opens and the spall
+                // comes from). rear keeps the rod's own v, so the rod gets shorter by as much as the rear catches up, never more
+                // than Tate's figure for that plate. (game slows the whole round by energy at once, tied to that pace the rear
+                // stood still in the air while the nose got eaten)
                 float tPlate = Mathf.Max(SimAtArc(sPlate + los) - tStart, 1e-6f);
                 float catchUp = Mathf.Max(v * tPlate - los, 0f);
                 vPhys = Mathf.Max(v - RodPhysics_Decel(L - 0.5f * Mathf.Min(tate, L)) * tPlate, 100f);
@@ -251,24 +248,24 @@ namespace GHPCHitCam
                     b.Stopped = true;
                     b.Loss = Mathf.Max(L - stub, 0f);
                     b.Cap = sPlate + 0.9f * los;
-                    // the nose jams in the crater; the rest of the rod keeps coming at v and is eaten there
+                    // nose jams in the crater, rest of the rod keeps coming at v and gets eaten there
                     b.Dur = b.Loss / Mathf.Max(v, 1f) + tPlate;
                     Bites.Add(b);
                     sb.Append($"{ah.Name} {ah.Los:0} mm RHAe at {v:0} m/s (u {u:0} m/s): stopped, the rest of the rod ({L * 1000f:0} mm) erodes in the crater in {b.Dur * 1e6f:0} us, a {stub * 1000f:0} mm stub stays; ");
                     E += b.Loss; L = stub;
                     break;
                 }
-                // through it: Tate's erosion, but never all of it (the game says it got through); below Tate's threshold
-                // speed it punches through as a rigid body (hardly any erosion)
+                // through it: Tate's erosion but never all of it (game says it got through). below Tate's threshold speed it
+                // punches through as a rigid body (barely erodes)
                 if (u > 1f)
                     b.Loss = Mathf.Min(Mathf.Min(tate, catchUp), Mathf.Max(L - Mathf.Max(stub, 0.12f * L0), 0f));
                 else
-                    b.Loss = Mathf.Min(Mathf.Min(0.1f * D, 0.05f * L), catchUp);   // below Tate's threshold: rigid, it hardly wears
+                    b.Loss = Mathf.Min(Mathf.Min(0.1f * D, 0.05f * L), catchUp);   // below Tate's threshold: rigid, barely wears
                 b.Dur = tPlate;
                 Vector3 dIn = ah.DirL.sqrMagnitude > 1e-6f ? ah.DirL.normalized : DirAt(sPlate - 0.05f);
                 Vector3 dOut = DirAt(sPlate + los + 0.08f);
                 b.Turn = Mathf.Min(Vector3.Angle(dIn, dOut), 6f);
-                // the side load of an oblique entry, from a plate thick enough to hold the nose (a thin one is just cut)
+                // side load of an oblique entry, from a plate thick enough to hold the nose (thin one just gets cut)
                 float hold = Mathf.Clamp01(Mathf.Max(ah.Nominal, 1f) * 0.001f / (1.5f * D));
                 b.Bend = 2f * Mathf.Pow(Mathf.Tan(Mathf.Min(obl, 80f) * Mathf.Deg2Rad), 1.5f) * hold;
                 Bites.Add(b);
@@ -306,9 +303,9 @@ namespace GHPCHitCam
             Report = sb.ToString();
         }
 
-        /// A ricochet: the game reflects the round at the impact point; the plate draws the groove it ploughs (PlateSim's
-        /// TrenchOf: ~0.45 L_rod cos a + 2 depth / tan a long, slid at ~0.85 v cos a). The rod's own path is made to
-        /// match: in, along the groove riding in it, then the game's way out from the groove's end (later by the slide).
+        /// ricochet: game reflects the round at the impact point, plate draws the groove it ploughs (PlateSim's TrenchOf:
+        /// ~0.45 L_rod cos a + 2 depth / tan a long, slid at ~0.85 v cos a). rod's own path made to match: in, riding along
+        /// the groove, then the game's way out from the groove end (later by the slide)
         void RicochetChannel(HitRecord rec)
         {
             var ah = rec.ArmorHits.Where(a => a.Frag == rec.Main && !a.IsSpall && !a.PreJet).OrderBy(a => a.Sim).FirstOrDefault(a => a.Ricochet);
@@ -321,7 +318,7 @@ namespace GHPCHitCam
             if (t.sqrMagnitude < 1e-6f) return;
             t.Normalize();
             var g = HoleFx.TrenchOf(ah);
-            if (_grooveLen > 0f) g.Len = _grooveLen;     // the groove as the plate draws it
+            if (_grooveLen > 0f) g.Len = _grooveLen;     // groove as the plate draws it
             float r = D * 0.5f;
             Vector3 hit = ah.HasSurf ? ah.SurfPointL : ah.L;
             Vector3 pGame = PathAt(ArcAtSim(ah.Sim), out _);
@@ -367,7 +364,7 @@ namespace GHPCHitCam
             _ricTurn = Vector3.Angle(dIn, t) + Vector3.Angle(t, dOut);
         }
 
-        /// Nothing of the rod goes under the plate it ricochets off.
+        /// nothing of the rod goes under the plate it ricochets off
         Vector3 AbovePlate(Vector3 p, float rad)
         {
             if (!_ric) return p;
@@ -377,7 +374,7 @@ namespace GHPCHitCam
             return p + _ricN * (rad - h);
         }
 
-        /// The rod's deceleration while it erodes: the plastic wave at its nose holds back the rest, a = Y_p / (rho_p L).
+        /// rod deceleration while eroding: plastic wave at the nose holds back the rest, a = Y_p / (rho_p L)
         float RodPhysics_Decel(float len) => Mat.Yp / (Mat.Rho * Mathf.Max(len, 2f * D));
 
         void Break(float sim, int pieces, string why)
@@ -442,8 +439,8 @@ namespace GHPCHitCam
             _capGlow.enabled = _tracer.enabled = false;
         }
 
-        /// sim = the round's clock, now = session time, simRate = sim seconds per session second (the slow motion),
-        /// cam = the camera in the parent's space.
+        /// sim = round's clock, now = session time, simRate = sim s per session s (the slow-mo),
+        /// cam = camera in the parent's space
         public void Update(float sim, float now, float simRate, Vector3 cam)
         {
             _lastSim = sim;
@@ -451,7 +448,7 @@ namespace GHPCHitCam
             Visible = sim >= first;
             if (!Visible) { Hide(); return; }
             bool stoppedPlan = Bites.Count > 0 && Bites[Bites.Count - 1].Stopped;
-            // past the end of the game's path a rod that went through is gone; a used-up stub stays in its crater
+            // past the end of the game's path a rod that went through is gone, a used-up stub stays in its crater
             if (!stoppedPlan && sim > _endSim + 0.002f) { Hide(); Visible = false; return; }
 
             float tRef = Mathf.Min(sim, _stopSim);
@@ -478,7 +475,7 @@ namespace GHPCHitCam
             Nose = _node[_nn - 1];
             Dir = (_node[_nn - 1] - _node[_nn - 3]).normalized;
             DrawFins(_node[0], (_node[2] - _node[0]).normalized, cam);
-            // the glow of the eroding head
+            // glow of the eroding head
             _capGlow.enabled = Eroding;
             if (Eroding)
             {
@@ -492,9 +489,9 @@ namespace GHPCHitCam
 
         int _logFrame = -1, _logged;
 
-        /// How much of it the plates have eaten by tRef. While its nose is in a plate the rear keeps the rod's own speed
-        /// v and the nose goes the game's pace (or sticks in the crater of a plate that stops it): what the rear gains on
-        /// the nose is eaten off the front, up to that plate's share. So the rear never stalls and never speeds up.
+        /// how much the plates have eaten by tRef. while the nose is in a plate the rear keeps the rod's own v and the nose
+        /// goes the game's pace (or sticks in the crater of a plate that stops it): what the rear gains on the nose is eaten
+        /// off the front, up to that plate's share. so the rear never stalls and never speeds up
         float Erosion(float tRef, float sRef, out bool eroding, out bool allGone)
         {
             float E = 0f;
@@ -512,7 +509,7 @@ namespace GHPCHitCam
             return E;
         }
 
-        /// Where its nose is: on the game's path, held in the crater of a plate that stopped it.
+        /// where the nose is: on the game's path, held in the crater of a plate that stopped it
         float NoseArc(float tRef, float sRef)
         {
             foreach (var b in Bites)
@@ -520,7 +517,7 @@ namespace GHPCHitCam
             return sRef;
         }
 
-        /// The eroding head's lip, curling back (bigger for tungsten, small for self-sharpening uranium).
+        /// eroding head's lip curling back (bigger for tungsten, small for self-sharpening DU)
         float NoseCurl(float E)
         {
             if (!_deform || E <= 0f) return 0f;
@@ -528,8 +525,8 @@ namespace GHPCHitCam
             return D * (_flare - 1f) * (Eroding ? 0.9f : 0.5f) * k;
         }
 
-        /// The centreline along its channel (bent where the channel turns), the residual bend of an oblique entry, the
-        /// flexural wave it set off; the radius (the mushroom, the squeezed bulge behind it); the heat.
+        /// centreline along its channel (bent where the channel turns), residual bend of an oblique entry, the flexural
+        /// wave it set off; radius (mushroom, squeezed bulge behind it); heat
         void Centre(float sim, float sNose, float len, float E, Vector3 cam)
         {
             float sTail = sNose - len;
@@ -538,7 +535,7 @@ namespace GHPCHitCam
             float r0 = D * 0.5f;
             float onset = Mathf.Clamp01(E / (1.2f * D));
             float flare = !_deform ? 1f : 1f + (_flare - 1f) * onset * (Eroding ? 1f : 0.55f);
-            // the flexural wave runs back from the nose at ~1.2 km/s and dies out in about half a millisecond
+            // flexural wave runs back from the nose at ~1.2 km/s and dies out in about half a ms
             float wAge = sim - _waveStart;
             float wA = _deform && wAge > 0f ? _waveA * Mathf.Exp(-wAge / 6e-4f) : 0f;
             float lambda = 7f * D, front = 1200f * Mathf.Max(wAge, 0f);
@@ -548,7 +545,7 @@ namespace GHPCHitCam
             {
                 float f = (float)i / (_nn - 1);
                 Vector3 p = PathAt(sTail + len * f, out _);
-                float g = 1f - f;   // the tail swings off the line its nose keeps
+                float g = 1f - f;   // tail swings off the line the nose keeps
                 p -= _bendAxis * (0.5f * g * g * len * bendRad);
                 float dn = len * (1f - f);
                 if (wA > 0f && dn < front)
@@ -566,7 +563,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Hot metal: dull red, orange, yellow-white.
+        /// hot metal: dull red, orange, yellow-white
         static Color Heat(Color metal, float h)
         {
             if (h <= 0.02f) return metal;
@@ -592,7 +589,7 @@ namespace GHPCHitCam
                 tr.localPosition = tail + dTail * (_finLen * 0.5f) + rad * (D * 0.5f + (_finSpan * 0.5f - D * 0.5f) * 0.5f);
                 tr.localRotation = Quaternion.LookRotation(dTail, rad);
                 tr.localScale = new Vector3(Mathf.Max(D * 0.12f, 0.002f), Mathf.Max(_finSpan * 0.5f - D * 0.5f, 0.005f), _finLen);
-                Vis.SetColor(r, j % 2 == 0 ? new Color(0.84f, 0.86f, 0.88f) : new Color(0.70f, 0.72f, 0.75f));   // aluminium, as on the round in flight; two faces lit, two in shade
+                Vis.SetColor(r, j % 2 == 0 ? new Color(0.84f, 0.86f, 0.88f) : new Color(0.70f, 0.72f, 0.75f));   // aluminium like on the round in flight, two faces lit, two in shade
             }
             _tracer.enabled = fins;
             if (fins)
@@ -604,8 +601,8 @@ namespace GHPCHitCam
             }
         }
 
-        /// The eroded material leaves the crater backwards and outwards (in the lab it moves back at about (v - 2u)
-        /// with a strong radial spread): hot flakes, white burning sparks for uranium (it's pyrophoric).
+        /// eroded stuff leaves the crater backwards and outwards (in the lab it goes back at about (v - 2u) with a strong
+        /// radial spread): hot flakes, white burning sparks for DU (it's pyrophoric)
         void UpdateDebris(float now, float simRate, Vector3 cam)
         {
             if (Eroding && now >= _nextDebris && simRate > 0f)
@@ -626,8 +623,8 @@ namespace GHPCHitCam
 
         float _lastSim;
 
-        /// Broken: every piece keeps the bent shape it had (and the front one its mushroom), with jagged fracture faces,
-        /// flying on along the path, spreading apart at tens of m/s and spinning.
+        /// broken: every piece keeps its bent shape (front one its mushroom) with jagged fracture faces, flies on along
+        /// the path, spreading apart at tens of m/s and spinning
         void DrawPieces(float sim, float sRef, Vector3 cam, float now)
         {
             foreach (var r in _fin) r.enabled = false;
@@ -636,7 +633,7 @@ namespace GHPCHitCam
             int n = Mathf.Max(BreakPieces, 2);
             if (_pieces == null)
             {
-                // the shape at the moment it breaks
+                // shape at the moment it breaks
                 float tb = Mathf.Min(BreakSim, sim);
                 float sRefB = ArcAtSim(Mathf.Min(tb, _stopSim));
                 _breakE = Erosion(tb, sRefB, out _, out _);
@@ -647,7 +644,7 @@ namespace GHPCHitCam
                 var inv = Quaternion.Inverse(_breakRot);
                 var rnd = new System.Random(n * 7 + (int)(L0 * 1000f));
                 float R() => (float)rnd.NextDouble();
-                // cut points: unevenly spaced along it
+                // cut points, unevenly spaced along it
                 var cuts = new List<int> { 0 };
                 for (int j = 1; j < n; j++) cuts.Add(Mathf.Clamp(Mathf.RoundToInt((_nn - 1) * ((float)j / n + (R() - 0.5f) * 0.18f)), cuts[cuts.Count - 1] + 2, _nn - 1 - 2 * (n - j)));
                 cuts.Add(_nn - 1);
@@ -665,9 +662,9 @@ namespace GHPCHitCam
                     pc.Offset = _breakLen * (1f - (a + b) * 0.5f / (_nn - 1));
                     pc.Side = Vector3.ProjectOnPlane(new Vector3(R() - 0.5f, R() - 0.5f, R() - 0.5f), dirB).normalized;
                     pc.Axis = new Vector3(R() - 0.5f, R() - 0.5f, R() - 0.5f).normalized;
-                    pc.Spin = 300f + 1200f * R();   // rad/s: a fracture throws the pieces spinning
+                    pc.Spin = 300f + 1200f * R();   // rad/s, a fracture throws the pieces spinning
                     pc.Front = b == _nn - 1; pc.Back = a == 0;
-                    _pieces[n - 1 - j] = pc;          // [0] = the front piece
+                    _pieces[n - 1 - j] = pc;          // [0] = front piece
                 }
             }
             float age = Mathf.Max(sim - BreakSim, 0f);
@@ -683,11 +680,11 @@ namespace GHPCHitCam
                 for (int i = 0; i < pc.Count; i++) tmp[i] = AbovePlate(c + rot * pc.Local[i], pc.Rad[i]);
                 float jag = D * 0.45f;
                 _tube.AddTube(tmp, pc.Rad, pc.Col, pc.Count, cam, pc.Back ? 0f : jag, pc.Front ? 0f : jag, pc.Front ? NoseCurl(_breakE) : 0f, 31 + j * 5, sim * 2000f);
-                // the tail piece keeps its fins and tracer
+                // tail piece keeps its fins and tracer
                 if (pc.Back && pc.Count >= 3) DrawFins(tmp[0], (tmp[2] - tmp[0]).normalized, cam);
             }
             _tube.End(true);
-            // what the camera follows: the way the pieces are going, not the spinning tip of the front one
+            // what the camera follows: where the pieces are going, not the spinning tip of the front one
             Nose = PathAt(sNose, out var dPath);
             Dir = dPath;
         }

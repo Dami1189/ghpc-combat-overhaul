@@ -7,21 +7,20 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Flame forced out of the holes in a burning vehicle, in the world. The same hull pressure as the x-ray
-    /// (HullPressure), fed live by the game's own events on the game's clock: charges catching fire, hatches blown open,
-    /// flame bursts, the turret thrown off, detonations. At every hole the rounds made into the compartment (the game's own
-    /// impact exits) a copy of the game's own small-hole flame points out along the hole, stretched along its axis as far
-    /// as the pressure drives it (~12 x d sqrt(p / p0)); the game's flame comes in fixed sizes, so the copy's particles
-    /// are simulated in its own (scaled) frame. The flame already out burns on ~0.25 s after the push drops. The game's
-    /// own exits and fires are left as they are (its own flame at the hole stays, the copy grows out of the same spot).
-    /// Setting: WorldVentJets.
+    /// flame forced out of the holes in a burning vehicle, in the world. same hull pressure as the x-ray (HullPressure),
+    /// fed live by the game's own events on the game clock: charges catching fire, hatches blown, flame bursts, turret
+    /// thrown off, detonations. at every hole the rounds made into the compartment (game's own impact exits) a copy of
+    /// the game's small-hole flame points out along the hole, stretched along its axis as far as the pressure drives it
+    /// (~12 x d sqrt(p / p0)). game's flame comes in fixed sizes so the copy's particles run in their own (scaled) frame.
+    /// flame already out burns on ~0.25 s after the push drops. game's own exits and fires stay as they are (its flame
+    /// at the hole stays, the copy grows out of the same spot). setting: WorldVentJets
     internal class WorldVents : MonoBehaviour
     {
         static readonly List<WorldVents> _all = new List<WorldVents>();
         const int MaxVehicles = 4, MaxJets = 6;
         class Jet { public Vector3 L, Dir; public float D, Max, Push; public GameObject Go; public Transform Fx, FxBody; public Vector3 Root; public IFireParticleSystem Fire; public bool On; public float OnSince = -1f; public int Snaps; }
 
-        /// How long the game's small-hole flame looks unstretched (its own fixed size: a ~0.35 m cone).
+        /// how long the game's small-hole flame looks unstretched (its own fixed size, ~0.35 m cone)
         const float FlameLooks = 0.35f;
 
         Unit _unit;
@@ -31,14 +30,14 @@ namespace GHPCHitCam
         readonly List<Jet> _jets = new List<Jet>();
         float _born, _log = -1f, _peak = 1f, _detAt = -1f;
 
-        /// Every event the recorder adds (HitRecord.AddEvent): the live ones that matter to the hull's pressure.
+        /// every event the recorder adds (HitRecord.AddEvent): the live ones that matter for hull pressure
         public static void OnEvent(HitRecord rec, HitEvent e)
         {
             try
             {
                 if (rec == null || e == null || rec.Target == null || !e.HasPos) return;
                 if (!Settings.WorldDamage.Value || !Settings.WorldVentJets.Value) return;
-                if (Mathf.Abs(e.RealT - Time.time) > 1f) return;          // live only (not a replay or an archive)
+                if (Mathf.Abs(e.RealT - Time.time) > 1f) return;          // live only (not a replay or archive)
                 switch (e.Kind)
                 {
                     case EvKind.Breach: For(rec)?._breaches.Add((e, rec)); break;
@@ -52,10 +51,10 @@ namespace GHPCHitCam
                         {
                             var v = For(rec);
                             v?.Opening(e, true);
-                            v?.Detonation(e, e.After);       // a burst's ratio is the detonation's TNT
+                            v?.Detonation(e, e.After);       // burst ratio is the detonation's TNT
                             break;
                         }
-                    case EvKind.TurretOff: For(rec)?._hp.AddOpening(e.L, 2.5f, Time.time); break;     // the turret ring open to the sky
+                    case EvKind.TurretOff: For(rec)?._hp.AddOpening(e.L, 2.5f, Time.time); break;     // turret ring open to the sky
                     case EvKind.Explosion:
                         if (!Timeline.OwnWarhead(rec, e)) For(rec)?.Detonation(e, e.After);
                         break;
@@ -70,7 +69,7 @@ namespace GHPCHitCam
             _all.RemoveAll(v => v == null);
             foreach (var v in _all) if (v._unit == u) return v;
             if (rec.Snapshot == null) return null;
-            // the oldest one with nothing burning makes room
+            // oldest one with nothing burning makes room
             while (_all.Count >= MaxVehicles)
             {
                 var old = _all.OrderBy(v => v._jets.Any(j => j.On) ? 1 : 0).ThenBy(v => v._born).First();
@@ -87,7 +86,7 @@ namespace GHPCHitCam
 
         void Opening(HitEvent e, bool open)
         {
-            if (e.Subject == "the hole") return;          // a hole the round made: counted with the holes
+            if (e.Subject == "the hole") return;          // a hole the round made, counted with the holes
             float r = e.Extent.x > 0.005f ? e.Extent.x : e.Power > 0.005f ? e.Power : 0.2f;
             _hp.AddOpening(e.L, Mathf.PI * r * r * (open ? 1f : 0.1f), Time.time);
         }
@@ -99,7 +98,7 @@ namespace GHPCHitCam
             if (AutoTest.Active) HitCamMod.Log.Msg($"World vents {Recorder.SafeName(_unit)}: detonation {tnt:0.0} kg TNT -> {_hp.Ratio:0.0} bar in {_hp.V:0.0} m^3 of free air, {_jets.Count} holes");
         }
 
-        /// The holes near the burning charges (the same compartment, roughly), each with the game's fire effect on it.
+        /// holes near the burning charges (same compartment, roughly), each with the game's fire effect on it
         void FindJets()
         {
             if (_jets.Count >= MaxJets) return;
@@ -114,13 +113,13 @@ namespace GHPCHitCam
                 _seen.Add(e);
                 HullPressure.VentShape(e, rec.ArmorHits, out Vector3 dirL, out float r, out ArmorHit plate, out float los);
                 var t = _unit.transform;
-                // on the game's own exit marker: the hole into the compartment itself (behind a skirt it is the hull's,
-                // not the skirt's), riding with the hull
+                // on the game's own exit marker: the hole into the compartment itself (behind a skirt it's the hull's, not the
+                // skirt's), rides with the hull
                 var marker = (e.Ref as CompartmentExit)?.PositionMarker;
                 Transform host = marker != null ? marker : t;
                 Vector3 at = marker != null ? marker.position : t.TransformPoint(e.L), dir = t.TransformDirection(dirL).normalized;
                 float max = HullPressure.MaxReach(2f * r);
-                // something of the vehicle in its way outside (a skirt, a stowage box): it splashes there
+                // something of the vehicle in the way outside (skirt, stowage box): splashes there
                 float best = float.MaxValue;
                 foreach (var c in WorldDamage.HullColliders(_unit).set)
                     if (c != null && c.Raycast(new Ray(at + dir * 0.1f, dir), out var h, max) && h.distance > 0.15f) best = Mathf.Min(best, h.distance);
@@ -140,8 +139,8 @@ namespace GHPCHitCam
             }
         }
 
-        /// A copy of the game's own small-hole flame (the one it shows at a round's hole), its flame axis out along the hole,
-        /// under a frame of its own that stretches it (fx); its particles simulated in that frame and scaled with it.
+        /// copy of the game's small-hole flame (the one at a round's hole), flame axis out along the hole, under its own
+        /// frame that stretches it (fx), particles simulated in that frame and scaled with it
         static IFireParticleSystem Spawn(ParticleEffectsManager pem, Transform at, Vector3 dir, out Transform fx)
         {
             fx = null;
@@ -189,7 +188,7 @@ namespace GHPCHitCam
             {
                 if (j.Go == null) continue;        // its hole went with the part it was in
                 float reach = HullPressure.Reach(j.D, pr);
-                // the burning gas already out of the hole goes on flaming for a moment after the push drops
+                // gas already out of the hole keeps flaming a moment after the push drops
                 j.Push = Mathf.Max(Mathf.Clamp01(reach / j.Max), j.Push * Mathf.Exp(-dt / 0.25f));
                 float len = j.Push * j.Max;
                 bool want = len > 0.05f;
@@ -199,7 +198,7 @@ namespace GHPCHitCam
                     {
                         if (want)
                         {
-                            // longer along the flame, a little wider with the push (the jet spreads to ~d sqrt(p / p0))
+                            // longer along the flame, bit wider with the push (jet spreads to ~d sqrt(p / p0))
                             float along = Mathf.Max(len / FlameLooks, 0.2f);
                             float across = Mathf.Clamp(Mathf.Sqrt(along) * Mathf.Sqrt(j.D / 0.06f), 0.5f, 2.5f);
                             if (!j.On)
@@ -209,7 +208,7 @@ namespace GHPCHitCam
                                 j.Root = FlameRoot(j);
                             }
                             j.Fx.localScale = new Vector3(across, along, across);
-                            // stretched about where its flame starts (the emitter of the size that plays sits up its axis)
+                            // stretched about where its flame starts (emitter of the playing size sits up its axis)
                             if (j.FxBody != null) j.FxBody.localPosition = Vector3.Scale(j.Root, new Vector3(1f / across - 1f, 1f / along - 1f, 1f / across - 1f));
                         }
                         else if (j.On) j.Fire.Stop();
@@ -244,7 +243,7 @@ namespace GHPCHitCam
             if (on == 0 && pr < 1.02f && _hp.Charges.Count > 0 && now - _hp.Charges.Max(c => c.t) > 45f) Destroy(this);
         }
 
-        /// Where the flame that is playing starts, in its frame unstretched: its emitter and the offset of its emission shape.
+        /// where the playing flame starts in its unstretched frame: its emitter + the offset of its emission shape
         static Vector3 FlameRoot(Jet j)
         {
             if (j.Fx == null || j.FxBody == null) return Vector3.zero;
@@ -282,7 +281,7 @@ namespace GHPCHitCam
             foreach (var j in _jets)
             {
                 try { j.Fire?.Stop(); } catch { }
-                if (j.Go != null) Destroy(j.Go, 3f);      // the last flames die out on their own
+                if (j.Go != null) Destroy(j.Go, 3f);      // last flames die out on their own
             }
             _all.Remove(this);
         }

@@ -6,9 +6,9 @@ using MelonLoader;
 
 namespace GHPCHitCam
 {
-    /// GHPC Mod Manager writes a decimal setting back as text ("PipSize" = "0.25") on a Windows set to a decimal comma,
-    /// and MelonLoader then can't read it and quietly keeps the default. The mod reads such values out of the file itself
-    /// (a decimal comma too) and saves the section again, typed, so the file is right from then on.
+    /// on Windows with a decimal comma GHPC Mod Manager writes decimals back as text ("PipSize" = "0.25"), MelonLoader
+    /// can't read that and quietly keeps the default. so we read those values from the file ourselves (decimal comma too)
+    /// and save the section again typed, file is fine from then on
     internal static class PrefsRescue
     {
         public static void Apply(MelonPreferences_Category cat)
@@ -42,7 +42,7 @@ namespace GHPCHitCam
             catch (Exception ex) { HitCamMod.Log.Warning("Settings check: " + ex.Message); }
         }
 
-        /// key -> value as written, in one [section] of the TOML file (keys bare or quoted, no inline comments in it).
+        /// key -> value as written in one [section] of the TOML file (keys bare or quoted, no inline comments)
         static Dictionary<string, string> Section(string[] lines, string section)
         {
             var map = new Dictionary<string, string>();

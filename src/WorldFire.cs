@@ -9,12 +9,11 @@ using DC = GHPC.Equipment.DestructibleComponent;
 
 namespace GHPCHitCam
 {
-    /// A destroyed engine burning out through its deck (or a helicopter's cowling): the hit cuts fuel, oil and hydraulic
-    /// lines over an engine whose exhaust side runs far above the self-ignition point of diesel and oil (about 210-300 C),
-    /// so the spray catches. A shaped-charge jet or an HE burst sets more of it alight than a solid shot; the fire grows
-    /// for a few seconds, burns while the spilled fuel lasts, then dies to a smouldering smoke. Drawn with the game's own
-    /// fire and smoke effects at the outside surface above the engine's real hit zone (not at its pivot).
-    /// The game's own fires (its flammables and crew compartments) are left as they are.
+    /// dead engine burning out through its deck (or a heli's cowling): the hit cuts fuel, oil and hydraulic lines over an
+    /// exhaust side way above the self-ignition point of diesel/oil (~210-300 C), so the spray catches. a shaped charge jet
+    /// or HE burst lights more of it than a solid shot; grows for a few s, burns while the spilled fuel lasts, then smoulders
+    /// uses the game's own fire/smoke fx at the outside surface above the engine's real hit zone (not its pivot)
+    /// game's own fires (flammables, crew compartments) are left alone
     internal class EngineFire : MonoBehaviour
     {
         static readonly List<EngineFire> _all = new List<EngineFire>();
@@ -33,7 +32,7 @@ namespace GHPCHitCam
             var urb = u.GetComponent<Rigidbody>();
             Transform hull = urb != null ? urb.transform : u.transform;
             Vector3 up = hull.up;
-            // the outside above the engine: down onto the vehicle's own armour from above it
+            // outside above the engine: cast down onto the vehicle's own armour from above
             Vector3 from = b.center + up * (b.extents.magnitude + 3f);
             Vector3 at = b.center + up * b.extents.y;
             float best = float.MaxValue;

@@ -12,10 +12,9 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Self-test ground (autotest.cfg: testground=true): a flat pad of its own, as far from the mission's units as the map
-    /// allows, with only our own targets on it. Every mission unit's AI is switched off (nobody drives over, nobody shoots
-    /// at the targets), the ground vehicles stand side-on in a row, and the helicopters circle slowly above the pad.
-    /// AutoTest then only picks targets from these.
+    /// self-test ground (autotest.cfg: testground=true): own flat pad as far from the mission's units as the map allows,
+    /// only our targets on it. all mission AI is off (nobody drives over or shoots the targets), ground vehicles stand
+    /// side-on in a row, helis circle slowly above. AutoTest then only picks targets from these
     internal static class TestGround
     {
         static readonly string[] Ground = { "T72M1", "T80B", "M1IP", "LEO2A3", "BMP2", "BTR70", "M113", "BRDM2" };
@@ -42,7 +41,7 @@ namespace GHPCHitCam
             if (sp == null || player == null) { HitCamMod.Log.Warning("Test ground: no unit spawner / player"); yield break; }
             var mission = SceneUnitsManager.Instance.AllUnitsInScene.OfType<Unit>().Where(u => u != null).ToList();
 
-            // the mission holds still: no AI anywhere
+            // mission holds still, no AI anywhere
             int stopped = 0;
             foreach (var u in mission)
             {
@@ -57,7 +56,7 @@ namespace GHPCHitCam
                 catch { }
             }
 
-            // the spot on the map farthest from every mission unit (and 400 m inside the map's edge)
+            // spot farthest from every mission unit (and 400 m inside the map edge)
             Bounds map = new Bounds(player.transform.position, Vector3.one * 2000f);
             var terrains = Terrain.activeTerrains;
             if (terrains != null && terrains.Length > 0)
@@ -75,7 +74,7 @@ namespace GHPCHitCam
                     foreach (var u in mission) { Vector3 q = u.transform.position; q.y = 0f; d = Mathf.Min(d, (q - p).magnitude); }
                     if (d > bestD) { bestD = d; best = p; }
                 }
-            // testground_at=<m>: the pad that far straight ahead of the player instead (its blasts heard at a known range)
+            // testground_at=<m>: pad that far straight ahead of the player instead (so the blasts are heard at a known range)
             if (float.TryParse(AutoTest.Opt("testground_at", ""), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float at) && at > 0f)
             {
                 Vector3 f = player.transform.forward;
@@ -85,7 +84,7 @@ namespace GHPCHitCam
                 best.y = 0f;
                 bestD = mission.Where(u => u != player).Select(u => { Vector3 q = u.transform.position; q.y = 0f; return (q - best).magnitude; }).DefaultIfEmpty(0f).Min();
             }
-            // a flat pad just above the highest ground under it
+            // flat pad just above the highest ground under it
             const float Half = 130f;
             float top = float.MinValue;
             for (float x = -Half; x <= Half; x += 10f)
@@ -101,13 +100,13 @@ namespace GHPCHitCam
             _pad = MakePad(Centre, Half);
             HitCamMod.Log.Msg($"Test ground: pad {Half * 2f:0} m square at {Centre} ({bestD:0} m from the nearest mission unit, map {map.size.x:0}x{map.size.z:0} m), AI stopped on {stopped} mission units");
 
-            // our own targets: ground vehicles side-on in a row (shots from +x come at their side), helicopters circling above
+            // our targets: ground vehicles side-on in a row (shots from +x hit their side), helis circling above
             Faction enemy = player.Allegiance == Faction.Blue ? Faction.Red : Faction.Blue;
             var ground = new List<Unit>();
             for (int i = 0; i < Ground.Length; i++)
             {
-                // a ring 85 m across the pad's middle, each vehicle facing out: a round from its front, side or rear
-                // (30 m away) passes no other vehicle
+                // ring 85 m across the pad middle, each vehicle facing out: a round at its front, side or rear (from 30 m)
+                // doesn't pass any other vehicle
                 float a = i * Mathf.PI * 2f / Ground.Length;
                 Vector3 outward = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
                 Vector3 pos = Centre + outward * 85f + Vector3.up * 0.4f;
@@ -132,7 +131,7 @@ namespace GHPCHitCam
             {
                 try
                 {
-                    // hovering in place (rotors turning, held still) until the game kills it or its tail goes
+                    // hovering in place (rotors turning, held still) until the game kills it or the tail goes
                     var hai = h.u.InfoBroker != null ? h.u.InfoBroker.HelicopterAI : null;
                     if (hai != null) { hai.canAttack = false; hai.enabled = false; }
                     h.u.gameObject.AddComponent<HoverHold>().Init(h.u);
@@ -171,7 +170,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning($"Test ground: spawn {key} failed: {e.Message}"); return null; }
         }
 
-        /// The pad: a flat slab on the terrain layer (wheels, rounds and debris treat it as ground), with a 1 m grid on it.
+        /// the pad: flat slab on the terrain layer (wheels, rounds and debris treat it as ground) with a 1 m grid
         static GameObject MakePad(Vector3 centre, float half)
         {
             int layer = LayerMask.NameToLayer("Terrain");
@@ -197,8 +196,8 @@ namespace GHPCHitCam
         }
     }
 
-    /// Test ground: holds a helicopter still in the air with its rotors turning, and lets go (the game's own flight and
-    /// crash physics take over) once the unit is destroyed or loses its tail rotor.
+    /// test ground: holds a heli still in the air with rotors turning, lets go (game's own flight + crash physics take
+    /// over) once it's destroyed or loses the tail rotor
     internal class HoverHold : MonoBehaviour
     {
         Unit _u;

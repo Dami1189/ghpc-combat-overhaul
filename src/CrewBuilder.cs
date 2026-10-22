@@ -4,9 +4,8 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Builds the x-ray crew: one unscaled "body" object per body part (what the ragdoll moves),
-    /// with either the game's real crew model (baked in its pose at impact, split per body part)
-    /// or simple capsules as the visual.
+    /// builds the x-ray crew: one unscaled "body" object per body part (what the ragdoll moves), visual is either the
+    /// game's real crew model (baked in its pose at impact, split per body part) or plain capsules
     internal static class CrewBuilder
     {
         public static void Build(Ghost g, GhostSnapshot s, Transform parent)
@@ -28,19 +27,19 @@ namespace GHPCHitCam
                 }
 
                 var skinOutlines = new List<Renderer>();
-                // the real model, skinned to the ragdoll (bends at the joints); the per-part pieces only if that fails
+                // real model skinned to the ragdoll (bends at the joints), per-part pieces only if that fails
                 bool detailed = Settings.DetailedCrew.Value && ci.Visuals.Count > 0
                     && (SkinModel(g, ci, bodies, parent, renderers, skinOutlines) || SplitModel(ci, bodies, renderers));
                 for (int i = 0; i < ci.Parts.Count; i++)
                 {
                     var cp = ci.Parts[i];
-                    if (detailed) continue;   // the real model replaces the hit-zone capsules
+                    if (detailed) continue;   // real model replaces the hit-zone capsules
                     var r = Vis.Child(bodies[i].transform, "shape", cp.Shape.Mesh, Matrix4x4.Scale(cp.Shape.M.lossyScale), Vis.Solid).GetComponent<Renderer>();
                     renderers.Add(r);
                 }
                 foreach (var r in renderers) Vis.SetColor(r, Vis.CrewColor(ci.InitialStatus));
-                // War Thunder crew: white figures with a soft white rim (red when hit). The real model's pieces get an
-                // exact outline (vertices pushed out along normals); capsules get a slightly bigger shell.
+                // WT crew: white figures with a soft white rim (red when hit). real model pieces get an exact outline (verts pushed
+                // out along normals), capsules get a slightly bigger shell
                 var outlines = new List<Renderer>();
                 if (Vis.WtStyle)
                     foreach (var r in renderers)
@@ -67,7 +66,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Half-size and centre of a body part's box, in its body's (unscaled) space.
+        /// half-size and centre of a body part's box, in its body's (unscaled) space
         public static void BoxOf(CrewPartInfo cp, out Vector3 center, out Vector3 size)
         {
             var sc = cp.Shape.M.lossyScale;
@@ -77,16 +76,15 @@ namespace GHPCHitCam
             size = new Vector3(Mathf.Abs(size.x), Mathf.Abs(size.y), Mathf.Abs(size.z));
         }
 
-        /// The real crew model skinned to the ragdoll: each body part's object is a bone. A vertex follows the part it
-        /// lies in, and near a joint it blends smoothly (up to 4 bones) with the parts up to two joints away, so hips,
-        /// waist, knees, elbows and the neck bend like a character's skin instead of stretching or coming apart.
-        /// GHPC crew have no pelvis / belly part (Torso, UpperSpine, LowerSpine = lower back, Gut is internal) and the thighs
-        /// hang off LowerSpine, so belly (Torso) and groin (thigh) are two joints apart: blending only directly jointed
-        /// parts left every triangle across the waist stretched when the hips and the lower spine bent.
-        /// The skin's weights and triangles, worked out from the snapshot alone: arithmetic on copies of the crew
-        /// meshes, nothing of Unity's, so it runs on a worker thread right after the hit (Prepare) instead of ~70 ms per
-        /// crewman in the frame the hit cam opens. Made on the spot when nothing was prepared (a replay, the AAR, the
-        /// Armor Sim).
+        /// real crew model skinned to the ragdoll, each body part's object is a bone. a vertex follows the part it's in and
+        /// near a joint blends smoothly (up to 4 bones) with parts up to two joints away, so hips, waist, knees, elbows and
+        /// neck bend like skin instead of stretching or coming apart
+        /// GHPC crew have no pelvis/belly part (Torso, UpperSpine, LowerSpine = lower back, Gut is internal) and the thighs
+        /// hang off LowerSpine, so belly (Torso) and groin (thigh) are two joints apart: blending only direct joints left
+        /// every triangle across the waist stretched when hips and lower spine bent
+        /// weights and triangles come from the snapshot alone (math on copies of the crew meshes, nothing from unity), so it
+        /// runs on a worker thread right after the hit (Prepare) instead of ~70 ms per crewman in the frame the hit cam opens.
+        /// made on the spot when nothing was prepared (a replay, the AAR, the Armor Sim)
         internal sealed class SkinPlan
         {
             public int N, Root = -1;
@@ -107,11 +105,11 @@ namespace GHPCHitCam
 
         static readonly List<CrewInfo> _prepared = new List<CrewInfo>();
 
-        /// Right after the snapshot (the hit cam will show this hit): every crewman's skin starts on a worker thread.
+        /// right after the snapshot (hit cam will show this hit): every crewman's skin starts on a worker thread
         public static void Prepare(GhostSnapshot s)
         {
             if (s == null || !Settings.DetailedCrew.Value) return;
-            // plans nobody took (a hit merged into another, a hit cam switched off) are let go after a while
+            // plans nobody took (hit merged into another, hit cam switched off) get dropped after a while
             Sweep();
             foreach (var ci in s.Crew)
             {
@@ -124,8 +122,8 @@ namespace GHPCHitCam
             }
         }
 
-        /// A replay of an older hit (Replay last, the report): crew skins whose plans have gone are worked out again on
-        /// workers, the ones still there are kept alive; true once every one is ready (else ~250 ms in the frame it opens).
+        /// replay of an older hit (Replay last, the report): crew skins whose plans are gone get redone on workers, the ones
+        /// still there are kept alive; true once all are ready (else ~250 ms in the frame it opens)
         public static bool EnsurePrepared(GhostSnapshot s)
         {
             if (s == null || !Settings.DetailedCrew.Value) return true;
@@ -148,8 +146,8 @@ namespace GHPCHitCam
             return ready;
         }
 
-        /// Plans are kept a minute after they were made: a cook-off replay (up to ~30 s after the hit) or a replay of the
-        /// last hit builds the same crew again. After that they go (a few MB each).
+        /// plans are kept a minute after they're made: a cook-off replay (up to ~30 s after the hit) or a replay of the last
+        /// hit builds the same crew again. after that they go (a few MB each)
         static void Sweep()
         {
             for (int i = _prepared.Count - 1; i >= 0; i--)
@@ -160,7 +158,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// The crewman's prepared plan (waits for its thread if it is still at it), or null.
+        /// crewman's prepared plan (waits for its thread if it's still busy), or null
         static SkinPlan Take(CrewInfo ci)
         {
             Sweep();
@@ -171,7 +169,7 @@ namespace GHPCHitCam
             return p.Done ? p : null;
         }
 
-        /// The snapshot's numbers for the skin, copied on the main thread (meshes can only be read there).
+        /// snapshot numbers for the skin, copied on the main thread (meshes can only be read there)
         static SkinPlan Gather(CrewInfo ci)
         {
             int n = ci.Parts.Count;
@@ -183,7 +181,7 @@ namespace GHPCHitCam
                 p.Use[i] = !cp.Internal;
                 p.Parent[i] = cp.Parent;
                 if (p.Root < 0 && p.Use[i] && (cp.Part == BodyPart.Torso || cp.Part == BodyPart.UpperSpine)) p.Root = i;
-                p.Pos[i] = m.GetColumn(3);          // as the body objects are placed (CrewBuilder.Build)
+                p.Pos[i] = m.GetColumn(3);          // same as the body objects get placed (CrewBuilder.Build)
                 p.RotInv[i] = Quaternion.Inverse(m.rotation);
                 BoxOf(cp, out p.Cen[i], out var size);
                 p.Half[i] = size * 0.5f;
@@ -209,12 +207,12 @@ namespace GHPCHitCam
             return p;
         }
 
-        /// The real crew model skinned to the ragdoll: each body part's object is a bone. A vertex follows the part it
-        /// lies in, and near a joint it blends smoothly (up to 4 bones) with the parts up to two joints away, so hips,
-        /// waist, knees, elbows and the neck bend like a character's skin instead of stretching or coming apart.
-        /// GHPC crew have no pelvis / belly part (Torso, UpperSpine, LowerSpine = lower back, Gut is internal) and the thighs
-        /// hang off LowerSpine, so belly (Torso) and groin (thigh) are two joints apart: blending only directly jointed
-        /// parts left every triangle across the waist stretched when the hips and the lower spine bent.
+        /// real crew model skinned to the ragdoll, each body part's object is a bone. a vertex follows the part it's in and
+        /// near a joint blends smoothly (up to 4 bones) with parts up to two joints away, so hips, waist, knees, elbows and
+        /// neck bend like skin instead of stretching or coming apart
+        /// GHPC crew have no pelvis/belly part (Torso, UpperSpine, LowerSpine = lower back, Gut is internal) and the thighs
+        /// hang off LowerSpine, so belly (Torso) and groin (thigh) are two joints apart: blending only direct joints left
+        /// every triangle across the waist stretched when hips and lower spine bent
         static void Compute(SkinPlan plan)
         {
             int n = plan.N, root = plan.Root;
@@ -225,7 +223,7 @@ namespace GHPCHitCam
                 Vector3 d = new Vector3(Mathf.Max(Mathf.Abs(q.x) - half[i].x, 0f), Mathf.Max(Mathf.Abs(q.y) - half[i].y, 0f), Mathf.Max(Mathf.Abs(q.z) - half[i].z, 0f));
                 return d.sqrMagnitude;
             }
-            // skeleton distance in joints (Floyd-Warshall, n <= ~20), and each joint's pivot as the ragdoll places it:
+            // skeleton distance in joints (Floyd-Warshall, n <= ~20) and each joint's pivot where the ragdoll puts it:
             // midway between the facing surfaces of the two boxes (GhostPhysics.BuildRagdoll)
             var hop = new int[n, n];
             for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) hop[i, j] = i == j ? 0 : 99;
@@ -268,12 +266,12 @@ namespace GHPCHitCam
             var bw = new List<BoneWeight>();
             var tris = new List<int>();
             const float Sigma = 0.05f;          // how fast a neighbour's weight falls off with its extra distance
-            const float Reach = 0.16f;          // blending happens only this close to the joint pivot between the parts
+            const float Reach = 0.16f;          // blending only this close to the joint pivot between the parts
             var dd = new float[n];
             var bi = new int[4];
             var bwt = new float[4];
-            // the primary part plus every part within two joints that is nearly as close AND whose joint with it is near
-            // this point (so a flank doesn't follow an arm resting on it), weighted by a smooth falloff, heaviest first
+            // primary part + every part within two joints that's nearly as close AND whose joint with it is near this point
+            // (so a flank doesn't follow an arm resting on it), smooth falloff weights, heaviest first
             BoneWeight Weigh(Vector3 pt, int b1)
             {
                 for (int i = 0; i < n; i++) dd[i] = use[i] ? Dist(i, pt) : float.MaxValue;
@@ -382,7 +380,7 @@ namespace GHPCHitCam
                 plan = Gather(ci);
                 if (plan == null) return false;
                 Run(plan);
-                if (plan.Ok) { ci.Plan = plan; _prepared.Add(ci); }   // the next build of this hit (a replay) reuses it
+                if (plan.Ok) { ci.Plan = plan; _prepared.Add(ci); }   // next build of this hit (a replay) reuses it
             }
             if (plan.Error != null) HitCamMod.Log.Warning("Crew skin " + ci.Label + ": " + plan.Error);
             foreach (var note in plan.Notes) HitCamMod.Log.Msg(note);
@@ -429,7 +427,7 @@ namespace GHPCHitCam
             renderers.Add(Skin(go, Make(verts, ci.Label + " skinned model"), Vis.Solid));
             if (Vis.WtStyle)
             {
-                // the soft white rim: the same skin pushed out along the normals, back faces only
+                // soft white rim: same skin pushed out along the normals, back faces only
                 var infl = new List<Vector3>(verts.Count);
                 for (int k = 0; k < verts.Count; k++) infl.Add(verts[k] + norms[k] * 0.011f);
                 var glow = new GameObject("glow");
@@ -442,16 +440,16 @@ namespace GHPCHitCam
             return true;
         }
 
-        /// Nearest-box skinning glues a patch of one part to another part it merely touches: in the seated pose the hands
-        /// rest on the thighs, so part of a hand followed the leg and tore out (x70 stretched edges) when the body went limp.
-        /// Here every patch of a part that is cut off from that part's main surface but sits inside another part's surface
-        /// (shares edges with it) goes to that neighbour; so does a patch whose edges border mostly a part it isn't jointed to
-        /// (a thigh patch the hand box claimed, bigger than the small real hand), unless it is big next to that part's own
-        /// surface. Free-floating pieces (a helmet, a pouch) keep their nearest part.
+        /// nearest-box skinning glues a patch of one part to another part it just touches: seated, the hands rest on the
+        /// thighs, so part of a hand followed the leg and tore out (x70 stretched edges) when the body went limp
+        /// so every patch of a part that's cut off from that part's main surface but sits inside another part's surface (shares
+        /// edges with it) goes to that neighbour; same for a patch whose edges border mostly a part it isn't jointed to (a thigh
+        /// patch the hand box claimed, bigger than the small real hand), unless it's big next to that part's own surface
+        /// free-floating pieces (helmet, pouch) keep their nearest part
         static void FixIslands(List<Vector3> verts, List<int> tris, List<int> prim, List<BoneWeight> bw, System.Func<Vector3, int, BoneWeight> weigh, int parts, int[,] hop, List<string> notes)
         {
             int nv = verts.Count;
-            // weld the model's split vertices (UV seams) by position, so connectivity follows the surface
+            // weld the model's split verts (UV seams) by position so connectivity follows the surface
             var weld = new int[nv];
             var key = new Dictionary<long, int>();
             int nw = 0;
@@ -478,7 +476,7 @@ namespace GHPCHitCam
             var moved = 0;
             for (int pass = 0; pass < 4; pass++)
             {
-                // components of same-part vertices
+                // components of same-part verts
                 for (int i = 0; i < nw; i++) comp[i] = -1;
                 var size = new List<int>();
                 var compPart = new List<int>();
@@ -534,9 +532,9 @@ namespace GHPCHitCam
                         else if (e.Value > farN) { farN = e.Value; far = e.Key; }
                     }
                     int to = -1;
-                    if (main[own] != c) to = best;                       // a stray patch: to the part it sits in
+                    if (main[own] != c) to = best;                       // stray patch: goes to the part it sits in
                     else if (far >= 0 && farN > nearN && main[far] >= 0 && size[c] < 0.35f * size[main[far]])
-                        to = far;                                        // the part's "main" patch really belongs to a part it isn't jointed to
+                        to = far;                                        // part's "main" patch really belongs to a part it isn't jointed to
                     if (to >= 0 && to != own) { target[c] = to; changed++; }
                 }
                 if (changed == 0) break;
@@ -553,12 +551,12 @@ namespace GHPCHitCam
             if (moved > 0) notes.Add($"Crew skin: {moved} of {nv} vertices moved to the part whose surface they belong to");
         }
 
-        /// A seam between two parts that lies far from their joint tears when the body goes limp: in the seated pose the
-        /// belly (Torso) meets the thighs at the groin, but the thighs hang off LowerSpine with the hip joint at the back,
-        /// so the belly/thigh seam got no blend and one row of triangles stretched x60-70 when a leg swung. Here every seam's
-        /// weights are spread over a band of the connected surface (diffused a few rings either side), so the skin there
-        /// stretches a little over several centimetres instead. Only connected skin blends: a hand resting on a thigh is a
-        /// separate surface and keeps its own weights; vertices away from any seam are untouched.
+        /// a seam between two parts far from their joint tears when the body goes limp: seated, the belly (Torso) meets the
+        /// thighs at the groin, but the thighs hang off LowerSpine with the hip joint at the back, so the belly/thigh seam got
+        /// no blend and one row of triangles stretched x60-70 when a leg swung. so every seam's weights get spread over a band
+        /// of connected surface (diffused a few rings either side) and the skin stretches a little over several cm instead
+        /// only connected skin blends: a hand resting on a thigh is a separate surface and keeps its weights, verts away from
+        /// any seam are untouched
         static void SmoothSeams(List<Vector3> verts, List<int> tris, List<BoneWeight> bw, int parts, List<string> notes)
         {
             const int Band = 10, Passes = 24;
@@ -598,7 +596,7 @@ namespace GHPCHitCam
                     if (!adj[a].Contains(b)) adj[a].Add(b);
                     if (!adj[b].Contains(a)) adj[b].Add(a);
                 }
-            // the main part of each vertex, the seams (a neighbour's main part differs), and the band around them
+            // main part of each vertex, the seams (a neighbour's main part differs), and the band around them
             var label = new int[nw];
             for (int x = 0; x < nw; x++)
             {
@@ -624,7 +622,7 @@ namespace GHPCHitCam
             var idx = new int[zone];
             int z = 0;
             for (int x = 0; x < nw; x++) if (ring[x] <= Band) idx[z++] = x;
-            // diffuse inside the band; the band's outer rim keeps its weights (it pins the blend to the parts)
+            // diffuse inside the band; band's outer rim keeps its weights (pins the blend to the parts)
             var w2 = (float[])w.Clone();
             for (int pass = 0; pass < Passes; pass++)
             {
@@ -678,8 +676,8 @@ namespace GHPCHitCam
             notes.Add($"Crew skin: seams spread over {zone} of {nw} vertices ({changed} reweighted)");
         }
 
-        /// Assign every triangle of the real crew model to the nearest body part, so the detailed
-        /// figure can go limp piece by piece with the ragdoll.
+        /// put every triangle of the real crew model on the nearest body part so the detailed figure can go limp piece by
+        /// piece with the ragdoll
         static bool SplitModel(CrewInfo ci, List<GameObject> bodies, List<Renderer> renderers)
         {
             int n = ci.Parts.Count;

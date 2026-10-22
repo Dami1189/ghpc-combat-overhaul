@@ -6,13 +6,13 @@ using UnityEngine.SceneManagement;
 
 namespace GHPCHitCam
 {
-    /// A private physics world for the x-ray copy: crew ragdolls and torn plate fragments.
-    /// It lives in its own physics scene (nothing can touch the real game's physics) and it is stepped
-    /// with the hit-cam's own clock, so bodies move in the same slow motion as the round.
+    /// private physics world for the x-ray copy: crew ragdolls and torn plate fragments.
+    /// own physics scene (nothing can touch the real game's physics), stepped with the hit cam's own clock so bodies
+    /// move in the same slow motion as the round
     ///
-    /// Forces are physical, not tuned shoves:
-    ///  - fragments: momentum p = m*v, mass estimated from the fragment's remaining penetration, speed from the game's sim;
-    ///    spall embeds (all momentum transfers), the main rod / HEAT jet pass through (small fraction)
+    /// forces are physical, not tuned shoves:
+    ///  - fragments: momentum p = m*v, mass estimated from the fragment's remaining pen, speed from the game's sim;
+    ///    spall embeds (all momentum transfers), main rod / HEAT jet pass through (small fraction)
     ///  - blasts: positive-phase impulse per area from TNT mass and scaled distance (Kingery-style fit),
     ///    x3 inside a closed hull for reflections, times the part's presented area
     internal class GhostPhysics
@@ -63,17 +63,17 @@ namespace GHPCHitCam
         readonly List<Rigidbody> _debris = new List<Rigidbody>();
         readonly List<(Renderer r, float born)> _hot = new List<(Renderer, float)>();
         bool _running;
-        float _acc, _clock, _fineUntil, _nextLog;     // fine steps until this physics time (a hit or a blast just landed)
+        float _acc, _clock, _fineUntil, _nextLog;     // fine steps until this physics time (a hit or blast just landed)
         const float FixedStep = 1f / 600f;
-        // once nothing is flying fast (fragments and blasts are done; ragdolls settling, a crewman thrashing in a fire) the
-        // same look comes out of a third of the steps
+        // once nothing flies fast anymore (fragments and blasts done, ragdolls settling, crewman thrashing in a fire) a
+        // third of the steps looks the same
         const float CalmStep = 1f / 200f, FastSpeed = 8f;
         public int MeshColliders;
         public Bounds Inner;
         readonly List<string> _log = new List<string>();
         float _maxSpeed;
 
-        /// Self-test diagnostics: where every body ended up and what pushed it.
+        /// self-test diagnostics: where every body ended up and what pushed it
         public string Report()
         {
             var sb = new System.Text.StringBuilder();
@@ -102,9 +102,9 @@ namespace GHPCHitCam
             if (AutoTest.Opt("probe", true)) Probe();
         }
 
-        /// Right after the snapshot (a hit the hit cam will show): PhysX cooks the readable hull meshes for their
-        /// colliders on a worker thread (Physics.BakeMesh may run on any thread), so adding the colliders when the hit
-        /// cam opens finds them cooked instead of cooking each one in that frame.
+        /// right after the snapshot (a hit the hit cam will show): PhysX cooks the readable hull meshes for their colliders
+        /// on a worker thread (Physics.BakeMesh can run on any thread), so when the hit cam opens the colliders are already
+        /// cooked instead of cooking each one in that frame
         public static void Prebake(GhostSnapshot s)
         {
             if (s == null || !Settings.XrayPhysics.Value) return;
@@ -128,7 +128,7 @@ namespace GHPCHitCam
                 bool hit = _ps.Raycast(p, Vector3.down, out var h, 6f, ~0);
                 sb.Append($"{d.Crew.Label} torso scene={torso.Rb.gameObject.scene.name} down-> {(hit ? h.collider.name + " @" + h.distance.ToString("0.00") : "nothing")}; ");
             }
-            // drop test: a plain box and one ragdoll, 1 s of simulation, do they stay on the floor?
+            // drop test: a plain box and one ragdoll, 1 s of sim, do they stay on the floor?
             var torso0 = _dolls.Values.FirstOrDefault()?.Bodies.OrderByDescending(b => b.Rb.mass).First();
             if (torso0 != null)
             {
@@ -143,7 +143,7 @@ namespace GHPCHitCam
                 for (int i = 0; i < 120; i++) _ps.Simulate(1f / 120f);
                 sb.Append($"| drop box: y {y0 - Vis.Origin.y:0.00} -> {trb.position.y - Vis.Origin.y:0.00}");
                 Object.DestroyImmediate(test);
-                // the same on a plain floor beside the ghost (the game's physics broadphase ends ~5 km from the map's origin: past it nothing collides)
+                // same on a plain floor next to the ghost (game's physics broadphase ends ~5 km from map origin, past that nothing collides)
                 foreach (var at in new[] { Vis.Origin + new Vector3(0f, 30f, 0f) })
                 {
                     var floor = new GameObject("probe floor");
@@ -167,7 +167,7 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg("Physics probe: " + sb);
         }
 
-        /// The hull itself (where the mesh is readable), seats/racks/engine as boxes, and walls hugging the interior.
+        /// the hull itself (where the mesh is readable), seats/racks/engine as boxes, and walls hugging the interior
         void BuildStatic(GhostSnapshot snap)
         {
             var root = new GameObject("colliders");
@@ -182,7 +182,7 @@ namespace GHPCHitCam
                 catch { }
             }
 
-            // the game's own armour colliders: the real walls, floor and roof (most drawn hull meshes aren't readable)
+            // game's own armour colliders: the real walls, floor and roof (most drawn hull meshes aren't readable)
             foreach (var (mesh, m, convex) in snap.ArmourMeshes)
             {
                 try
@@ -242,14 +242,13 @@ namespace GHPCHitCam
 
         public bool HasHull => _hull.Count > 0;
 
-        /// Distance along a ray (ghost-local) to the vehicle's real outer surface, if there is one within maxDist.
-        /// Whether a crewman may go limp: only the ones the game took out (critical / killed). The rest stay in their seats,
-        /// whatever blast or fragment passed them: they are alive and holding on.
+        /// whether a crewman may go limp: only the ones the game took out (critical / killed). the rest stay in their seats
+        /// whatever blast or fragment passed them, they're alive and holding on
         public System.Func<CrewInfo, bool> MayGoLimp;
 
         public bool RaycastHull(Vector3 originL, Vector3 dirL, float maxDist, out float dist) => RaycastHull(originL, dirL, maxDist, out dist, out _);
 
-        /// Same, with the surface normal at the hit (ghost-local).
+        /// distance along a ray (ghost-local) to the vehicle's real outer surface within maxDist, plus the normal at the hit
         public bool RaycastHull(Vector3 originL, Vector3 dirL, float maxDist, out float dist, out Vector3 normalL)
         {
             normalL = Vector3.zero;
@@ -268,15 +267,16 @@ namespace GHPCHitCam
         Transform _staticRoot;
         public int ArmourPieces;
 
-        /// An empty child placed by a target-local matrix (position, rotation, scale).
+        /// empty child placed by a target-local matrix (position, rotation, scale)
         static GameObject Piece(Transform parent, string name, Matrix4x4 m)
         {
             var go = new GameObject(name);
             go.layer = Vis.Layer;
             go.transform.SetParent(parent, false);
-            go.transform.localPosition = m.GetColumn(3);
-            go.transform.localRotation = m.rotation;
-            go.transform.localScale = m.lossyScale;
+            Vis.ToTrs(m, out var pos, out var rot, out var scale);   // keeps a mirror (m.rotation of a mirrored one is junk)
+            go.transform.localPosition = pos;
+            go.transform.localRotation = rot;
+            go.transform.localScale = scale;
             return go;
         }
 
@@ -292,8 +292,8 @@ namespace GHPCHitCam
             _statics.Add(bc);
         }
 
-        /// A seat under every seated crew member's pelvis, so a body that goes limp sags into its seat
-        /// instead of dropping through it (the seat itself is not a hit zone in GHPC, so it has no collider).
+        /// a seat under every seated crewman's pelvis so a body going limp sags into it instead of dropping through
+        /// (seats aren't a hit zone in GHPC so they have no collider)
         void AddSeats()
         {
             if (_staticRoot == null) return;
@@ -308,8 +308,8 @@ namespace GHPCHitCam
             }
         }
 
-        /// Anything a body starts inside of (its own seat cushion, the turret basket, a neighbouring limb) must not
-        /// explode it apart on the first step: those pairs ignore each other; everything else collides.
+        /// anything a body starts inside of (its seat cushion, turret basket, a neighbouring limb) mustn't blow it apart on
+        /// the first step: those pairs ignore each other, everything else collides
         void ResolveStartOverlaps()
         {
             int ignored = 0;
@@ -411,7 +411,7 @@ namespace GHPCHitCam
                 j.anchor = gos[i].transform.InverseTransformPoint((a + b2) * 0.5f);
                 j.xMotion = j.yMotion = j.zMotion = ConfigurableJointMotion.Locked;
                 j.angularXMotion = j.angularYMotion = j.angularZMotion = ConfigurableJointMotion.Limited;
-                // the spine and neck bend far less than a hip or a shoulder (and the skin across the waist stays sane)
+                // spine and neck bend way less than a hip or shoulder (and the skin across the waist stays sane)
                 bool spine = p.Part == BodyPart.UpperSpine || p.Part == BodyPart.LowerSpine || p.Part == BodyPart.Neck;
                 j.lowAngularXLimit = new SoftJointLimit { limit = spine ? -20f : -40f };
                 j.highAngularXLimit = new SoftJointLimit { limit = spine ? 20f : 40f };
@@ -421,12 +421,12 @@ namespace GHPCHitCam
                 j.projectionDistance = 0.01f;
                 j.projectionAngle = 8f;
                 j.enablePreprocessing = false;
-                // a little joint friction so a dead body settles instead of jittering
+                // bit of joint friction so a dead body settles instead of jittering
                 j.angularXDrive = j.angularYZDrive = new JointDrive { positionSpring = 0f, positionDamper = 2f, maximumForce = float.MaxValue };
                 // jointed neighbours never collide (they overlap at the joint)
                 Physics.IgnoreCollision(bodies[i].Box, bodies[p.Parent].Box);
             }
-            // self-collision: everything else in the body collides (arms on the chest, legs on each other),
+            // self-collision: everything else in the body collides (arms on chest, legs on each other),
             // except pairs that already overlap in the sitting pose
             for (int x = 0; x < doll.Bodies.Count; x++)
                 for (int y = x + 1; y < doll.Bodies.Count; y++)
@@ -447,7 +447,7 @@ namespace GHPCHitCam
         public bool Panicking(CrewInfo ci) => _dolls.TryGetValue(ci, out var d) && d.Panic;
         public bool Panicked(CrewInfo ci) => _dolls.TryGetValue(ci, out var d) && d.PanicStart != null;
 
-        /// Where a crewman's torso is now (ghost-local), if he has a ragdoll.
+        /// where a crewman's torso is now (ghost-local), if he has a ragdoll
         public bool TorsoL(CrewInfo ci, out Vector3 l)
         {
             l = Vector3.zero;
@@ -458,9 +458,9 @@ namespace GHPCHitCam
         }
         public bool AnyPanic { get; private set; }
 
-        /// A crewman alive in a burning compartment thrashes in his seat: his pelvis stays where it sits, every joint is
-        /// driven toward a new random pose every 0.1-0.3 s within its normal range (arms flung about, legs kicking, the
-        /// torso twisting, the head tossing), frantic at first and weaker as the burns and smoke take him.
+        /// crewman alive in a burning compartment thrashes in his seat: pelvis stays put, every joint gets driven toward a
+        /// new random pose every 0.1-0.3 s within its normal range (arms flung about, legs kicking, torso twisting, head
+        /// tossing), frantic at first and weaker as burns and smoke take him
         public void StartPanic(CrewInfo ci, int seed)
         {
             if (!_dolls.TryGetValue(ci, out var d) || d.Panic || d.Active || d.Bodies.Count == 0) return;
@@ -482,7 +482,7 @@ namespace GHPCHitCam
             _running = true;
         }
 
-        /// He died (or passed out): the drives let go and he slumps where he is.
+        /// he died (or passed out): drives let go and he slumps where he is
         public void EndPanic(CrewInfo ci)
         {
             if (!_dolls.TryGetValue(ci, out var d) || !d.Panic) return;
@@ -531,7 +531,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// A fragment / round hit on a crew member: impulse (N*s, target-local vector) at a target-local point.
+        /// fragment / round hit on a crewman: impulse (N*s, target-local vector) at a target-local point
         public void Impulse(CrewInfo ci, Vector3 pointL, Vector3 impulseL)
         {
             if (impulseL.sqrMagnitude < 1e-4f) return;
@@ -545,7 +545,7 @@ namespace GHPCHitCam
             _fineUntil = Mathf.Max(_fineUntil, _clock + 0.3f);
         }
 
-        /// Positive-phase blast impulse on everything in range.
+        /// positive-phase blast impulse on everything in range
         public void Blast(Vector3 centerL, float tntKg, bool confined)
         {
             if (tntKg <= 0f) return;
@@ -554,7 +554,7 @@ namespace GHPCHitCam
             float reflect = confined ? 2f : 1f;
             foreach (var d in _dolls.Values)
             {
-                if (MayGoLimp != null && !MayGoLimp(d.Crew)) continue;   // the game didn't hurt him: he stays at his station
+                if (MayGoLimp != null && !MayGoLimp(d.Crew)) continue;   // game didn't hurt him: he stays at his station
                 bool any = false;
                 foreach (var b in d.Bodies)
                 {
@@ -563,9 +563,9 @@ namespace GHPCHitCam
                 }
                 if (!any) continue;
                 Activate(d);
-                // the impulse lands on each part's presented area, but the body is held together: a hand alone would take
-                // ~8x the torso's speed (and tear the joints apart). Each part keeps 30 % of its own share and moves with
-                // the body's mean for the rest; no part faster than a body can go.
+                // impulse lands on each part's presented area but the body is held together: a hand alone would get ~8x the
+                // torso's speed (and tear the joints apart). each part keeps 30 % of its own share and moves with the body's mean
+                // for the rest, no part faster than a body can go
                 float tot = 0f, mass = 0f;
                 Vector3 p = Vector3.zero;
                 var own = new Vector3[d.Bodies.Count];
@@ -597,14 +597,14 @@ namespace GHPCHitCam
             _running = true;
         }
 
-        /// Scaled positive-phase impulse of a free-air TNT burst, Pa*s (fit to Kingery-Bulmash, Z = R / W^(1/3)).
+        /// scaled positive-phase impulse of a free-air TNT burst, Pa*s (fit to Kingery-Bulmash, Z = R / W^(1/3))
         public static float BlastImpulse(float rangeM, float w3)
         {
             float z = Mathf.Max(rangeM, 0.15f) / w3;
             return 200f * w3 / Mathf.Pow(Mathf.Max(z, 0.3f), 1.2f);
         }
 
-        /// Torn plate fragments flying from a hole into the vehicle (speed in m/s, real physics speed).
+        /// torn plate fragments flying from a hole into the vehicle (speed in m/s, real physics speed)
         public void SpawnFragments(Vector3 pointL, Vector3 intoL, float size, int count, float speed, int seed)
         {
             var rnd = new System.Random(seed);
@@ -644,7 +644,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Advance the private world by dt seconds of *simulation* time (the caller maps the slow motion).
+        /// advance the private world by dt seconds of *sim* time (caller maps the slow motion)
         public void Step(float dt)
         {
             if (!Ensure()) return;
@@ -671,7 +671,7 @@ namespace GHPCHitCam
             var watch = System.Diagnostics.Stopwatch.StartNew();
             while (_acc >= step && n++ < 24)
             {
-                if (watch.ElapsedMilliseconds > 12) { _acc = 0f; break; }   // frame budget: slow the x-ray physics down rather than stall the game
+                if (watch.ElapsedMilliseconds > 12) { _acc = 0f; break; }   // frame budget: slow the x-ray physics down instead of stalling the game
                 _ps.Simulate(step);
                 _acc -= step;
                 _clock += step;

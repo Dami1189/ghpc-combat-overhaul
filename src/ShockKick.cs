@@ -4,18 +4,18 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// The blast front reaching the camera: a short kick of the view, sized by the front's positive-phase impulse (what
-    /// shoves a body or a vehicle for a pulse this short), arriving with the sound (BlastSound starts it). Below 0.4 Pa*s
-    /// nothing: a 0.75 kg shell stops kicking at ~300 m, a 20 kg rack at ~2 km. Strength log2(impulse / threshold):
-    /// 0.18 deg a step in a 60 deg view, scaled down with the field of view (to a tenth in a narrow sight, so a gunner
-    /// sees a light jolt, not a lost aim), plus a few cm of push in wide views. A shove away from the blast (rocking about
-    /// the horizontal axis across its direction) that peaks after twice the front's positive phase (22-60 ms: a big charge
-    /// shoves longer), then a ring that dies in ~0.5 s, lower for bigger charges. The first frame after the peak always
-    /// shows it in full (it would fall between two slow frames).
-    /// Applied to the game cameras' view matrices just before they render and taken off again at the end of the frame. The
-    /// camera transforms are never touched: the game's own camera code turns the camera incrementally, and its tree and
-    /// grass renderer (GPU instancing, culled in Camera.onPreCull) keeps the camera rotation it culled for and checks it
-    /// against the transform: a kicked transform failed that check every frame and the trees vanished for the whole kick.
+    /// blast front reaching the camera: short view kick sized by the front's positive-phase impulse (that's what shoves
+    /// stuff for a pulse this short), starts with the sound (BlastSound). under 0.4 Pa*s nothing: 0.75 kg shell stops
+    /// kicking at ~300 m, 20 kg rack at ~2 km
+    /// strength log2(impulse / threshold): 0.18 deg per step in a 60 deg view, less with narrower FOV (a tenth in a
+    /// sight, so the gunner gets a jolt and keeps his aim), plus a few cm of push in wide views
+    /// shove away from the blast (rocking about the horizontal axis across it), peak after 2x the positive phase
+    /// (22-60 ms, big charge shoves longer), then a ring dying in ~0.5 s, lower for bigger charges.
+    /// first frame after the peak always shows it in full (else it falls between two slow frames)
+    /// goes on the game cameras' view matrices right before render, comes off at end of frame. transforms stay untouched:
+    /// game camera code turns them incrementally, and the tree/grass renderer (GPU instancing, culled in Camera.onPreCull)
+    /// checks the transform against the rotation it culled for, so a kicked transform failed that every frame and the
+    /// trees vanished for the whole kick
     internal static class ShockKick
     {
         const float Threshold = 0.4f;     // Pa*s
@@ -24,7 +24,7 @@ namespace GHPCHitCam
         static readonly List<Kick> _kicks = new List<Kick>();
         static readonly List<Camera> _kicked = new List<Camera>();
         static bool _installed;
-        // self-test kicktransform=true: the old way (the camera's transform moved), to show what it did to the trees
+        // self-test kicktransform=true: old way (moves the camera transform), to show what it did to the trees
         static Transform _oldT;
         static Vector3 _oldLp;
         static Quaternion _oldLr;
@@ -64,7 +64,7 @@ namespace GHPCHitCam
                 T0 = Time.time, Deg = 0.18f * s, Push = 0.025f * s, Freq = Mathf.Clamp(13f / Mathf.Pow(w3, 0.35f), 5f, 14f),
                 Away = away, Roll = (Random.value < 0.5f ? -1f : 1f) * 0.35f, Rise = Mathf.Clamp(2f * positiveSeconds, 0.022f, 0.06f),
             };
-            // the ring adds onto the shove: scale the curve so its peak is the kick's size
+            // ring adds onto the shove: scale the curve so its peak is the kick size
             float top = 0f;
             for (float tau = 0f; tau < 0.9f; tau += 0.001f) top = Mathf.Max(top, Mathf.Abs(Shape(tau, k.Freq, k.Rise)));
             k.Norm = top > 0.01f ? 1f / top : 1f;
@@ -104,8 +104,7 @@ namespace GHPCHitCam
                 }
                 if (tau < 0f) continue;
                 float a = Shape(tau, k.Freq, k.Rise) * k.Norm;
-                // the shove's peak lasts a few ms: on slow frames it falls between two of them, so the first frame after it
-                // shows it in full, then the curve goes on
+                // peak only lasts a few ms and slips between slow frames: first frame after it shows it in full, then the curve goes on
                 if (!k.PeakShown && tau >= k.Rise * 0.6f) { k.PeakShown = true; a = Mathf.Max(a, 1f); }
                 float deg = k.Deg * view * a;
                 Vector3 axis = Vector3.Cross(Vector3.up, k.Away);
@@ -124,7 +123,7 @@ namespace GHPCHitCam
                 t.position += push;
                 return;
             }
-            // the kick as a world-space move of the camera rig: turn about the main camera, then push
+            // kick as a world-space move of the camera rig: turn about the main camera, then push
             Matrix4x4 kick = Matrix4x4.Translate(t.position + push) * Matrix4x4.Rotate(q) * Matrix4x4.Translate(-t.position);
             var flip = Matrix4x4.Scale(new Vector3(1f, 1f, -1f));   // Unity's view space looks down -z
             foreach (var cam in Camera.allCameras)
@@ -135,7 +134,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// A shove peaking after `rise`, then a ring dying in ~0.5 s.
+        /// shove peaking after `rise`, then a ring dying in ~0.5 s
         static float Shape(float tau, float freq, float rise) =>
             tau / rise * Mathf.Exp(1f - tau / rise) + 0.4f * Mathf.Sin(2f * Mathf.PI * freq * tau) * Mathf.Exp(-tau / 0.16f) * (1f - Mathf.Exp(-tau / 0.012f));
 
@@ -148,7 +147,7 @@ namespace GHPCHitCam
         }
     }
 
-    /// Takes the kick off the camera once the frame is drawn.
+    /// takes the kick off the camera once the frame is drawn
     internal class KickRestore : MonoBehaviour
     {
         IEnumerator Start()

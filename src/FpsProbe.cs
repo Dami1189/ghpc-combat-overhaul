@@ -6,14 +6,14 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Self-test fps:<lab spec>: where the frames go when you hit something. Frame time is measured over a few seconds
-    /// before the shot, while the hit cam plays and after it, each time also with one suspect switched off for a moment
-    /// (the hit cam's own camera, every particle system, the extra lights, the mod's world effects), so the difference
-    /// says what that part costs on this PC, GPU included (the profiler only sees the mod's CPU time).
+    /// self-test fps:<lab spec>: where the frames go when you hit something. frame time over a few s before the shot,
+    /// while the hit cam plays and after, each time also with one suspect off for a moment (hit cam camera, every particle
+    /// system, extra lights, mod world effects), so the diff is what that part costs on this PC, GPU included (profiler
+    /// only sees the mod's CPU time)
     internal static class FpsProbe
     {
         static readonly FrameTiming[] _ft = new FrameTiming[1];
-        static float _lastAvg;   // the last Measure's average frame, ms
+        static float _lastAvg;   // last Measure's average frame, ms
 
         internal static IEnumerator Measure(string phase, float seconds)
         {
@@ -50,7 +50,7 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg($"FPS probe [{phase}]: {dts.Count} frames, average {avg:0.0} ms = {1000f / avg:0} fps, 95% under {p95:0.0} ms, mod CPU {mod / dts.Count:0.0} ms{timing}; per frame: {string.Join(", ", top)}");
         }
 
-        /// Everything drawn by one kind of thing, off for a moment and back as it was.
+        /// everything drawn by one kind of thing, off for a moment then back as it was
         class Hidden
         {
             readonly List<Renderer> _r = new List<Renderer>();
@@ -72,10 +72,10 @@ namespace GHPCHitCam
             h.Restore();
         }
 
-        /// fpsrun:<label>:<lab spec>: one shot, the numbers a player would see. Frames before it (no hit cam), the worst
-        /// frame in the second after it (the hit itself), and the hit cam's whole playback.
-        /// gamefx:off - the game's own particle effects (explosions, fire, smoke, dust) hidden through a whole fpsrun, so what
-        /// is left of the drop is the mod's. The x-ray copy's effects (its own layer) stay.
+        /// fpsrun:<label>:<lab spec>: one shot, numbers a player would see: frames before it (no hit cam), worst frame in the
+        /// second after (the hit itself), and the hit cam's whole playback
+        /// gamefx:off - game's own particle fx (explosions, fire, smoke, dust) hidden for the whole fpsrun so what's left of
+        /// the drop is the mod's. x-ray copy's fx (own layer) stay
         public static bool HideGameFx;
         static readonly HashSet<Renderer> _gameFx = new HashSet<Renderer>();
 
@@ -91,7 +91,7 @@ namespace GHPCHitCam
             _gameFx.Clear();
         }
 
-        /// Your own crew's AI gunner would start shooting the targets (more hit cams in the middle of a measurement).
+        /// your own crew's AI gunner would start shooting the targets (more hit cams mid measurement)
         static void StopOwnAi()
         {
             try
@@ -103,8 +103,8 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("FPS probe: own AI: " + e.Message); }
         }
 
-        /// replay:<label>: the last hit played again with the settings as they are now. The same hit every time and no
-        /// new explosions in the world, so the difference between two of these is the settings' own cost.
+        /// replay:<label>: last hit played again with the current settings. same hit every time and no new explosions in the
+        /// world, so the diff between two of these is just the settings' cost
         public static IEnumerator Replay(string[] spec)
         {
             string label = spec.Length > 1 ? spec[1] : "?";
@@ -150,7 +150,7 @@ namespace GHPCHitCam
             while (Time.realtimeSinceStartup - fired < 60f)
             {
                 yield return null;
-                if (HideGameFx && ++frame % 5 == 0) HideFx();   // the same scan every 5th frame before and during: it cancels out
+                if (HideGameFx && ++frame % 5 == 0) HideFx();   // same scan every 5th frame before and during, so it cancels out
                 float dt = Time.unscaledDeltaTime * 1000f;
                 if (Time.realtimeSinceStartup - fired < 1f) worstHit = Mathf.Max(worstHit, dt);
                 var cur = HitCamPlayer.Current;
@@ -166,8 +166,8 @@ namespace GHPCHitCam
             yield return new WaitForSecondsRealtime(1f);
         }
 
-        /// fpsburst:<label>:<rounds>:<seconds between>:<lab spec>: an autocannon burst at a range target, and the frames
-        /// from its first round until the hit cam is done with it (mod CPU and its biggest parts).
+        /// fpsburst:<label>:<rounds>:<seconds between>:<lab spec>: autocannon burst at a range target, frames from the first
+        /// round until the hit cam is done with it (mod CPU and its biggest parts)
         public static IEnumerator Burst(string[] spec)
         {
             StopOwnAi();
@@ -209,8 +209,8 @@ namespace GHPCHitCam
             yield return new WaitForSecondsRealtime(1f);
         }
 
-        /// stats:<label>: what the scene holds (units, renderers, lights, scripts by type, time of day, quality) and the frame
-        /// time over 5 s from where the player sits, written to stats_<label>.txt: two ways into the same map compared.
+        /// stats:<label>: what's in the scene (units, renderers, lights, scripts by type, time of day, quality) + frame time
+        /// over 5 s from where the player sits, into stats_<label>.txt: for comparing two ways into the same map
         public static IEnumerator Stats(string[] spec)
         {
             string label = spec.Length > 1 ? spec[1] : "scene";
@@ -250,8 +250,8 @@ namespace GHPCHitCam
         static string _firstError;
         static bool _listening;
 
-        /// The title menu's frame time (5 s), with the game's errors and exceptions counted meanwhile (one thrown every
-        /// frame is a slow menu, and the mod's menu parts missing).
+        /// title menu frame time (5 s) with the game's errors and exceptions counted meanwhile (one thrown every frame = slow
+        /// menu and the mod's menu parts missing)
         public static IEnumerator MenuFps(string label)
         {
             if (!_listening)
@@ -270,9 +270,9 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg($"MENU FPS [{label}]: {_errors} errors in it{(_firstError != null ? ", the first: " + _firstError : "")}");
         }
 
-        /// erashots:<name>: the modded targets' ERA bricks drawn four ways (casting shadows or not, receiving them or not,
-        /// their materials GPU-instanced): a close-up of the nearest tank with ERA and the whole range's frame time
-        /// (uncapped) for each. Ends as the range has them (casting shadows, materials as they were).
+        /// erashots:<name>: modded targets' ERA bricks drawn four ways (cast shadows or not, receive or not, GPU-instanced
+        /// materials): close-up of the nearest ERA tank and the whole range's frame time (uncapped) for each. ends like the
+        /// range has them (casting shadows, materials as they were)
         public static IEnumerator EraShots(string[] spec)
         {
             string name = spec.Length > 1 ? spec[1] : "era";
@@ -316,7 +316,7 @@ namespace GHPCHitCam
                 ("4 cast off, receive on, instanced", UnityEngine.Rendering.ShadowCastingMode.Off, true, true),
                 ("5 cast off, receive on, shared materials", UnityEngine.Rendering.ShadowCastingMode.Off, true, true),
             };
-            // the bricks' own material copies ("K1 (Instance)"), and one shared, instanced copy for each look
+            // bricks' own material copies ("K1 (Instance)") and one shared instanced copy per look
             var own = bricks.Where(r => r != null).ToDictionary(r => r, r => r.sharedMaterials);
             var shared = new Dictionary<string, Material>();
             Material[] Shared(Material[] ms) => ms.Select(m =>
@@ -326,7 +326,7 @@ namespace GHPCHitCam
                 if (!shared.TryGetValue(key, out var s)) { s = new Material(m) { enableInstancing = true }; shared[key] = s; }
                 return s;
             }).ToArray();
-            for (int pass = 0; pass < 2; pass++)   // twice round: the frame time drifts a little over a run
+            for (int pass = 0; pass < 2; pass++)   // twice: frame time drifts a bit over a run
             foreach (var (label, cast, receive, instanced) in ways)
             {
                 foreach (var r in bricks) if (r != null) { r.shadowCastingMode = cast; r.receiveShadows = receive; }
@@ -356,8 +356,8 @@ namespace GHPCHitCam
             Application.targetFrameRate = fr;
         }
 
-        /// keydump: every keyboard binding of the game (Rewired: each player's keyboard maps, enabled or not), written to
-        /// keys.txt, and each of the mod's own keys against them.
+        /// keydump: every game keyboard binding (Rewired: each player's keyboard maps, enabled or not) into keys.txt, and
+        /// each of the mod's keys checked against them
         public static IEnumerator KeyDump(string[] spec)
         {
             yield return null;
@@ -396,8 +396,8 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg("KEY DUMP: the F keys in the game: " + string.Join(" | ", fkeys));
         }
 
-        /// layerscan: the view ahead drawn with each of the camera's layers left out in turn, the near-black pixels in its
-        /// upper half counted: which layer the dark band on the empty map's horizon is on.
+        /// layerscan: view ahead drawn with each camera layer left out in turn, counting near-black pixels in the upper half:
+        /// finds which layer the dark band on the empty map's horizon is on
         public static IEnumerator LayerScan(string[] spec)
         {
             var main = Camera.main;
@@ -441,8 +441,8 @@ namespace GHPCHitCam
             UnityEngine.Object.Destroy(go);
         }
 
-        /// lookaround:<name>: four pictures around you (every 90 deg, from a little above your camera), with a camera of
-        /// our own: what's on the horizon (the empty map's leftovers).
+        /// lookaround:<name>: four shots around you (every 90 deg, a bit above your camera) with our own camera: what's on
+        /// the horizon (empty map leftovers)
         public static IEnumerator LookAround(string[] spec)
         {
             string name = spec.Length > 1 ? spec[1] : "look";
@@ -475,7 +475,7 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg("lookaround: 4 pictures " + name);
         }
 
-        /// audio: the engine sound's state on your vehicle, a few range targets and a mission unit.
+        /// audio: engine sound state on your vehicle, a few range targets and a mission unit
         public static IEnumerator Audio(string[] spec)
         {
             yield return new WaitForSecondsRealtime(1f);
@@ -520,9 +520,9 @@ namespace GHPCHitCam
             }
         }
 
-        /// cost:<label>: what the range's targets and the mission's own units cost, uncapped (no vsync, no frame limit):
-        /// the frame time with each part switched off in turn (the targets not drawn, their wheel physics off, the targets
-        /// gone, the mission's units gone too). Leaves them gone: the last step of a run.
+        /// cost:<label>: what the range targets and the mission's units cost, uncapped (no vsync, no frame limit): frame time
+        /// with each part off in turn (targets not drawn, their wheel physics off, targets gone, mission units gone too).
+        /// leaves them gone, so it's the last step of a run
         public static IEnumerator Cost(string[] spec)
         {
             string label = spec.Length > 1 ? spec[1] : "range";
@@ -553,8 +553,7 @@ namespace GHPCHitCam
             Application.targetFrameRate = fr;
         }
 
-        /// costtypes:<label>: the range targets' scripts kind by kind, each kind off for a moment (uncapped): which of
-        /// them the frames go to.
+        /// costtypes:<label>: range target scripts kind by kind, each kind off for a moment (uncapped): which ones eat the frames
         public static IEnumerator CostTypes(string[] spec)
         {
             string label = spec.Length > 1 ? spec[1] : "range";
@@ -587,7 +586,7 @@ namespace GHPCHitCam
         public static IEnumerator Run(string[] spec)
         {
             HitCamMod.Log.Msg($"FPS probe: screen {Screen.width}x{Screen.height}, vSync {QualitySettings.vSyncCount}, target {Application.targetFrameRate}, frame timing stats {(FrameTimingManager.IsFeatureEnabled() ? "on" : "off")}");
-            // your own crew's AI gunner would start shooting the targets (more hit cams in the middle of a measurement)
+            // own crew's AI gunner would start shooting the targets (more hit cams mid measurement)
             try
             {
                 var me = SceneUtil.Player != null ? SceneUtil.Player.CurrentPlayerUnit : null;

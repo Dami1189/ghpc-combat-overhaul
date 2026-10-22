@@ -6,25 +6,23 @@ using UnityEngine.Rendering;
 
 namespace GHPCHitCam
 {
-    /// A CPU copy of one of the game's meshes that keeps every vertex attribute byte for byte (UVs, colours, tangents,
-    /// skin weights), so a part can be cut out of the real model and drawn with the real materials. Meshes the game keeps
-    /// on the GPU only (not readable) are read back from their vertex and index buffers.
-    ///
-    /// Positions decide what goes where: `W` holds each vertex where it is drawn right now (skinned meshes posed by
-    /// their bones), and every edit (slicing, bending) works on those, then writes back into the mesh's own space.
+    /// CPU copy of one of the game's meshes, keeps every vertex attribute byte for byte (UVs, colours, tangents, skin weights)
+    /// so a part can be cut out of the real model and drawn with the real materials. GPU-only meshes get read back from
+    /// their vertex / index buffers. `W` = each vertex where it's drawn right now (skinned ones posed by their bones), every
+    /// edit (slicing, bending) works on those and then writes back into the mesh's own space
     internal sealed class MeshCopy
     {
         public string Name;
-        public int Count;                           // vertices in use
+        public int Count;                           // verts in use
         int _cap;
         public VertexAttributeDescriptor[] Attrs;
-        public int[] Off;                           // byte offset of each attribute inside its stream
+        public int[] Off;                           // byte offset of each attribute in its stream
         public int[] Stride;                        // bytes per vertex, per stream
         public byte[][] Data;                       // per stream
-        public List<int>[] Tris;                    // per submesh, triangle lists of absolute vertex indices
+        public List<int>[] Tris;                    // per submesh, tri lists of absolute vertex indices
         public Matrix4x4[] Bindposes;
         public int PosA = -1, NrmA = -1, TanA = -1, BwA = -1, BiA = -1;
-        public List<Vector3> W;                     // drawn (world) position of every vertex, after Pose()
+        public List<Vector3> W;                     // drawn (world) pos of every vertex, after Pose()
         public Matrix4x4[] Skin;                    // per bone: mesh space -> world, after Pose()
         public Matrix4x4 L2W = Matrix4x4.identity;  // non-skinned: mesh space -> world
 
@@ -32,8 +30,8 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ reading
 
-        // what was read back, per mesh: a GPU-only mesh comes back through a stalling GetData (a track, a barrel: up to
-        // ~150 ms on the frame the part broke); read once (or ahead, Warmup), copied out after
+        // read-back cache per mesh: a GPU-only mesh comes back through a stalling GetData (a track or barrel: up to
+        // ~150 ms on the frame the part broke), so read once (or ahead, Warmup) and copy out after
         static readonly Dictionary<Mesh, MeshCopy> _read = new Dictionary<Mesh, MeshCopy>();
 
         static readonly HashSet<Mesh> _asking = new HashSet<Mesh>();
@@ -41,8 +39,8 @@ namespace GHPCHitCam
         public static bool Has(Mesh m) => m != null && _read.ContainsKey(m);
         public static bool Asking(Mesh m) => m != null && _asking.Contains(m);
 
-        /// Read ahead without a stall: a readable mesh at once, a GPU-only one by an asynchronous read-back (it arrives a
-        /// frame or two later and is kept for when the part breaks).
+        /// read ahead without a stall: readable mesh right away, GPU-only one via async read-back (arrives a frame or two
+        /// later, kept for when the part breaks)
         public static void Prewarm(Mesh m)
         {
             if (m == null || _read.ContainsKey(m) || _asking.Contains(m)) return;
@@ -107,7 +105,7 @@ namespace GHPCHitCam
             return c;
         }
 
-        /// A copy that can be posed and edited without touching this one.
+        /// copy that can be posed / edited without touching this one
         MeshCopy Clone()
         {
             var c = (MeshCopy)MemberwiseClone();
@@ -226,7 +224,7 @@ namespace GHPCHitCam
             catch (Exception e) { why = e.GetType().Name + ": " + e.Message; return null; }
         }
 
-        /// Where every vertex is drawn now: a skinned mesh posed by its bones, otherwise through the renderer's transform.
+        /// where every vertex is drawn now: skinned mesh posed by its bones, else through the renderer's transform
         public void Pose(Renderer r)
         {
             W = new List<Vector3>(Count + 64);
@@ -248,7 +246,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// The vertex's own blend of bone matrices (mesh space -> world).
+        /// vertex's own blend of bone matrices (mesh space -> world)
         public Matrix4x4 VertexMatrix(int v)
         {
             if (Skin == null) return L2W;
@@ -325,7 +323,7 @@ namespace GHPCHitCam
             _cap = cap;
         }
 
-        /// A new vertex part way from a to b: every attribute interpolated, skin weights taken whole from the nearer one.
+        /// new vertex part way from a to b: every attribute lerped, skin weights taken whole from the nearer one
         public int AddLerp(int a, int b, float t)
         {
             int v = Count;
@@ -344,8 +342,8 @@ namespace GHPCHitCam
             return v;
         }
 
-        /// Moves a vertex to a new drawn position (and turns its normal / tangent by `rot`), written back into mesh space
-        /// through the vertex's own bone (rigid parts: barrels, booms).
+        /// moves a vertex to a new drawn position (and turns its normal / tangent by `rot`), written back into mesh space
+        /// through the vertex's own bone (rigid parts: barrels, booms)
         public void MoveTo(int v, Vector3 world, Quaternion rot)
         {
             Matrix4x4 m = VertexMatrix(v);
@@ -372,8 +370,8 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ editing
 
-        /// Splits every triangle that crosses the plane (n . x = k) so each piece lies on one side. New vertices get
-        /// every attribute interpolated; an edge cut once is shared by both of its triangles (no cracks).
+        /// splits every tri crossing the plane (n . x = k) so each piece is on one side. new verts get every attribute
+        /// lerped, an edge cut once is shared by both its tris (no cracks)
         public void Slice(Vector3 n, float k, Func<int, int, int, bool> triFilter = null)
         {
             var cache = new Dictionary<long, int>();
@@ -397,7 +395,7 @@ namespace GHPCHitCam
                     if (triFilter != null && !triFilter(a, b, c)) { dst.Add(a); dst.Add(b); dst.Add(c); continue; }
                     bool pa = Vector3.Dot(n, W[a]) - k >= 0f, pb = Vector3.Dot(n, W[b]) - k >= 0f, pc = Vector3.Dot(n, W[c]) - k >= 0f;
                     if (pa == pb && pb == pc) { dst.Add(a); dst.Add(b); dst.Add(c); continue; }
-                    // rotate so `a` is the vertex alone on its side (keeps the winding)
+                    // rotate so `a` is the vertex alone on its side (keeps winding)
                     if (pa == pb) { int t = a; a = c; c = b; b = t; }          // c alone -> (c, a, b)
                     else if (pa == pc) { int t = a; a = b; b = c; c = t; }     // b alone -> (b, c, a)
                     int ab = Cut(a, b), ac = Cut(a, c);
@@ -409,8 +407,8 @@ namespace GHPCHitCam
             }
         }
 
-        /// Splits triangles four ways (edge midpoints, shared between neighbours) while `needs` says so, so a hole can be
-        /// cut with a ragged edge into a model made of long thin triangles.
+        /// splits tris four ways (edge midpoints, shared with neighbours) while `needs` says so, so a hole with a ragged
+        /// edge can be cut into a model made of long thin tris
         public void Subdivide(Func<Vector3, Vector3, Vector3, bool> needs, int maxDepth, int maxVerts = 400000)
         {
             var cache = new Dictionary<long, int>();
@@ -435,7 +433,7 @@ namespace GHPCHitCam
                         var (a, b, c, d) = stack.Pop();
                         if (d < maxDepth * 2 && Count < maxVerts && needs(W[a], W[b], W[c]))
                         {
-                            // halve the longest edge (long thin triangles get shorter, not just thinner)
+                            // halve the longest edge (long thin tris get shorter, not just thinner)
                             float lab = (W[a] - W[b]).sqrMagnitude, lbc = (W[b] - W[c]).sqrMagnitude, lca = (W[c] - W[a]).sqrMagnitude;
                             if (lbc >= lab && lbc >= lca) { int t = a; a = b; b = c; c = t; }
                             else if (lca >= lab && lca >= lbc) { int t = a; a = c; c = b; b = t; }
@@ -449,8 +447,8 @@ namespace GHPCHitCam
                 }
                 Tris[s] = dst;
             }
-            // a triangle next to a split one has a vertex in the middle of its edge (a T-junction: a hairline crack the sky
-            // shows through): split it there too, until no edge has one
+            // a tri next to a split one has a vertex in the middle of its edge (T-junction: hairline crack the sky shows
+            // through), split it there too until no edge has one
             for (int pass = 0; pass < 12; pass++)
             {
                 bool any = false;
@@ -485,7 +483,7 @@ namespace GHPCHitCam
             return cache.TryGetValue(key, out int m) ? m : -1;
         }
 
-        /// Drops the triangles `drop` picks.
+        /// drops the tris `drop` picks
         public int RemoveTris(Func<int, int, int, bool> drop)
         {
             int n = 0;
@@ -503,7 +501,7 @@ namespace GHPCHitCam
             return n;
         }
 
-        /// Vertices referenced by the given triangles.
+        /// verts used by the given tris
         public static HashSet<int> Used(List<int>[] tris)
         {
             var h = new HashSet<int>();
@@ -511,7 +509,7 @@ namespace GHPCHitCam
             return h;
         }
 
-        /// The same mesh, with only the given triangles (the rest of the vertex data is kept as is; skinning too).
+        /// same mesh with only the given tris (rest of the vertex data kept as is, skinning too)
         public Mesh Build(string name, List<int>[] tris, bool keepSkin = true)
         {
             var m = new Mesh { name = name };
@@ -548,16 +546,16 @@ namespace GHPCHitCam
             return m;
         }
 
-        /// A static mesh of the given triangles as drawn now, in the space `worldToLocal` maps into: vertices compacted,
-        /// skin weights dropped, positions / normals / tangents posed. For a part that leaves the vehicle.
+        /// static mesh of the given tris as drawn now, in the space `worldToLocal` maps into: verts compacted, skin weights
+        /// dropped, positions / normals / tangents posed. for a part that leaves the vehicle
         public Mesh BuildStatic(string name, List<int>[] tris, Matrix4x4 worldToLocal)
         {
             var c = StaticCopy(name, tris, worldToLocal, out var nt, out _);
             return c.Build(name, nt, keepSkin: false);
         }
 
-        /// The copy BuildStatic draws (for parts whose vertices keep moving, e.g. a thrown track), with its triangles and,
-        /// per new vertex, the vertex it came from.
+        /// the copy BuildStatic draws (for parts whose verts keep moving, e.g. a thrown track) with its tris and, per new
+        /// vertex, the vertex it came from
         public MeshCopy StaticCopy(string name, List<int>[] tris, Matrix4x4 worldToLocal, out List<int>[] newTris, out List<int> source)
         {
             var used = new List<int>();
@@ -565,7 +563,7 @@ namespace GHPCHitCam
             foreach (var l in tris)
                 foreach (int v in l)
                     if (!map.ContainsKey(v)) { map[v] = used.Count; used.Add(v); }
-            // the layout without skin weights, streams renumbered
+            // layout without skin weights, streams renumbered
             var keep = new List<int>();
             for (int i = 0; i < Attrs.Length; i++) if (i != BwA && i != BiA) keep.Add(i);
             var streamMap = new Dictionary<int, int>();
@@ -631,7 +629,7 @@ namespace GHPCHitCam
             return outc;
         }
 
-        /// Writes the vertex data back into a mesh made by Build (same layout), e.g. after moving vertices.
+        /// writes the vertex data back into a mesh made by Build (same layout), e.g. after moving verts
         public void Upload(Mesh m, Bounds bounds)
         {
             var fl = MeshUpdateFlags.DontRecalculateBounds | MeshUpdateFlags.DontValidateIndices | MeshUpdateFlags.DontNotifyMeshUsers;
@@ -709,10 +707,10 @@ namespace GHPCHitCam
         }
     }
 
-    /// Small helpers for putting cut-out parts of the game's models on screen.
+    /// small helpers for putting cut-out parts of the game's models on screen
     internal static class PartKit
     {
-        /// A renderer's material property blocks (the game sets camouflage, scorch and per-unit values through them).
+        /// renderer's material property blocks (the game sets camo, scorch and per-unit values through them)
         public static void CopyLook(Renderer from, Renderer to)
         {
             if (from == null || to == null) return;
@@ -733,7 +731,7 @@ namespace GHPCHitCam
             catch { }
         }
 
-        /// The mesh a renderer draws.
+        /// the mesh a renderer draws
         public static Mesh MeshOf(Renderer r) => r is SkinnedMeshRenderer s ? s.sharedMesh : r != null ? r.GetComponent<MeshFilter>()?.sharedMesh : null;
 
         public static void SetMesh(Renderer r, Mesh m)
@@ -742,7 +740,7 @@ namespace GHPCHitCam
             else { var mf = r != null ? r.GetComponent<MeshFilter>() : null; if (mf != null) mf.sharedMesh = m; }
         }
 
-        /// Deterministic noise in [0, 1).
+        /// deterministic noise in [0, 1)
         public static float Hash(int a, int b = 0)
         {
             unchecked
@@ -755,7 +753,7 @@ namespace GHPCHitCam
 
         public static float Smooth01(float x) { x = Mathf.Clamp01(x); return x * x * (3f - 2f * x); }
 
-        /// Distance from p to the triangle abc (Ericson, Real-Time Collision Detection 5.1.5).
+        /// distance from p to triangle abc (Ericson, Real-Time Collision Detection 5.1.5)
         public static float PointTri(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
         {
             Vector3 ab = b - a, ac = c - a, ap = p - a;
@@ -783,7 +781,7 @@ namespace GHPCHitCam
             return Mathf.Abs(d);
         }
 
-        /// Simple procedural mesh building: positions, colours and triangles per submesh, normals recalculated.
+        /// simple procedural mesh building: positions, colours and tris per submesh, normals recalculated
         public sealed class Builder
         {
             public readonly List<Vector3> V = new List<Vector3>();
@@ -794,7 +792,7 @@ namespace GHPCHitCam
             public int Add(Vector3 p) => Add(p, Color.white);
             public void Tri(int s, int a, int b, int c) { T[s].Add(a); T[s].Add(b); T[s].Add(c); }
             public void Quad(int s, int a, int b, int c, int d) { Tri(s, a, b, c); Tri(s, a, c, d); }
-            /// Both faces (thin sheet metal): the back gets its own vertices so it is lit from its own side.
+            /// both faces (thin sheet metal): the back gets its own verts so it's lit from its own side
             public void Tri2(int s, int a, int b, int c)
             {
                 Tri(s, a, b, c);
@@ -802,7 +800,7 @@ namespace GHPCHitCam
                 Tri(s, a2, c2, b2);
             }
             public void Quad2(int s, int a, int b, int c, int d) { Tri2(s, a, b, c); Tri2(s, a, c, d); }
-            /// A triangle facing `want` (its winding is turned if needed).
+            /// tri facing `want` (winding flipped if needed)
             public void TriO(int s, int a, int b, int c, Vector3 want)
             {
                 if (Vector3.Dot(Vector3.Cross(V[b] - V[a], V[c] - V[a]), want) < 0f) Tri(s, a, c, b); else Tri(s, a, b, c);
@@ -824,7 +822,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// A child object drawing `mesh` with `mats`, in `parent`'s space.
+        /// child object drawing `mesh` with `mats` in `parent`'s space
         public static GameObject Child(Transform parent, string name, Mesh mesh, Material[] mats, int layer, bool shadows = true)
         {
             var go = new GameObject(name) { layer = layer };

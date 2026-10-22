@@ -4,8 +4,8 @@ using MelonLoader;
 
 namespace GHPCHitCam
 {
-    /// Quality presets: one click sets every setting that costs frame rate (the ones with an FPS cost in the settings
-    /// window). Everything else (sizes, keys, the HUD, timings) is left as it is. Balanced is what a fresh install gets.
+    /// quality presets: one click sets every setting with an FPS cost in the settings window, the rest (sizes, keys, HUD,
+    /// timings) stays as is. Balanced is what a fresh install gets
     internal static class Presets
     {
         public static readonly string[] Names = { "Performance", "Balanced", "Cinematic" };
@@ -44,10 +44,10 @@ namespace GHPCHitCam
 
         public const int Default = 1;
 
-        /// Settings a preset sets.
+        /// settings a preset touches
         public static bool Managed(string id) => Values[0].ContainsKey(id);
 
-        /// The preset the current settings match, else "Custom".
+        /// preset the current settings match, else "Custom"
         public static string Current()
         {
             for (int i = 0; i < Values.Length; i++)
@@ -76,7 +76,7 @@ namespace GHPCHitCam
             HitCamMod.Log.Info("Preset applied: " + Names[i]);
         }
 
-        /// Self-test: one setting by its id, from text.
+        /// self-test: set one setting by its id, from text
         public static bool Set(string id, string value)
         {
             var e = Find(id);

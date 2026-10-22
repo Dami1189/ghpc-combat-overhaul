@@ -3,10 +3,10 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// The long rod drawn as one deforming tube: rings around a centreline (tail to nose) with a radius and a colour
-    /// per ring, closed at both ends. The nose end can curl back in ragged petals (the eroding head's lip) and either
-    /// end can be jagged (a fracture face). Lit per vertex from the camera. One mesh for the rod and all its pieces; a
-    /// faint second pass shows the parts hidden behind armour or modules (the x-ray sees the rod inside the plate).
+    /// long rod drawn as one deforming tube: rings round a centreline (tail to nose), radius + colour per ring, closed at
+    /// both ends. nose can curl back in ragged petals (eroding head's lip), either end can be jagged (fracture face).
+    /// lit per vertex from the camera. one mesh for the rod and all its pieces, a faint second pass shows the parts
+    /// hidden behind armour or modules (x-ray sees the rod inside the plate)
     internal class RodTube
     {
         readonly Mesh _mesh;
@@ -37,13 +37,13 @@ namespace GHPCHitCam
 
         static float Hash(int a, int b) { uint h = (uint)(a * 73856093) ^ (uint)(b * 19349663); h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15; return (h & 0xffff) / 65535f; }
 
-        /// nodes tail -> nose; jagTail / jagNose: how ragged each end face is (m); curl: how far the nose ring's lip
-        /// curls back (m, 0 = a clean end); seed varies the raggedness; phase animates the lip a little.
+        /// nodes tail -> nose; jagTail / jagNose: how ragged each end face is (m); curl: how far the nose lip curls back
+        /// (m, 0 = clean end); seed varies the raggedness; phase animates the lip a bit
         public void AddTube(Vector3[] nodes, float[] rad, Color[] col, int count, Vector3 cam, float jagTail, float jagNose, float curl, int seed, float phase)
         {
             if (count < 2) return;
             int b0 = _v.Count;
-            // a twist-free frame along the centreline (parallel transport)
+            // twist-free frame along the centreline (parallel transport)
             Vector3 t0 = (nodes[1] - nodes[0]).normalized;
             Vector3 u = Vector3.Cross(t0, Vector3.up);
             if (u.sqrMagnitude < 1e-4f) u = Vector3.Cross(t0, Vector3.right);
@@ -64,7 +64,7 @@ namespace GHPCHitCam
                     Vector3 p = nodes[i] + radial * rad[i];
                     if (i == count - 1)
                     {
-                        // the nose: its lip curls back and out in ragged petals; a fracture face is jagged
+                        // nose: lip curls back and out in ragged petals, a fracture face is jagged
                         float h = Hash(seed + k, 7);
                         float petal = 0.55f + 0.45f * Mathf.Sin(a * 3f + phase + h * 6f);
                         p += -t * (curl * (0.35f + 0.65f * h) * petal) + radial * (curl * 0.35f * petal);
@@ -82,7 +82,7 @@ namespace GHPCHitCam
                     int a = b0 + i * _m + k, b = b0 + i * _m + (k + 1) % _m;
                     _t.Add(a); _t.Add(b); _t.Add(a + _m); _t.Add(b); _t.Add(b + _m); _t.Add(a + _m);
                 }
-            // end faces: the tail facing back, the nose (a little domed, or recessed when it erodes) facing forward
+            // end faces: tail facing back, nose facing forward (a bit domed, or recessed when it erodes)
             Vector3 tTail = (nodes[1] - nodes[0]).normalized, tNose = (nodes[count - 1] - nodes[count - 2]).normalized;
             int cTail = _v.Count;
             _v.Add(nodes[0] - tTail * (jagTail * 0.3f)); _c.Add(col[0] * 0.75f);

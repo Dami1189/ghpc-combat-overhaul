@@ -9,11 +9,10 @@ using Object = UnityEngine.Object;
 
 namespace GHPCHitCam
 {
-    /// The mod's own corner of the main menu, built from the game's UI pieces so it looks like the rest of the menu (its
-    /// black panels, its font, outlined buttons, the badge's red): a box in the top right corner (version, What's new,
-    /// a new version), a big note when one is out (and the question to restart once it's installed), and the What's new
-    /// page with every version's notes. What's new opens by itself once after an update; a first install gets the
-    /// settings window's Quick setup instead (ConfigMenu.Welcome).
+    /// mod's own corner of the main menu, built from the game's UI bits so it matches the rest (black panels, its font,
+    /// outlined buttons, the badge's red): a box top right (version, What's new, new version), a big note when one is out
+    /// (+ asking to restart once it's installed) and the What's new page with every version's notes.
+    /// What's new opens by itself once after an update, a first install gets the settings Quick setup instead (ConfigMenu.Welcome)
     internal static class WhatsNew
     {
         class Notes
@@ -22,9 +21,41 @@ namespace GHPCHitCam
             public string[] New = Array.Empty<string>(), Keys = Array.Empty<string>(), Fixes = Array.Empty<string>(), Coming = Array.Empty<string>(), Known = Array.Empty<string>();
         }
 
-        /// Every version's notes, newest first (the same as on the release page).
+        /// every version's notes, newest first (same as on the release page)
         static readonly Notes[] History =
         {
+            new Notes
+            {
+                Version = "1.1.2", Date = "October 2026",
+                New = new[]
+                {
+                    "Better logs for bug reports. The game's own errors (and the other mods') now show in the MelonLoader log too, with whose code they came from, plus one line listing every mod running and its version. If you find something breaks within my mod - let me know and send the logs.",
+                    "One broken part can't take the whole mod down. If a part fails to start (another mod's hook in the way, say), the rest still loads, and in game one part throwing doesn't stop the others (F12, the hit cam). The log also says which part and why.",
+                    "The crew an ammo explosion kills vanish in the flash in the x-ray now (nobody comes out of that in one piece). Settings > X-ray > Crew in an ammo explosion: Gone, Outline (only their outline stays) or Stay (as before, thrown by the blast).",
+                    "No hit cam for shots at wrecks. Hitting a vehicle that's already knocked out for good (destroyed, abandoned, turret gone or the whole crew dead) doesn't open the hit cam any more; the hit still goes into the After Action Report. Settings > Hit cam > Hit cam on wrecks turns it back on.",
+                },
+                Fixes = new[]
+                {
+                    "The main menu's frame rate dropped again with vehicle mods installed (the Soviet menu down to about 63 fps, the others a bit too): the vehicle mod support asked the game for its mission controller several times a frame, and in the menu, where there is none, the game searches the whole scene for it every time. It asks at most four times a second now, and the menu runs as fast as without the mod.",
+                    "The main menu could come up without the mod's rows (ARMOR SIM, PROVING GROUND, the Combat Overhaul box). The game picks its title screen at random from a few variants, and the unlockable ones (the T-64 and Leopard 2 menus, the Soviet one) weren't recognised. All of them are now, and a title menu the mod doesn't know still gets its rows, with a line in the log.",
+                    "A wreck that lost its turret showed the thrown turret in the x-ray, lying next to the hull upside down with its dead crew still inside. The copy of such a wreck is the hull only now.",
+                    "Parts of some modded vehicles floated off the vehicle in the x-ray and the Armor Sim, like the Leopard 2KA3's rubber skirts (18 m out in front) and its slat armour. Mirrored and unevenly scaled parts sit where they belong now.",
+                    "The mission end and the After Action Report still said F11 (its old key). They show the key it's really on now.",
+                    "The After Action Report key did nothing inside the game's own AAR, though the hint there asked for it, and that hint covered the game's mission results. The key works there now and the hint sits top left, out of the way.",
+                    "The x-ray and the Armor Sim showed interior parts a vehicle switched off, like the loader's rack Fulda's KWS III takes out. Only what the game itself would show is drawn now.",
+                    "The update check in the main menu works when GitHub's API limit is used up: it reads the release page instead, and if even that fails it says when it tries again, and does so by itself (this wasn't affecting normal users, just these using a LOT of github API).",
+                    "The Armor Sim's test vehicle threw an error every frame (the game's vehicle audio); it stays quiet now.",
+                    "An error in the game's vegetation at a mission start, caused by the minimap's map picture: it's taken a few seconds later now.",
+                },
+                Known = new[]
+                {
+                    "ERA is the game's own for now: its armour counts, but the x-ray doesn't show the bricks going off yet.",
+                    "On the empty proving ground one far hill can still show on the horizon.",
+                    "Autocannon bursts can still stutter a little.",
+                    "Helicopters in the x-ray hit cam don't always show their whole model correctly yet.",
+                    "A proving ground built inside a mission (Alt+Home): vehicle mods that get their parts ready only for the vehicles a mission starts with (PIL) can't convert the others, so those come as the game's own.",
+                },
+            },
             new Notes
             {
                 Version = "1.1.1", Date = "October 2026",
@@ -81,14 +112,6 @@ namespace GHPCHitCam
                     "More dynamic damage: wheels coming off, flat tyres...",
                     "Many more... what's that buzzing sound?",
                 },
-                Known = new[]
-                {
-                    "ERA is the game's own for now: its armour counts, but the x-ray doesn't show the bricks going off yet.",
-                    "On the empty proving ground one far hill can still show on the horizon.",
-                    "Autocannon bursts can still stutter a little.",
-                    "Helicopters in the x-ray hit cam don't show their whole model correctly yet.",
-                    "A proving ground built inside a mission (Alt+Home): vehicle mods that get their parts ready only for the vehicles a mission starts with (PIL) can't convert the others, so those come as the game's own.",
-                },
             },
             new Notes
             {
@@ -106,8 +129,7 @@ namespace GHPCHitCam
         internal static bool Built => _root != null && _root.activeInHierarchy;
         static bool _checkedFirstRun, _bannerOff, _restartOff;
 
-        /// The main menu is up: the update check starts, and after an update What's new opens once (a first install gets
-        /// the Quick setup instead).
+        /// main menu is up: update check starts, after an update What's new opens once (first install gets Quick setup instead)
         public static void OnMenu()
         {
             Updater.OnMenu();
@@ -146,7 +168,7 @@ namespace GHPCHitCam
                 bool menu = ArmorSimMenu.InMenu && ArmorSimMenu.MenuLoaded();
                 if (!menu)
                 {
-                    // out of the main menu (a mission, its loading screen): none of it may be left on screen
+                    // out of the main menu (mission, its loading screen): none of this may stay on screen
                     _menuSince = -1f;
                     if (_root != null) { Object.Destroy(_root); _root = null; }
                     return;
@@ -154,7 +176,7 @@ namespace GHPCHitCam
                 if (_menuSince < 0f) _menuSince = Time.realtimeSinceStartup;
                 if (_root == null)
                 {
-                    // once the title menu is there (our rows in it give the font), or after a few seconds anyway
+                    // once the title menu is there (our rows in it give the font) or after a few seconds anyway
                     if (ArmorSimMenu.Button == null && Time.realtimeSinceStartup - _menuSince < 6f) return;
                     Build();
                     if (_root == null) return;
@@ -174,9 +196,8 @@ namespace GHPCHitCam
         static bool _noticeHidden;
         internal static bool NoticeShown => _notice != null && _notice.activeInHierarchy;
 
-        /// The game's own line along the bottom of the title menu ("Thank you for supporting the GHPC project! ...") sat
-        /// over the lower part of the settings window: it steps aside while the window is open, and comes back after (if
-        /// the game hasn't hidden it meanwhile itself).
+        /// game's own line at the bottom of the title menu ("Thank you for supporting the GHPC project! ...") sat over the
+        /// lower part of the settings window, so it steps aside while the window is open and comes back after (unless the game hid it itself meanwhile)
         static void Notice()
         {
             if (_bmc == null) return;
@@ -191,7 +212,7 @@ namespace GHPCHitCam
             else if (_noticeHidden) { _noticeHidden = false; _notice.SetActive(true); }
         }
 
-        /// The texts and which parts show, when something changed.
+        /// texts and which parts show, when something changed
         static void Refresh()
         {
             var st = Updater.Now;
@@ -212,7 +233,7 @@ namespace GHPCHitCam
             _btnUpdateCorner.GetComponentInChildren<TextMeshProUGUI>().text = $"UPDATE TO {Updater.Latest}";
 
             bool restart = st == Updater.State.Installed && !_restartOff;
-            if (restart && Open) Open = false;   // the question comes first
+            if (restart && Open) Open = false;   // question comes first
             bool banner = !restart && available && !_bannerOff && !Open;
             _prompt.SetActive(restart || banner);
             _btnPromptUpdate.SetActive(banner);
@@ -266,7 +287,7 @@ namespace GHPCHitCam
             foreach (var l in lines) sb.Append("<indent=1.2em>•</indent><indent=2.4em>").Append(l).Append("</indent>\n");
         }
 
-        /// A release's notes from GitHub (its "## New / ## Bugfixes / ## Coming up" headings, "- " lines), for the page.
+        /// a release's notes from GitHub ("## New / ## Bugfixes / ## Coming up" headings, "- " lines) for the page
         static string Rich(string notes)
         {
             var sb = new System.Text.StringBuilder();
@@ -298,14 +319,14 @@ namespace GHPCHitCam
             if (_font == null) return;
 
             _root = new GameObject("Combat Overhaul menu");
-            // it belongs to the menu's own scene and goes with it (made in the game's always-loaded loader scene it stayed
-            // up on loading screens and in missions)
+            // lives in the menu's own scene and goes with it (made in the game's always-loaded loader scene it stayed up on
+            // loading screens and in missions)
             var menuScene = ArmorSimMenu.Button != null ? ArmorSimMenu.Button.scene : default;
             if (!menuScene.IsValid())
                 for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
                 {
                     var sc = UnityEngine.SceneManagement.SceneManager.GetSceneAt(i);
-                    if (sc.name.IndexOf("MainMenu", StringComparison.OrdinalIgnoreCase) >= 0) { menuScene = sc; break; }
+                    if (SceneUtil.IsMenuScene(sc.name)) { menuScene = sc; break; }
                 }
             if (!menuScene.IsValid() || !menuScene.isLoaded) { Object.Destroy(_root); _root = null; return; }
             UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(_root, menuScene);
@@ -318,7 +339,7 @@ namespace GHPCHitCam
             scaler.matchWidthOrHeight = 1f;
             _root.AddComponent<GraphicRaycaster>();
 
-            // the corner box
+            // corner box
             _corner = Box(_root.transform, "corner", new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-28f, -28f), 400f, 16f);
             _cornerTitle = Text(_corner.transform, "", 21f, Color.white, FontStyles.Bold, 4f);
             _cornerLine = Text(_corner.transform, "", 16f, Dim);
@@ -326,7 +347,7 @@ namespace GHPCHitCam
             Btn(row, "WHAT'S NEW", 150f, false, () => { Open = !Open; _shown = ""; });
             _btnUpdateCorner = Btn(row, "UPDATE", 190f, true, () => { Updater.StartInstall(); _shown = ""; });
 
-            // the note: a new version, or restart now
+            // the note: new version, or restart now
             _prompt = Box(_root.transform, "prompt", new Vector2(0.62f, 0.76f), new Vector2(0.5f, 1f), Vector2.zero, 720f, 24f, accent: true);
             _promptTitle = Text(_prompt.transform, "", 32f, Red, FontStyles.Bold, 3f);
             _promptBody = Text(_prompt.transform, "", 19f, Color.white);
@@ -337,7 +358,7 @@ namespace GHPCHitCam
             _btnRestart = Btn(prow, "RESTART NOW", 230f, true, () => Updater.Restart());
             _btnRestartLater = Btn(prow, "LATER", 130f, false, () => { _restartOff = true; _shown = ""; });
 
-            // the What's new page: right of the game's menu, under the corner box
+            // What's new page: right of the game's menu, under the corner box
             _page = new GameObject("whats new", typeof(RectTransform));
             _page.transform.SetParent(_root.transform, false);
             var prt = (RectTransform)_page.transform;
@@ -372,7 +393,7 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg("Main menu: Combat Overhaul box built (font " + _font.name + ")");
         }
 
-        /// A black panel that grows with what's in it (top to bottom), at an anchor.
+        /// black panel that grows with its content (top to bottom), at an anchor
         static GameObject Box(Transform parent, string name, Vector2 anchor, Vector2 pivot, Vector2 pos, float width, float pad, bool accent = false)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
@@ -392,7 +413,7 @@ namespace GHPCHitCam
             f.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             if (accent)
             {
-                // the badge's red along the top, outside the layout
+                // badge red along the top, outside the layout
                 var bar = new GameObject("accent", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
                 bar.transform.SetParent(go.transform, false);
                 bar.GetComponent<LayoutElement>().ignoreLayout = true;
@@ -435,8 +456,8 @@ namespace GHPCHitCam
             return go.transform;
         }
 
-        /// The game's outlined button (CUSTOMIZE / START in Instant Action): a thin white frame, the label in capitals,
-        /// lighter under the mouse. The one to press is framed in the badge's red.
+        /// game's outlined button (CUSTOMIZE / START in Instant Action): thin white frame, label in caps, lighter on hover.
+        /// the one to press gets a badge red frame
         static GameObject Btn(Transform parent, string label, float width, bool hot, Action click)
         {
             var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button));
@@ -485,7 +506,7 @@ namespace GHPCHitCam
             img.raycastTarget = false;
         }
 
-        /// A scrolling text (the mouse wheel moves it) filling the parent between the offsets.
+        /// scrolling text (mouse wheel moves it) filling the parent between the offsets
         static TextMeshProUGUI Scroll(Transform parent, Vector2 min, Vector2 max)
         {
             var view = new GameObject("scroll", typeof(RectTransform), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));

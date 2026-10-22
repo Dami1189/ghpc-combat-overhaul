@@ -2,8 +2,8 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Steel splinters: a few irregular, faceted, elongated shapes (unit size, long axis +Z). Each face carries a fixed
-    /// shade in its vertex colour so the facets read as metal under the unlit colour shader as they tumble.
+    /// steel splinters: a few irregular faceted long shapes (unit size, long axis +Z), each face has a fixed shade
+    /// in its vertex colour so the facets read as metal under the unlit shader while they tumble
     internal static class Shards
     {
         static Mesh[] _variants;
@@ -23,7 +23,7 @@ namespace GHPCHitCam
         static Mesh Make(System.Random rnd)
         {
             float R(float a, float b) => a + (float)rnd.NextDouble() * (b - a);
-            // a flattened, elongated, slightly bent splinter: tip, tail and four points around the waist
+            // flat, long, a bit bent: tip, tail and four points around the waist
             Vector3[] p =
             {
                 new Vector3(R(-0.12f, 0.12f), R(-0.05f, 0.05f), R(0.42f, 0.6f)),
@@ -51,7 +51,7 @@ namespace GHPCHitCam
             return m;
         }
 
-        /// Steel by temperature: 0 cold grey, ~0.33 dull red, ~0.66 orange, 1 white hot.
+        /// steel by temperature: 0 cold grey, ~0.33 dull red, ~0.66 orange, 1 white hot
         public static Color Hot(float heat)
         {
             var cold = new Color(0.36f, 0.37f, 0.40f);

@@ -9,7 +9,7 @@ using DC = GHPC.Equipment.DestructibleComponent;
 
 namespace GHPCHitCam
 {
-    /// Keeps a world-space object glued to a moving part (turret, hull) without inheriting its scale.
+    /// keeps a world-space object glued to a moving part (turret, hull) without taking its scale
     internal class StickTo : MonoBehaviour
     {
         public Transform Target;
@@ -36,24 +36,22 @@ namespace GHPCHitCam
         void Update() { if (Time.time > At) Destroy(gameObject); }
     }
 
-    /// Visible damage on the real vehicles in the game world. Every armour hit leaves the plate failure of PlateSim
-    /// (petals, plug hole, ductile crater, HE tear, dent, gouge) as a small 3D panel on the hull, plus scorch, sparks
-    /// and physics shrapnel. Where the mesh allows it a real hole is cut into the model too. Purely visual: the
-    /// game's damage model is not touched.
+    /// visible damage on the real vehicles in the game world. every armour hit leaves PlateSim's plate failure (petals,
+    /// plug hole, ductile crater, HE tear, dent, gouge) as a small 3D panel on the hull, plus scorch, sparks and physics
+    /// shrapnel. where the mesh allows it a real hole gets cut into the model too. visual only, game's damage model untouched
     ///
-    /// The game's own models can't be cut (not CPU-readable), so a panel that folds into the plate would be hidden
-    /// behind the paint. Before each camera draws, a "depth punch" (the panel's footprint, scaled about the camera
-    /// so it covers the same pixels further back, depth only) pushes the hull's depth back under the panel. The panel,
-    /// the hole's bore and the dark cup inside are then drawn with normal depth. The punch ignores depth, so it's only
-    /// used when nothing stands between the camera and the hole and the hole is big enough on screen to matter.
-    /// Otherwise the flat decals (soot, ragged dark hole, glowing rim) are shown.
+    /// game's models can't be cut (not CPU-readable) so a panel folding into the plate would hide behind the paint.
+    /// hack: before each camera draws, a "depth punch" (panel footprint scaled about the camera so it covers the same
+    /// pixels further back, depth only) pushes the hull depth back under the panel. then panel, hole bore and the dark
+    /// cup inside draw with normal depth. punch ignores depth so it's only used when nothing is between the camera and
+    /// the hole and the hole is big enough on screen to matter, else the flat decals (soot, ragged dark hole, glowing rim)
     internal static class WorldDamage
     {
         static Material _metal, _dark, _soot, _glow, _spark, _wPunch, _wCup, _wPlate;
         static int _debrisLayer = -1, _occMask = ~0;
         static Texture2D _dot;
         static readonly List<GameObject> _debris = new List<GameObject>();
-        // per model piece: the untouched mesh and every hole so far, in that mesh's own space (so holes ride with turrets)
+        // per model piece: untouched mesh + every hole so far, in that mesh's own space (so holes ride with turrets)
         static readonly Dictionary<MeshFilter, (Mesh original, List<(Vector3 p, float r)> holes)> _cuts = new Dictionary<MeshFilter, (Mesh, List<(Vector3, float)>)>();
         static readonly Dictionary<Unit, List<MeshFilter>> _unitMeshes = new Dictionary<Unit, List<MeshFilter>>();
         static readonly Dictionary<Unit, (HashSet<Collider> set, int mask)> _hulls = new Dictionary<Unit, (HashSet<Collider>, int)>();
@@ -81,7 +79,7 @@ namespace GHPCHitCam
             _dark.renderQueue = 2010;
             _dark.SetFloat("_ZBias", -2f);
 
-            // soot: alpha-blended, with a depth bias so it shows on paint that sits a little outside the armor collider
+            // soot: alpha-blended with a depth bias so it shows on paint sitting a bit outside the armor collider
             _soot = new Material(colored) { renderQueue = 2990 };
             _soot.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha); _soot.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
             _soot.SetInt("_ZWrite", 0); _soot.SetInt("_Cull", (int)CullMode.Off);
@@ -92,10 +90,9 @@ namespace GHPCHitCam
             _glow.renderQueue = 3001;
             _glow.SetFloat("_ZBias", -2f);
 
-            // the 3D plate, at the start of the transparent queue (after the opaque-only image effects such as the game's ambient
-            // occlusion, which would otherwise read the punched depth and dither the area): depth punch (no colour), then the panel
-            // (vertex colours, lit on the CPU; it writes depth even where it fades out, so the plate hides the cup), then the cup,
-            // which only shows through the opening
+            // the 3D plate, at the start of the transparent queue (after opaque-only image effects like the game's AO, which
+            // would read the punched depth and dither the area): depth punch (no colour), then the panel (vertex colours, lit on
+            // the CPU, writes depth even where it fades out so the plate hides the cup), then the cup, only visible through the opening
             _wPunch = Mat(colored, BlendMode.Zero, BlendMode.One, true, CompareFunction.Always, 2985);
             _wPlate = Mat(colored, BlendMode.SrcAlpha, BlendMode.OneMinusSrcAlpha, true, CompareFunction.LessEqual, 2986);
             _wCup = Mat(colored, BlendMode.One, BlendMode.Zero, true, CompareFunction.LessEqual, 2987);
@@ -133,7 +130,7 @@ namespace GHPCHitCam
             return m;
         }
 
-        /// A layer the player's camera draws, that rolls on terrain, but that rounds and AI sight ignore.
+        /// layer the player's camera draws and that rolls on terrain, but rounds and AI sight ignore it
         static void PickDebrisLayer()
         {
             int terrain = LayerMask.NameToLayer("Terrain");
@@ -154,8 +151,8 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg("World damage: debris on layer " + _debrisLayer + " (" + LayerMask.LayerToName(_debrisLayer) + ")");
         }
 
-        /// GHPC stacks screen cameras (e.g. a world camera plus an "FP Camera" that only draws layer 6):
-        /// the world camera is the one drawing the most layers.
+        /// GHPC stacks screen cameras (e.g. world camera + an "FP Camera" that only draws layer 6),
+        /// world camera = the one drawing the most layers
         public static Camera MainCamera()
         {
             Camera best = null;
@@ -169,7 +166,7 @@ namespace GHPCHitCam
             return best;
         }
 
-        /// Every layer any screen camera draws.
+        /// every layer any screen camera draws
         public static int WorldCameraMask()
         {
             int m = 0;
@@ -183,7 +180,7 @@ namespace GHPCHitCam
         // ------------------------------------------------------------------ entry point
 
         static readonly Dictionary<int, List<Vector3>> _byRound = new Dictionary<int, List<Vector3>>();
-        // a HEAT shell's body touching a plate, until its jet shows up
+        // HEAT shell body touching a plate, until its jet shows up
         static readonly Dictionary<int, (Unit unit, Collider col, Vector3 point, Vector3 normal, Vector3 dir, float nominal, float los)> _preJet
             = new Dictionary<int, (Unit, Collider, Vector3, Vector3, Vector3, float, float)>();
 
@@ -191,8 +188,8 @@ namespace GHPCHitCam
                                       bool preJet, float nominalMm, float losMm, float penMm, float speed, float energy, AmmoType ammo, float holeRadius)
         {
             if (!Settings.WorldDamage.Value || unit == null || col == null || ammo == null) return;
-            // a HEAT shell's body touches the plate first; the jet forms there and makes the hole. The jet's own first
-            // test is often already inside the vehicle, so the plate the shell struck gets its jet hole from that.
+            // HEAT shell body touches the plate first, jet forms there and makes the hole. jet's own first test is often
+            // already inside the vehicle, so the plate the shell struck gets its jet hole from that
             if (preJet)
             {
                 if (_preJet.Count > 64) _preJet.Clear();
@@ -208,7 +205,7 @@ namespace GHPCHitCam
             try
             {
                 Init();
-                // a round passing several armor layers hits the same outer spot several times: one hole is enough
+                // round passing several armor layers hits the same outer spot several times, one hole is enough
                 if (!_byRound.TryGetValue(roundId, out var spots))
                 {
                     if (_byRound.Count > 64) _byRound.Clear();
@@ -220,30 +217,30 @@ namespace GHPCHitCam
                 if (normal.sqrMagnitude < 0.01f) normal = -dir;
                 normal.Normalize();
                 if (Vector3.Dot(normal, dir) > 0f) normal = -normal;
-                // the game reports some impacts (HE fuzes) a little off the plate: sit on the struck face
+                // game reports some impacts (HE fuzes) a bit off the plate: sit on the struck face
                 if (col.Raycast(new Ray(point + normal * 0.3f, -normal), out var onFace, 0.6f) && (onFace.point - point).sqrMagnitude > 1e-4f)
                     point = onFace.point;
 
-                // which face of the vehicle this is: the outside the round came in through, the far wall it came out of,
-                // or a plate inside (a backing plate, a turret ring): nobody sees those from outside, so they get nothing.
-                // A round skimming a plate under another one (a glacis under an add-on plate) is the exception: its groove
-                // shows where the plate on top ends, so it gets its plate, covered wherever that other plate lies on it.
+                // which face of the vehicle this is: outside the round came in through, far wall it came out of, or a plate inside
+                // (backing plate, turret ring), nobody sees those from outside so they get nothing.
+                // exception: a round skimming a plate under another one (glacis under an add-on plate), its groove shows where the top
+                // plate ends, so it gets its plate, covered wherever the other plate lies on it
                 var hull = HullColliders(unit);
                 bool exit = false, under = false;
                 float hitAngle = 90f - Vector3.Angle(normal, -dir);
                 bool graze = ricochet || (ammo.Category == AmmoType.AmmoCategory.Penetrator && hitAngle < HoleFx.GrazeAngle);
-                // every test comes in from outside toward the spot (armour colliders are often one-sided surfaces, and a ray
-                // from inside a skewed path can slip between plates): any other armour piece met first covers it
+                // every test comes from outside toward the spot (armour colliders are often one-sided, and a ray from inside a
+                // skewed path can slip between plates): any other armour piece met first covers it
                 {
-                    // the round came through other armour to get here, or other armour lies straight in front of the plate
-                    // (the round's path can bend inside: the face's own normal catches what the path misses)
+                    // round came through other armour to get here, or other armour is straight in front of the plate
+                    // (path can bend inside, the face's own normal catches what the path misses)
                     if (Covered(hull, col, point, dir) || Covered(hull, col, point, -normal))
                     {
                         float back = Mathf.Clamp(nominalMm * 0.003f, 0.02f, 0.6f) + 0.08f;
                         Vector3 outN = Vector3.zero;
                         bool found = col.Raycast(new Ray(point + dir * back, -dir), out var face, back);
                         if (found) outN = Vector3.Dot(face.normal, dir) > 0f ? face.normal : -face.normal;
-                        // an exit face has nothing of the vehicle beyond it, along the round's path or straight out from it
+                        // exit face has nothing of the vehicle beyond it, along the round's path or straight out from it
                         // (only a round that went through comes out)
                         bool canExit = penetrated && found && !Covered(hull, col, face.point, -dir) && !Covered(hull, col, face.point, -outN);
                         if (canExit)
@@ -264,14 +261,14 @@ namespace GHPCHitCam
                 bool heat = ammo.Category == AmmoType.AmmoCategory.ShapedCharge;
                 float r = Mathf.Max(holeRadius, 0.012f);
                 bool hole = penetrated;
-                // an autocannon round with the light hit cam: its marks stay the flat ones (no cut into the model, no 3D
-                // plate): each of those cost 5-30 ms, for every round of a burst
+                // autocannon round with the light hit cam: marks stay flat (no cut into the model, no 3D plate), each of those
+                // cost 5-30 ms for every round of a burst
                 bool light = Settings.LightAutocannonCam.Value && Mathf.Max(ammo.Caliber, ammo.Radius * 2000f) < Settings.BurstCaliberMm.Value;
                 int layer = VisibleLayer(unit);
                 WorldModules.Dump(unit);
                 if (he || heat) WorldModules.OnBurst(unit, PhysicsToRender(col).MultiplyPoint3x4(point), ammo);
-                // a plate behind the tracks / road wheels (the round came through the running gear, or the gear stands in
-                // front of it) isn't seen from outside; the gear shows the hit instead
+                // plate behind the tracks / road wheels (round came through the running gear, or the gear stands in front of it)
+                // isn't seen from outside, the gear shows the hit instead
                 if (!exit && WorldModules.BehindGear(unit, col, point, dir, normal, out var gearCol, out var gearAt, out var gearN))
                 {
                     if (gearCol != null && spots.Count == 1)
@@ -283,7 +280,7 @@ namespace GHPCHitCam
                     else if (AutoTest.Active) HitCamMod.Log.Msg($"World damage on {Recorder.SafeName(unit)} ({col.name}): behind the running gear, no marks");
                     return;
                 }
-                // running gear (track links, road wheels, sprockets) isn't a plate: no plate failure, damage that fits it
+                // running gear (track links, road wheels, sprockets) isn't a plate: no plate failure, damage that fits it instead
                 if (WorldModules.IsRunningGear(unit, col))
                 {
                     var tr = PhysicsToRender(col);
@@ -293,11 +290,11 @@ namespace GHPCHitCam
                 }
                 Vector3 sprayDir0 = ricochet ? Vector3.Reflect(dir, normal) : exit ? Vector3.Lerp(normal, dir, 0.5f).normalized : Vector3.Lerp(normal, -dir, 0.4f).normalized;
 
-                // the same spot hit again (bursts, the game re-testing a plate): one plate is enough, unless a hole now goes through a dent
+                // same spot hit again (bursts, game re-testing a plate): one plate is enough, unless a hole now goes through a dent
                 var near = WorldPlate.Near(unit, point, Mathf.Max(0.1f, r * 0.8f));
                 if (near != null)
                 {
-                    // a much bigger hole (an HE tear through an old rod hole) replaces the old plate
+                    // much bigger hole (HE tear through an old rod hole) replaces the old plate
                     if ((near.Hole && r < near.HoleR * 1.5f) || !hole)
                     {
                         Sparks(point - dir * 0.03f, sprayDir0, he ? 160 : 60, he ? 26f : 18f, ricochet ? 18f : 55f, layer);
@@ -306,12 +303,12 @@ namespace GHPCHitCam
                     UnityEngine.Object.Destroy(near.gameObject);
                 }
 
-                // the round's raycast saw the physics pose of the vehicle; its transform (what is drawn, what the decals
-                // stick to) may be a step behind with interpolation. The plate is laid on the colliders in physics space, the rest uses the drawn pose.
+                // round's raycast saw the vehicle's physics pose, its transform (what's drawn, what decals stick to) can be a step
+                // behind with interpolation. plate is laid on the colliders in physics space, the rest uses the drawn pose
                 var toRender = PhysicsToRender(col);
                 Vector3 pointR = toRender.MultiplyPoint3x4(point), dirR = toRender.MultiplyVector(dir), normalR = toRender.MultiplyVector(normal);
 
-                // find the real outside surface of the visual model along the incoming path (for an exit: from outside, against the normal)
+                // find the real outside surface of the visual model along the incoming path (exit: from outside, against the normal)
                 long lap = Perf.Now;
                 Vector3 surf = pointR;
                 Vector3 sn = normalR;
@@ -367,8 +364,8 @@ namespace GHPCHitCam
                 root.transform.SetPositionAndRotation(surf + sn * 0.003f, Quaternion.LookRotation(-sn, Mathf.Abs(Vector3.Dot(sn, Vector3.up)) > 0.95f ? Vector3.forward : Vector3.up));
                 // +Z of root points into the plate
 
-                // flat decals, used when the 3D plate is too small on screen or something stands in front of it:
-                // scorch / blast mark, ragged dark opening with a thin glowing edge that cools to black, or a glowing dent
+                // flat decals when the 3D plate is too small on screen or something's in front of it:
+                // scorch / blast mark, ragged dark opening with a thin glowing edge cooling to black, or a glowing dent
                 var flat = new List<Renderer>();
                 float soot = exit ? r * 2f : he ? r * 4.5f : heat ? r * 6f : (hole ? r * 3.2f : r * 2.4f);
                 var sootM = Matrix4x4.Scale(new Vector3(soot * 2f, soot * 2f, 1f));
@@ -388,14 +385,14 @@ namespace GHPCHitCam
                     dent.gameObject.AddComponent<Cool>().Init(dent, new Color(1f, 0.7f, 0.35f), 3f);
                     flat.Add(dent);
                 }
-                // with the 3D plate the soot is a ring around it (the plate has its own scorched centre)
-                // (darker than the flat soot: it sits next to the CPU-lit plate, which is shaded like the scene)
+                // with the 3D plate the soot is a ring around it (plate has its own scorched centre), darker than the flat soot
+                // since it sits next to the CPU-lit plate which is shaded like the scene
                 var ring = Quad(root.transform, "soot ring", SootRing, sootM, _soot, layer, new Color(0.35f, 0.35f, 0.35f, exit ? 0.4f : hole ? 0.85f : 0.6f));
                 ring.enabled = false;
 
-                // the plate itself (the failure physics of PlateSim, settled on the hull) is built over the next frames, a few
-                // milliseconds per frame, so a burst or a round through several plates doesn't stall the game. Until then the
-                // flat decals show. The hit is kept relative to the struck part, so a moving vehicle or turning turret is fine.
+                // the plate itself (PlateSim failure physics settled on the hull) gets built over the next frames, a few ms per
+                // frame, so a burst or a round through several plates doesn't stall the game. flat decals show until then. hit is
+                // kept relative to the struck part so a moving vehicle or turning turret is fine
                 var plate = root.AddComponent<WorldPlate>();
                 plate.Unit = unit; plate.Hole = hole; plate.HoleR = holeRadius; plate.Layer = layer;
                 var ct = col.transform;
@@ -434,16 +431,16 @@ namespace GHPCHitCam
         }
 
         static readonly Queue<WorldPlate> _pending = new Queue<WorldPlate>();
-        // plates laid on their armour piece, waiting for the picture of the drawn surface to come back from the GPU
+        // plates laid on their armour piece, waiting for the drawn-surface picture to come back from the GPU
         class Probing { public WorldPlate Plate; public WorldPlate.Pending W; public HoleFx Fx; public ProbeJob Job; public int Frame; public float Ms; }
         static readonly List<Probing> _probing = new List<Probing>();
         static float _msGeom;
         static int _trisGeom;
         static bool _buildLogged;
 
-        /// Builds the queued plates, ~5 ms per frame (at least one): first the half that needs the physics (the plate's
-        /// face, mesh, collider rays) and a surface picture whose read-back runs on the GPU's own time; a frame or two later
-        /// the rest, once the picture is back. Nothing waits for the GPU.
+        /// builds the queued plates, ~5 ms per frame (at least one): first the half that needs physics (plate face, mesh,
+        /// collider rays) + a surface picture whose read-back runs on the GPU's own time, a frame or two later the rest once
+        /// the picture is back. nothing waits for the GPU
         public static void Update()
         {
             if (_pending.Count == 0 && _probing.Count == 0) return;
@@ -479,7 +476,7 @@ namespace GHPCHitCam
                 float t0 = (float)sw.Elapsed.TotalMilliseconds;
                 try
                 {
-                    // the struck part's drawn pose now, back into the physics pose the colliders are queried in
+                    // struck part's drawn pose now, back into the physics pose the colliders get queried in
                     var ct = w.Col.transform;
                     var toRender = PhysicsToRender(w.Col);
                     var toPhys = toRender.inverse;
@@ -488,13 +485,13 @@ namespace GHPCHitCam
                     Vector3 dir = toPhys.MultiplyVector(ct.TransformDirection(w.D)).normalized;
                     var fx = BeginPlate(plate, w, point, normal, dir, toRender);
                     if (fx == null) continue;
-                    // the surface picture, where the plate now sits on the drawn vehicle
+                    // surface picture: where the plate now sits on the drawn vehicle
                     fx.ProbeFrame(out var pp, out var prot, out float half, out float back);
                     var job = SurfaceDepthBegin(pp, prot, half, HoleFx.ProbeRes, back, 1 << plate.Layer, plate.Unit);
                     var entry = new Probing { Plate = plate, W = w, Fx = fx, Job = job, Frame = Time.frameCount, Ms = (float)sw.Elapsed.TotalMilliseconds - t0 };
                     if (job == null || job.Sync != null)
                     {
-                        // no read-back to wait for (no picture, or the GPU can't read back asynchronously)
+                        // no read-back to wait for (no picture, or the GPU can't do async read-back)
                         float[] vis = job?.Sync;
                         if (!fx.FinishWorld(vis)) { fx.Abandon(); continue; }
                         InitPlate(plate, fx, w);
@@ -516,7 +513,7 @@ namespace GHPCHitCam
             HitCamMod.Log.Msg($"World plate on {Recorder.SafeName(plate.Unit)} ({(w.Col != null ? w.Col.name : "?")}): {fx.Mode}{(fx.Exit ? " (exit)" : "")},{groove} {(fx.OnRealPlate ? "on the real plate" : "on the hull colliders")}, angle {HoleFx.ImpactAngle(fx.Hit):0.#} deg, panel {fx.Radius * 2000f:0} mm, opening {fx.Opening * 1000f:0} mm, {fx.OnHull} hull samples {fx.ConformNote}, depth {fx.Depth * 100f:0} cm, built in {ms:0.0} ms of main thread{(async ? " (surface picture read back asynchronously)" : "")} (plate geometry {_msGeom:0.0} ms, {_trisGeom} tris; {_pending.Count} queued, {_probing.Count} waiting for pictures)");
         }
 
-        /// The first half of a plate: on the struck armour piece, in the physics pose, then moved to the drawn pose under its root.
+        /// first half of a plate: on the struck armour piece in the physics pose, then moved to the drawn pose under its root
         static HoleFx BeginPlate(WorldPlate plate, WorldPlate.Pending w, Vector3 point, Vector3 normal, Vector3 dir, Matrix4x4 toRender)
         {
             var unit = plate.Unit;
@@ -545,8 +542,8 @@ namespace GHPCHitCam
                 dist = h.distance;
                 return true;
             };
-            // the struck armour piece itself (the game's own collider shape): the damage lies on its face and stops at its edges.
-            // The collider's transform is the drawn pose; the plate is built in the physics pose.
+            // the struck armour piece itself (game's own collider shape): damage lies on its face and stops at its edges.
+            // collider's transform is the drawn pose, the plate gets built in the physics pose
             var gsw = System.Diagnostics.Stopwatch.StartNew();
             var tris = Recorder.PlateGeometry(col, toRender.MultiplyPoint3x4(point), null);
             if (tris != null)
@@ -554,7 +551,7 @@ namespace GHPCHitCam
                 var toPhys = toRender.inverse;
                 for (int i = 0; i < tris.Length; i++) tris[i] = toPhys.MultiplyPoint3x4(tris[i]);
             }
-            // the vehicle's middle (which way is out for faces edge-on to the round)
+            // vehicle's middle (which way is out for faces edge-on to the round)
             var hb = new Bounds(point, Vector3.zero);
             bool hbSet = false;
             foreach (var hc in hull.set) if (hc != null) { if (!hbSet) { hb = hc.bounds; hbSet = true; } else hb.Encapsulate(hc.bounds); }
@@ -570,12 +567,12 @@ namespace GHPCHitCam
         static void InitPlate(WorldPlate plate, HoleFx fx, WorldPlate.Pending w)
         {
             var ring = w.Ring;
-            // a groove runs along the plate: the round blast mark around the impact doesn't belong to it
+            // a groove runs along the plate, the round blast mark around the impact doesn't belong to it
             if (fx.Mode == PlateMode.Trench && ring != null) { UnityEngine.Object.Destroy(ring.gameObject); ring = null; }
             plate.Init(fx, w.Pen && fx.Opening > 0f, w.Flat, ring, _wPlate, _wCup, _wPunch);
             LogLight();
 
-            // long battles: the oldest plates fall back to their flat decals
+            // long battles: oldest plates fall back to their flat decals
             int max = Mathf.Max(0, Settings.MaxWorldPlates.Value), n3 = 0;
             var all3 = WorldPlate.All;
             for (int i = 0; i < all3.Count; i++) if (all3[i] != null && all3[i].Has3D) n3++;
@@ -592,23 +589,23 @@ namespace GHPCHitCam
         static Material _depthMat;
         static CommandBuffer _probeCb, _netCb;
         static bool _probeBroken, _probeLogged;
-        // the render types the depth-normals shader has a subshader for; materials with any other (or none) are skipped by it
+        // render types the depth-normals shader has a subshader for, it skips materials with any other (or none)
         static readonly HashSet<string> _depthTypes = new HashSet<string>();
         static readonly Dictionary<Material, bool> _redraw = new Dictionary<Material, bool>(), _isNet = new Dictionary<Material, bool>();
         static readonly Dictionary<Unit, List<Renderer>> _unitRenderers = new Dictionary<Unit, List<Renderer>>();
         static readonly HashSet<string> _tagsLogged = new HashSet<string>();
         static readonly List<Material> _mats = new List<Material>();
 
-        /// The game's meshes can't be read on the CPU, but they can be drawn: a tiny orthographic camera looks at the
-        /// spot along the plate normal and draws the vehicle's layer with Unity's own depth+normals shader. Returns plate z
-        /// (+ into the plate) per sample, NaN where nothing is drawn.
-        /// The shader only draws materials whose RenderType it knows, and alpha-tests the TransparentCutout ones on the
-        /// main texture. GHPC's vehicle paint (GHPC/VehicleShader) and camo nets are tagged TransparentCutout, but their
-        /// texture alpha isn't opacity, so most of the hull was clipped away. A second pass draws the unit's own renderers
-        /// with those materials (and any of unknown type) as plain opaque into the same depth buffer: the nearest surface
-        /// of either pass wins. Camo nets are drawn alone first (solid): where one is the nearest surface the sample is
-        /// -Infinity, cover, so the plate is never drawn over a net.
-        /// A surface picture in flight: its passes rendered, their read-backs requested.
+        /// game's meshes can't be read on the CPU but they can be drawn: tiny ortho camera looks at the spot along the plate
+        /// normal and draws the vehicle's layer with unity's own depth+normals shader. returns plate z (+ into the plate) per
+        /// sample, NaN where nothing is drawn.
+        /// gotcha: the shader only draws materials whose RenderType it knows and alpha-tests TransparentCutout ones on the main
+        /// texture. GHPC's vehicle paint (GHPC/VehicleShader) and camo nets are tagged TransparentCutout but their texture
+        /// alpha isn't opacity, so most of the hull got clipped away. so a second pass draws the unit's own renderers with
+        /// those materials (and any unknown type) as plain opaque into the same depth buffer, nearest surface of either pass
+        /// wins. camo nets are drawn alone first (solid): where one is the nearest surface the sample is -Infinity (cover),
+        /// so the plate never gets drawn over a net
+        /// surface picture in flight: passes rendered, read-backs requested
         internal class ProbeJob
         {
             public RenderTexture NetRT, MainRT;
@@ -616,7 +613,7 @@ namespace GHPCHitCam
             public bool HasNet;
             public float Far, Back;
             public int Res;
-            public float[] Sync;      // done on the spot (no asynchronous read-back on this GPU)
+            public float[] Sync;      // done on the spot (no async read-back on this GPU)
             public bool Done => (!HasNet || NetReq.done) && MainReq.done;
         }
 
@@ -659,7 +656,7 @@ namespace GHPCHitCam
             return job;
         }
 
-        /// The picture's plate depths (NaN: nothing drawn, -Infinity: a camo net), or null; frees the job's textures.
+        /// picture's plate depths (NaN: nothing drawn, -Infinity: camo net) or null, frees the job's textures
         static float[] SurfaceDepthEnd(ProbeJob job)
         {
             if (job.Sync != null) return job.Sync;
@@ -692,7 +689,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// The depth-normals shader, the probe camera and its texture (once).
+        /// depth-normals shader, probe camera and its texture (once)
         static bool ProbeSetup(int res)
         {
             if (_depthNormals == null)
@@ -722,7 +719,7 @@ namespace GHPCHitCam
                 _probeCam.allowMSAA = false;
                 _probeCam.useOcclusionCulling = false;
                 _probeCam.clearFlags = CameraClearFlags.SolidColor;
-                _probeCam.backgroundColor = new Color(0.5f, 0.5f, 1f, 1f);    // decodes past the far plane: nothing there
+                _probeCam.backgroundColor = new Color(0.5f, 0.5f, 1f, 1f);    // decodes past the far plane = nothing there
                 _probeCam.aspect = 1f;
             }
             if (_probeRT == null || _probeRT.width != res)
@@ -747,7 +744,7 @@ namespace GHPCHitCam
             _probeCam.targetTexture = _probeRT;
             QueueHull(unit, pos, rot, half, back, out int draws, out int netDraws);
 
-            // camo nets alone first: the plate replaces whatever is drawn under it, and a net lies only a few cm off the paint
+            // camo nets alone first: plate replaces whatever is drawn under it, and a net is only a few cm off the paint
             float[] net = null;
             if (netDraws > 0)
             {
@@ -761,12 +758,12 @@ namespace GHPCHitCam
             _probeCam.RenderWithShader(_depthNormals, "RenderType");
             int byType = log ? Decode(ReadProbe(res), null, far, back) : -1;
 
-            // second pass, on top of the first (no clear, normal depth test): the unit's own cut-out and unknown-type
+            // second pass on top of the first (no clear, normal depth test): unit's own cut-out and unknown-type
             // renderers again, without the alpha test
             if (draws > 0) DrawProbe(_probeCb, false);
             var z = new float[res * res];
             int drawn = Decode(ReadProbe(res), z, far, back), onNet = 0;
-            // the net is cover where it is the nearest surface (or the paint shows through its slits right behind it)
+            // net is cover where it's the nearest surface (or the paint shows through its slits right behind it)
             if (net != null)
                 for (int i = 0; i < z.Length; i++)
                     if (!float.IsNaN(net[i]) && (float.IsNaN(z[i]) || net[i] <= z[i] + 0.03f)) { z[i] = float.NegativeInfinity; onNet++; }
@@ -775,11 +772,11 @@ namespace GHPCHitCam
                 _probeLogged = true;
                 HitCamMod.Log.Msg($"World plates: surface probe {res}x{res} over {half * 200f:0} cm, {drawn} samples drawn ({byType} by render type, {draws} opaque redraws), {onNet} on a camo net, {sw.Elapsed.TotalMilliseconds:0.0} ms");
             }
-            if (drawn == 0) return null;      // the layer drew nothing at all (shader not matched): use the colliders
+            if (drawn == 0) return null;      // layer drew nothing at all (shader not matched): use the colliders
             return z;
         }
 
-        /// The probe camera drawing only a command buffer (nothing culled from the scene).
+        /// probe camera drawing only a command buffer (nothing culled from the scene)
         static void DrawProbe(CommandBuffer cb, bool clear)
         {
             _probeCam.clearFlags = clear ? CameraClearFlags.SolidColor : CameraClearFlags.Nothing;
@@ -802,7 +799,7 @@ namespace GHPCHitCam
             return _probeTex.GetPixels32();
         }
 
-        /// Plate z per sample (NaN where nothing is drawn) into z if given; returns the number of samples drawn.
+        /// plate z per sample (NaN where nothing drawn) into z if given, returns number of samples drawn
         static int Decode(Color32[] px, float[] z, float far, float back)
         {
             int drawn = 0;
@@ -817,8 +814,8 @@ namespace GHPCHitCam
             return drawn;
         }
 
-        /// Fills the probe's command buffers with the unit's renderers inside the probe box: the camo nets, and those
-        /// whose materials the first pass clipped or skipped (see Redraw).
+        /// fills the probe's command buffers with the unit's renderers inside the probe box: camo nets + those whose
+        /// materials the first pass clipped or skipped (see Redraw)
         static void QueueHull(Unit unit, Vector3 pos, Quaternion rot, float half, float back, out int draws, out int nets)
         {
             _probeCb.Clear();
@@ -843,7 +840,7 @@ namespace GHPCHitCam
                 if (mesh == null) continue;
                 r.GetSharedMaterials(_mats);
                 int subs = Mathf.Min(_mats.Count, mesh.subMeshCount);
-                // transparent ones (sight glass, hatch voids) are not the hull
+                // transparent ones (sight glass, hatch voids) aren't the hull
                 for (int s = 0; s < subs; s++)
                 {
                     var m = _mats[s];
@@ -854,7 +851,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// A camouflage net (GHPC's CamoNet shader, or a material named like one).
+        /// camo net (GHPC's CamoNet shader, or a material named like one)
         static bool IsNet(Material m)
         {
             if (_isNet.TryGetValue(m, out bool b)) return b;
@@ -864,9 +861,9 @@ namespace GHPCHitCam
             return b;
         }
 
-        /// Drawn again as plain opaque in the second pass: opaque-queue materials the first pass alpha-tests
-        /// (TransparentCutout: the shader clips on the texture alpha, which in GHPC's vehicle shader isn't opacity)
-        /// or doesn't draw at all (render types it has no subshader for).
+        /// drawn again as plain opaque in the second pass: opaque-queue materials the first pass alpha-tests
+        /// (TransparentCutout: shader clips on texture alpha, which in GHPC's vehicle shader isn't opacity)
+        /// or doesn't draw at all (render types it has no subshader for)
         static bool Redraw(Material m)
         {
             if (_redraw.TryGetValue(m, out bool b)) return b;
@@ -876,8 +873,8 @@ namespace GHPCHitCam
             return b;
         }
 
-        /// The unit's mesh renderers (also inactive ones; LOD0 only), and once per vehicle type a log of its shaders
-        /// and which of them the probe draws again as opaque.
+        /// unit's mesh renderers (inactive ones too, LOD0 only), and once per vehicle type a log of its shaders
+        /// and which of them the probe redraws as opaque
         static List<Renderer> UnitRenderers(Unit u)
         {
             if (_unitRenderers.TryGetValue(u, out var list) && list.All(r => r != null)) return list;
@@ -933,8 +930,8 @@ namespace GHPCHitCam
 
         static readonly RaycastHit[] _hits = new RaycastHit[24];
 
-        /// The nearest of a vehicle's own armour colliders along a ray, with the hit (point, normal, collider): what the world
-        /// plates lay themselves on. Queries the physics scene with the armour layers and keeps only that vehicle's armour.
+        /// nearest of a vehicle's own armour colliders along a ray, with the hit (point, normal, collider): what the world
+        /// plates lay themselves on. queries the physics scene with the armour layers, keeps only that vehicle's armour
         internal static bool ArmourHit(Unit u, Ray ray, float len, out RaycastHit hit)
         {
             hit = default;
@@ -948,7 +945,7 @@ namespace GHPCHitCam
             return any;
         }
 
-        /// Nearest of the vehicle's own armour colliders along a ray.
+        /// nearest of the vehicle's own armour colliders along a ray
         static bool HullRay(HashSet<Collider> set, int mask, Vector3 o, Vector3 d, float len, out float dist)
         {
             dist = float.MaxValue;
@@ -959,11 +956,11 @@ namespace GHPCHitCam
             return any;
         }
 
-        /// A plate right under the vehicle's outer skin: along its normal, whatever covers it (an add-on plate, ERA, a skirt)
-        /// lies within a few cm, and past that is open air. A firewall or turret floor deep inside fails.
+        /// plate right under the vehicle's outer skin: along its normal whatever covers it (add-on plate, ERA, skirt) is
+        /// within a few cm and past that it's open air. a firewall or turret floor deep inside fails
         static bool JustUnderSkin((HashSet<Collider> set, int mask) hull, Vector3 point, Vector3 normal)
         {
-            // coming in along the normal from outside: every armour piece met lies within a few cm of the plate
+            // coming in along the normal from outside: every armour piece met is within a few cm of the plate
             const float from = 3f;
             int n = Physics.RaycastNonAlloc(point + normal * from, -normal, _hits, from - 0.005f, hull.mask, QueryTriggerInteraction.Ignore);
             for (int i = 0; i < n; i++)
@@ -971,7 +968,7 @@ namespace GHPCHitCam
             return true;
         }
 
-        /// Is the spot behind another of the vehicle's armour pieces, seen from outside along `travel` (the way in)?
+        /// is the spot behind another of the vehicle's armour pieces, seen from outside along `travel` (the way in)?
         static bool Covered((HashSet<Collider> set, int mask) hull, Collider struck, Vector3 point, Vector3 travel)
         {
             const float from = 6f;
@@ -981,7 +978,7 @@ namespace GHPCHitCam
             return false;
         }
 
-        /// The vehicle's armour colliders (no modules, crew or triggers): the surface the plates are laid on.
+        /// vehicle's armour colliders (no modules, crew or triggers): the surface the plates get laid on
         internal static (HashSet<Collider> set, int mask) HullColliders(Unit u)
         {
             if (_hulls.TryGetValue(u, out var h) && h.set.Count > 0 && h.set.All(c => c != null)) return h;
@@ -997,7 +994,7 @@ namespace GHPCHitCam
                 }
             h = (set, mask);
             _hulls[u] = h;
-            // a vehicle's own armour hides plates behind it too
+            // vehicle's own armour hides plates behind it too
             if ((_occMask & mask) != mask)
             {
                 HitCamMod.Log.Msg("World plates: armour layers " + string.Join(", ", Enumerable.Range(0, 32).Where(l => (mask & (1 << l)) != 0).Select(l => l + " " + LayerMask.LayerToName(l))) + " added to the occlusion test");
@@ -1006,7 +1003,7 @@ namespace GHPCHitCam
             return h;
         }
 
-        /// World matrix from the vehicle's physics pose (what raycasts see) to its drawn pose.
+        /// world matrix from the vehicle's physics pose (what raycasts see) to its drawn pose
         internal static Matrix4x4 PhysicsToRender(Collider col)
         {
             var rb = col.attachedRigidbody;
@@ -1017,7 +1014,7 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ per camera: 3D plate or flat decals
 
-        /// Number of plates drawn in 3D / as flat decals by the last camera that drew any (for the self-test log).
+        /// plates drawn in 3D / as flat decals by the last camera that drew any (for the self-test log)
         public static int Last3D, LastFlat;
 
         static void PreCull(Camera cam) { using (Perf.T("WorldDamage.PreCull")) TimedPreCull(cam); }
@@ -1056,13 +1053,13 @@ namespace GHPCHitCam
             if (d < 0.02f || Vector3.Dot(to, f) <= 0f || Vector3.Dot(to, outN) >= 0f) return false;   // behind the camera, or seen from inside the plate
             float px = p.Fx.Radius * halfPx / (cam.orthographic ? Mathf.Max(cam.orthographicSize, 1e-3f) : d * tanHalf);
             if (px < MinPixels) return false;
-            // anything between: a wheel, another vehicle, a building, the terrain
+            // anything in between: wheel, another vehicle, building, terrain
             Vector3 dv = pos + outN * 0.04f - c;
             float dl = dv.magnitude;
             return dl < 0.06f || !Physics.Raycast(c, dv / dl, dl - 0.03f, _occMask, QueryTriggerInteraction.Ignore);
         }
 
-        /// The newest plate still drawn in 3D (self-test close-ups).
+        /// newest plate still drawn in 3D (self-test close-ups)
         public static WorldPlate LastPlate()
         {
             var all = WorldPlate.All;
@@ -1105,7 +1102,7 @@ namespace GHPCHitCam
             _sl.AmbDown = _ambOut[5];
             if (_sl.AmbUp.maxColorComponent < 0.003f && _sl.AmbSide.maxColorComponent < 0.003f)
             {
-                // no ambient probe: the flat / trilight ambient colours, or a share of the sun
+                // no ambient probe: flat / trilight ambient colours, or a share of the sun
                 Color sky = RenderSettings.ambientSkyColor, eq = RenderSettings.ambientEquatorColor, gr = RenderSettings.ambientGroundColor;
                 if (_sl.Linear) { sky = sky.linear; eq = eq.linear; gr = gr.linear; }
                 float k = RenderSettings.ambientIntensity;
@@ -1135,7 +1132,7 @@ namespace GHPCHitCam
             return mr != null ? mr.gameObject.layer : 0;
         }
 
-        /// The unit's own hierarchy plus the parts the game moves separately (LateFollow, e.g. turrets), the active ones.
+        /// unit's own hierarchy + parts the game moves separately (LateFollow, e.g. turrets), active ones only
         internal static List<Transform> UnitRoots(Unit u)
         {
             var roots = new List<Transform>();
@@ -1157,7 +1154,7 @@ namespace GHPCHitCam
             foreach (var root in UnitRoots(u))
                 foreach (var mf in root.GetComponentsInChildren<MeshFilter>(false))
                 {
-                    if (mf.name == InsideName) continue;      // our own dark insides: not the vehicle's surface
+                    if (mf.name == InsideName) continue;      // our own dark insides, not the vehicle's surface
                     var r = mf.GetComponent<MeshRenderer>();
                     if (r == null || lodSkip.Contains(r) || mf.sharedMesh == null || !r.enabled) continue;
                     if (r.bounds.size.magnitude > 16f || (camMask & (1 << r.gameObject.layer)) == 0) continue;
@@ -1173,9 +1170,10 @@ namespace GHPCHitCam
             var go = new GameObject(name);
             go.layer = layer;
             go.transform.SetParent(parent, false);
-            go.transform.localPosition = m.GetColumn(3);
-            go.transform.localRotation = m.rotation;
-            go.transform.localScale = m.lossyScale;
+            Vis.ToTrs(m, out var pos, out var rot, out var scale);   // keeps a mirror (m.rotation of a mirrored one is junk)
+            go.transform.localPosition = pos;
+            go.transform.localRotation = rot;
+            go.transform.localScale = scale;
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var r = go.AddComponent<MeshRenderer>();
             r.sharedMaterial = mat;
@@ -1189,7 +1187,7 @@ namespace GHPCHitCam
         internal static Mesh SootDisc => _sootDisc ??= MakeSoot(false);
         static Mesh SootRing => _sootRing ??= MakeSoot(true);
 
-        /// Blast mark: a jagged dark disc, or (ring = true) the same mark with a clear centre for the 3D plate to sit in.
+        /// blast mark: jagged dark disc, or (ring = true) same mark with a clear centre for the 3D plate to sit in
         static Mesh MakeSoot(bool ring)
         {
             const int n = 28;
@@ -1236,7 +1234,7 @@ namespace GHPCHitCam
             return m;
         }
 
-        /// Radius factor of a torn edge at angle a: a few low-frequency lobes plus fine jaggies, same for the same seed.
+        /// radius factor of a torn edge at angle a: a few low-freq lobes + fine jaggies, same for the same seed
         static float Torn(float a, float ragged, int seed)
         {
             var rnd = new System.Random(seed);
@@ -1246,7 +1244,7 @@ namespace GHPCHitCam
             return 1f + ragged * (lobes * 0.8f + (fine - 0.5f) * 0.35f);
         }
 
-        /// Jagged opening: dark brown at the torn edge, black in the middle (vertex-coloured, unlit).
+        /// jagged opening: dark brown at the torn edge, black in the middle (vertex-coloured, unlit)
         static Mesh RaggedDisc(float r, float ragged, int seed)
         {
             const int n = 48;
@@ -1267,7 +1265,7 @@ namespace GHPCHitCam
             return m;
         }
 
-        /// Thin hot band hugging the same jagged edge (same seed as the opening).
+        /// thin hot band hugging the same jagged edge (same seed as the opening)
         static Mesh ThinRim(float r, float ragged, int seed)
         {
             const int n = 48;
@@ -1339,7 +1337,7 @@ namespace GHPCHitCam
         internal static Material DarkMat { get { Init(); return _dark; } }
         internal static Material GlowMat { get { Init(); return _glow; } }
 
-        /// A model piece the world modules now draw themselves (a cut barrel, a broken tail boom): no more holes cut into it here.
+        /// model piece the world modules now draw themselves (cut barrel, broken tail boom): no more holes cut into it here
         internal static void ForgetCut(Renderer r)
         {
             var mf = r != null ? r.GetComponent<MeshFilter>() : null;
@@ -1348,15 +1346,14 @@ namespace GHPCHitCam
             if (_inside.TryGetValue(mf, out var inner)) { if (inner != null) UnityEngine.Object.Destroy(inner.gameObject); _inside.Remove(mf); }
         }
 
-        /// The cut pieces' dark insides (child of each piece).
+        /// cut pieces' dark insides (child of each piece)
         static readonly Dictionary<MeshFilter, MeshFilter> _inside = new Dictionary<MeshFilter, MeshFilter>();
         static Material _inner;
         internal const string InsideName = "HitCam dark interior";
 
-        /// A hull piece with a hole cut in it: the piece again, inside out (only its back faces, the inner side of the
-        /// walls) in dark soot brown. Through the hole you look into a dark hull instead of out through the far wall (whose
-        /// inner side the game never draws) at the ground behind. Drawn a little behind its own depth, so where a model
-        /// has double-sided panels their paint still wins.
+        /// hull piece with a hole cut in it: the piece again, inside out (back faces only, inner side of the walls) in dark
+        /// soot brown. through the hole you look into a dark hull instead of out through the far wall (game never draws its
+        /// inner side) at the ground behind. drawn a bit behind its own depth so double-sided panels keep their paint
         static void DarkInside(MeshFilter mf, Mesh m, Material walls = null)
         {
             if (mf != null && _inside.TryGetValue(mf, out var have) && have != null)
@@ -1387,8 +1384,8 @@ namespace GHPCHitCam
             JoinLod(mf.GetComponent<Renderer>(), r);
         }
 
-        /// Our copy shows and hides with the piece it belongs to (a LOD1 hull is a little smaller or bigger than LOD0: the
-        /// LOD0 inside would poke through it at a distance).
+        /// our copy shows and hides with the piece it belongs to (a LOD1 hull is a bit smaller or bigger than LOD0, the
+        /// LOD0 inside would poke through it at a distance)
         static void JoinLod(Renderer src, Renderer ours)
         {
             if (src == null) return;
@@ -1405,9 +1402,9 @@ namespace GHPCHitCam
             }
         }
 
-        /// The turret (or another big part) thrown off: the hull is open at the ring and the part underneath. Their big
-        /// pieces get dark insides, so you look into a dark hull, not through it. Works on any model (it only draws the
-        /// game's mesh again, nothing is read or cut).
+        /// turret (or another big part) thrown off: hull is open at the ring and the part underneath. their big pieces get
+        /// dark insides so you look into a dark hull, not through it. works on any model (only draws the game's mesh again,
+        /// nothing read or cut)
         internal static void OpenedUp(Unit unit, Transform part)
         {
             if (!Settings.WorldDamage.Value) return;
@@ -1418,7 +1415,7 @@ namespace GHPCHitCam
                 if (unit != null) roots.AddRange(GhostSnapshot.Roots(unit));
                 if (part != null) roots.Add(part);
                 int n = 0;
-                // this hull's own inside walls: lit by its fire (they flicker with it, then cool to soot)
+                // this hull's own inside walls: lit by its fire (flicker with it, then cool to soot)
                 if (_inner == null) DarkInside(null, null);
                 var walls = new Material(_inner);
                 foreach (var root in roots)
@@ -1426,7 +1423,7 @@ namespace GHPCHitCam
                     if (root == null) continue;
                     foreach (var mf in root.GetComponentsInChildren<MeshFilter>(false))
                     {
-                        if (mf == null || mf.sharedMesh == null || mf.name == InsideName) continue;   // (a cut piece's inside gets the fire too)
+                        if (mf == null || mf.sharedMesh == null || mf.name == InsideName) continue;   // (cut piece's inside gets the fire too)
                         var rr = mf.GetComponent<MeshRenderer>();
                         if (rr == null || !rr.enabled || rr.bounds.size.magnitude < 0.8f) continue;
                         int layer = mf.gameObject.layer;
@@ -1449,15 +1446,15 @@ namespace GHPCHitCam
         static Material _charred;
         internal const string CharredName = "HitCam charred interior";
 
-        /// What's inside an opened hull: the game's own models of the interior (seats, the gun's breech, drives, the
-        /// engine, the rack and its rounds; GHPC keeps them for its x-ray in the after-action view, on a layer no game
-        /// camera draws) drawn on the vehicle in burnt steel, lit by the sun through the opening and by the fire.
+        /// what's inside an opened hull: game's own interior models (seats, breech, drives, engine, rack and its rounds;
+        /// GHPC keeps them for the AAR x-ray on a layer no game camera draws) drawn on the vehicle in burnt steel, lit by
+        /// the sun through the opening and by the fire
         static int CharredInterior(Unit unit, Transform turret, out Material embers)
         {
             embers = null;
             if (unit == null) return 0;
-            // only what's under the open ring: the rest can't be seen, and some of the game's x-ray boxes (fuel tanks,
-            // stowage) are bigger than the hull and came through its roof as burnt slabs
+            // only what's under the open ring: the rest can't be seen, and some of the game's x-ray boxes (fuel tanks, stowage)
+            // are bigger than the hull and came through its roof as burnt slabs
             var ut = unit.transform;
             Vector3 ringL = turret != null ? ut.InverseTransformPoint(turret.position) : Vector3.zero;
             float ringR = 1.35f;
@@ -1465,7 +1462,7 @@ namespace GHPCHitCam
             {
                 var std = Shader.Find("Standard");
                 _charred = std != null ? new Material(std) : new Material(Vis.Solid);
-                _charred.color = new Color(0.20f, 0.17f, 0.15f);    // burnt paint and ash over steel: dark, but the shapes read
+                _charred.color = new Color(0.20f, 0.17f, 0.15f);    // burnt paint and ash over steel: dark but the shapes still read
                 if (std != null)
                 {
                     _charred.SetFloat("_Metallic", 0.15f);
@@ -1475,14 +1472,14 @@ namespace GHPCHitCam
                     _charred.SetColor("_EmissionColor", Color.black);
                 }
             }
-            // this vehicle's own copy: its embers glow and die down with its fire (InteriorGlow)
+            // this vehicle's own copy: embers glow and die down with its fire (InteriorGlow)
             embers = new Material(_charred);
             int layer = VisibleLayer(unit), n = 0;
             foreach (var av in GhostSnapshot.AarVisualsOf(unit))
             {
                 if (av == null) continue;
                 string an = av.name.ToLowerInvariant();
-                // (the rack's rounds too: what's left of them and the carousel is most of what you see down there)
+                // (rack rounds too: what's left of them and the carousel is most of what you see down there)
                 var rs = av.SpecificRenderers != null && av.SpecificRenderers.Length > 0 ? av.SpecificRenderers : av.GetComponentsInChildren<Renderer>(true);
                 foreach (var r in rs)
                 {
@@ -1510,7 +1507,7 @@ namespace GHPCHitCam
         }
         static readonly HashSet<MeshFilter> _charredFor = new HashSet<MeshFilter>();
 
-        /// Self-test: a look down into the opened hull once the turret has gone.
+        /// self-test: look down into the opened hull once the turret is gone
         static System.Collections.IEnumerator SnapOpened(Unit u)
         {
             float t0 = Time.realtimeSinceStartup;
@@ -1526,8 +1523,8 @@ namespace GHPCHitCam
         }
         internal static int DebrisLayer { get { Init(); return _debrisLayer; } }
 
-        /// A loose physics piece in the world (a track link, a barrel end, a tail boom): a box collider of its mesh's bounds,
-        /// steel density unless `mass` is given; counts toward MaxDebris and lives DebrisSeconds (life < 0) or `life` seconds.
+        /// loose physics piece in the world (track link, barrel end, tail boom): box collider of its mesh bounds, steel
+        /// density unless `mass` is given. counts toward MaxDebris, lives DebrisSeconds (life < 0) or `life` seconds
         internal static GameObject SpawnPiece(string name, Vector3 pos, Quaternion rot, Vector3 scale, Vector3 vel, Vector3 angVel,
                                               Mesh mesh = null, Material[] mats = null, float mass = -1f, float life = -1f, int layer = -1)
         {
@@ -1567,18 +1564,18 @@ namespace GHPCHitCam
             go.AddComponent<MeshFilter>().sharedMesh = Prims.Cube;
             var r = go.AddComponent<MeshRenderer>();
             r.sharedMaterial = _metal;
-            r.shadowCastingMode = size < 0.04f ? ShadowCastingMode.Off : ShadowCastingMode.On;   // a few-cm chip's shadow is a dot
+            r.shadowCastingMode = size < 0.04f ? ShadowCastingMode.Off : ShadowCastingMode.On;   // a few-cm chip's shadow is just a dot
             go.AddComponent<BoxCollider>();
             var rb = go.AddComponent<Rigidbody>();
             rb.mass = Mathf.Clamp(size * size * size * 7800f, 0.02f, 25f);
             rb.velocity = vel;
             rb.angularVelocity = UnityEngine.Random.insideUnitSphere * 30f;
-            // speculative contacts: they don't go through the ground at these speeds, and cost a fraction of full CCD in
+            // speculative contacts: they don't go through the ground at these speeds and cost a fraction of full CCD in
             // the game's own physics step
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             go.AddComponent<Expire>().At = Time.time + Settings.DebrisSeconds.Value;
-            // hot when torn off, cools down in a few seconds
+            // hot when torn off, cools down in a few s
             go.AddComponent<Cool>().Init(r, new Color(1f, 0.45f, 0.15f), 3.5f, _metal.color);
             _debris.Add(go);
             _debris.RemoveAll(d => d == null);
@@ -1605,7 +1602,7 @@ namespace GHPCHitCam
             _sun = null;
         }
 
-        /// One unit's meshes, renderers and armour colliders, found again on the next look (another mod rebuilt it).
+        /// one unit's meshes, renderers and armour colliders, found again on the next look (another mod rebuilt it)
         public static void Forget(Unit u)
         {
             if (u == null) return;
@@ -1616,13 +1613,13 @@ namespace GHPCHitCam
         }
     }
 
-    /// One armour hit on a real vehicle, drawn as the 3D plate: it folds for ~0.3 s, then freezes; its hot edges cool
-    /// over a few seconds and it is relit now and then as the vehicle turns. Lives on the hit's "HitCam damage" root.
+    /// one armour hit on a real vehicle drawn as the 3D plate: folds for ~0.3 s then freezes, hot edges cool over a
+    /// few seconds and it gets relit now and then as the vehicle turns. lives on the hit's "HitCam damage" root
     internal class WorldPlate : MonoBehaviour
     {
         public static readonly List<WorldPlate> All = new List<WorldPlate>();
 
-        /// A hit waiting for its 3D plate to be built (positions in the struck part's own space).
+        /// hit waiting for its 3D plate to be built (positions in the struck part's own space)
         internal class Pending
         {
             public Collider Col;
@@ -1650,7 +1647,7 @@ namespace GHPCHitCam
 
         public bool Has3D => Fx != null && _plate != null;
 
-        void Awake() { All.Add(this); Born = Time.time; }     // the hit; Init sets it again when the 3D plate is built
+        void Awake() { All.Add(this); Born = Time.time; }     // the hit, Init sets it again when the 3D plate is built
 
         public void Init(HoleFx fx, bool hole, Renderer[] flat, Renderer ring, Material plate, Material cup, Material punch)
         {
@@ -1689,7 +1686,7 @@ namespace GHPCHitCam
             return null;
         }
 
-        /// 3D plate (its punch placed for this camera) or the flat decals.
+        /// 3D plate (its punch placed for this camera) or the flat decals
         public void Show(bool three)
         {
             if (!Has3D) three = false;
@@ -1703,7 +1700,7 @@ namespace GHPCHitCam
             if (_flat != null) foreach (var f in _flat) if (f != null) f.enabled = !three;
         }
 
-        /// The footprint scaled about the camera: same pixels, but behind everything the plate, bore and cup draw.
+        /// footprint scaled about the camera: same pixels but behind everything the plate, bore and cup draw
         public void PlacePunch(Camera cam)
         {
             Transform t = Fx.T;
@@ -1728,7 +1725,7 @@ namespace GHPCHitCam
             {
                 float age = Time.time - Born;
                 bool reshaped = false;
-                // the fold at up to 30 Hz, the colours (cooling, light) at 20 Hz while hot, then a few times a second
+                // fold at up to 30 Hz, colours (cooling, light) at 20 Hz while hot, then a few times a second
                 if (!_frozen && Time.time >= _nextShape)
                 {
                     float u = age / HoleFx.WorldFold;
@@ -1752,7 +1749,7 @@ namespace GHPCHitCam
         {
             var sl = WorldDamage.Lighting();
             _next = Time.time + (age < HoleFx.WorldCool + 0.2f ? 0.05f : 0.25f + 0.1f * UnityEngine.Random.value);
-            // far from the camera nobody sees the shading change; check again later
+            // far from the camera nobody sees the shading change, check again later
             if (age > HoleFx.WorldCool + 0.2f && (sl.Cam - transform.position).sqrMagnitude > 300f * 300f) { _next = Time.time + 1.5f; return; }
             if (Time.time >= _nextShadow)
             {
@@ -1762,7 +1759,7 @@ namespace GHPCHitCam
             Fx.PaintWorld(sl, age, _shadow);
         }
 
-        /// Back to the flat decals only (plate cap, or an error).
+        /// back to flat decals only (plate cap, or an error)
         public void Drop3D()
         {
             if (_punch != null) Destroy(_punch.gameObject);
@@ -1785,7 +1782,7 @@ namespace GHPCHitCam
         }
     }
 
-    /// Fades a renderer's colour from hot to cold.
+    /// fades a renderer's colour from hot to cold
     internal class Cool : MonoBehaviour
     {
         Renderer _r;
@@ -1810,8 +1807,8 @@ namespace GHPCHitCam
 
 namespace GHPCHitCam
 {
-    /// The fire inside a hull that lost its turret: an orange light down in the hull, flickering, dying down over a
-    /// couple of minutes. It lights the charred interior from below the way the flames do.
+    /// fire inside a hull that lost its turret: orange light down in the hull, flickering, dying down over a couple
+    /// of minutes. lights the charred interior from below like the flames do
     internal class InteriorGlow : MonoBehaviour
     {
         UnityEngine.Light _l;
@@ -1841,10 +1838,9 @@ namespace GHPCHitCam
             float age = Time.time - _born;
             float fade = Mathf.Exp(-age / 70f);
             float flicker = 0.65f + 0.35f * Mathf.PerlinNoise(_seed, Time.time * 7f) + 0.15f * Mathf.PerlinNoise(_seed + 3f, Time.time * 23f);
-            // the embers on the burnt parts glow on a while after the flames (and pulse with them)
+            // embers on the burnt parts glow a while after the flames (and pulse with them)
             if (_embers != null) _embers.SetColor("_EmissionColor", new Color(0.22f, 0.07f, 0.018f) * (Mathf.Exp(-age / 150f) * (0.7f + 0.3f * flicker)));   // glowing like embers next to the flames
-            // the inside walls: they take the fire's light (the drawn hull's inside is unlit, so it's painted in), then
-            // cool to soot
+            // inside walls take the fire's light (drawn hull's inside is unlit so it's painted in), then cool to soot
             if (_walls != null) _walls.color = Color.Lerp(Soot, FireLit, Mathf.Clamp01(fade * (0.7f + 0.3f * flicker)));
             if (fade < 0.03f) { if (_embers != null) _embers.SetColor("_EmissionColor", Color.black); if (_walls != null) _walls.color = Soot; Destroy(gameObject); return; }
             _l.intensity = 6f * fade * flicker;

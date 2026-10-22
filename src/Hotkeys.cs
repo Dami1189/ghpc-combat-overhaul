@@ -6,11 +6,10 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// The mod's keys: a key with modifiers ("F9", "Alt+Home", "Ctrl+Shift+K", "None"), read from their settings every
-    /// time (a change in the settings window works at once). The old defaults sat on keys the game uses itself (F4/F5
-    /// waypoints, F11 screenshot, [ ] weapon switch, keypad +/- cruise speed, F5-F8 and B in its AAR's controls), so
-    /// the defaults moved to keys it leaves free, the ones that change the mission behind Alt, and none of them acts
-    /// while the game's own AAR is open.
+    /// mod keys: key + modifiers ("F9", "Alt+Home", "Ctrl+Shift+K", "None"), read from settings every time so a change in
+    /// the settings window works at once. old defaults sat on keys the game uses (F4/F5 waypoints, F11 screenshot, [ ]
+    /// weapon switch, keypad +/- cruise speed, F5-F8 and B in its AAR controls), so defaults moved to free keys, the
+    /// mission-changing ones behind Alt, and none of them do anything while the game's AAR is open
     internal static class Hotkeys
     {
         internal struct Combo
@@ -67,7 +66,7 @@ namespace GHPCHitCam
             return k.ToString();
         }
 
-        /// As people read it: "Alt+K", "9", "Num *", "none".
+        /// human readable: "Alt+K", "9", "Num *", "none"
         public static string Label(string stored)
         {
             var c = Parse(stored);
@@ -77,7 +76,7 @@ namespace GHPCHitCam
 
         public static string Label(MelonPreferences_Entry<string> e) => e != null ? Label(e.Value) : "none";
 
-        /// The game's own after action report (its replay, with its own keys) is open.
+        /// game's own after action report (its replay, with its own keys) is open
         static bool GameAarOpen()
         {
             try { return GHPC.AarController.InAar; } catch { return false; }
@@ -87,31 +86,40 @@ namespace GHPCHitCam
         static bool CtrlHeld => Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
         static bool ShiftHeld => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
-        /// Pressed this frame: its key went down with exactly its Alt and Ctrl (Alt+Home is not Home); Shift only counts
-        /// when the combo asks for it (the game's Shift toggles the outside camera, people hold it).
+        /// pressed this frame: key went down with exactly its Alt and Ctrl (Alt+Home is not Home). Shift only counts when
+        /// the combo asks for it (game's Shift toggles the outside camera, people hold it)
         public static bool Down(MelonPreferences_Entry<string> e, bool evenInGameAar = false)
         {
             if (e == null) return false;
             var c = Parse(e.Value);
-            if (c.None || !Input.GetKeyDown(c.Key)) return false;
-            if (c.Alt != AltHeld || c.Ctrl != CtrlHeld || (c.Shift && !ShiftHeld)) return false;
+            if (c.None) return false;
+            bool fake = FakeFrame == Time.frameCount && FakeCombo != null && string.Equals(FakeCombo, e.Value, StringComparison.OrdinalIgnoreCase);
+            if (!fake)
+            {
+                if (!Input.GetKeyDown(c.Key)) return false;
+                if (c.Alt != AltHeld || c.Ctrl != CtrlHeld || (c.Shift && !ShiftHeld)) return false;
+            }
             return evenInGameAar || !GameAarOpen();
         }
+
+        /// self-test with the game not in front: a key the mod's check sees as pressed in that frame (the game doesn't)
+        internal static string FakeCombo;
+        internal static int FakeFrame = -1;
 
         // ------------------------------------------------------------------ the game's own bindings
 
         static Dictionary<KeyCode, List<(string action, bool alt, bool ctrl, bool shift)>> _game;
         static float _gameAt = -100f;
 
-        /// What the game itself does with this key (its keyboard bindings, the AAR's raw keys left out: ours are off
-        /// there), or null. Rebuilt every few seconds while asked for (the player may rebind in the game's options).
+        /// what the game itself does with this key (its keyboard bindings, minus the AAR's raw keys since ours are off there),
+        /// or null. rebuilt every few s while asked (player may rebind in the game's options)
         public static string GameUse(string stored)
         {
             var c = Parse(stored);
             if (c.None) return null;
             if (_game == null || Time.unscaledTime - _gameAt > 5f) ReadGame();
             if (_game == null || !_game.TryGetValue(c.Key, out var list)) return null;
-            // a binding of the game's without modifiers goes off with ours held too
+            // a game binding without modifiers fires with ours held too
             var hits = list.Where(b => (!b.alt && !b.ctrl && !b.shift) || (b.alt == c.Alt && b.ctrl == c.Ctrl && b.shift == c.Shift)).Select(b => b.action).Distinct().ToList();
             return hits.Count > 0 ? string.Join(", ", hits) : null;
         }
@@ -144,7 +152,7 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ the 1.1 layout
 
-        /// The keys whose old defaults the game used, and their new ones (a key someone set by hand stays as it is).
+        /// keys whose old defaults clashed with the game, and their new ones (a key someone set by hand stays as is)
         public static readonly (string id, string old, string now)[] Moved =
         {
             ("AarKey", "F11", "F2"),

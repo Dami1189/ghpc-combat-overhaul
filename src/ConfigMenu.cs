@@ -10,23 +10,23 @@ using UnityEngine.EventSystems;
 
 namespace GHPCHitCam
 {
-    /// In-game settings window (ConfigKey, default F12, or the Overhaul tab
-    /// in the game's own Options, OptionsHook): every MelonPreferences entry of the mod's categories, in tabs and sections
-    /// (Layout), each with what it does in plain words (Help) and, for the ones that cost frame rate, how much (Cost); a
-    /// Quick setup tab with the quality presets (Presets) and the main switches. Toggles / sliders / choices / key capture.
-    /// Changes apply at once (keys are re-read too) and are saved with MelonPreferences.Save() on close or "Save".
-    /// While open: the game's own pause (ConfigPauseGame), cursor free, keyboard input to the game blocked; the arcade HUD
-    /// stays visible behind it with example callout / kill feed lines so size changes can be seen.
+    /// in-game settings window (ConfigKey, default F12, or the Overhaul tab in the game's own Options, OptionsHook):
+    /// every MelonPreferences entry of the mod's categories in tabs and sections (Layout), each with what it does in plain
+    /// words (Help) and for the ones that cost fps, how much (Cost); a Quick setup tab with the quality presets (Presets)
+    /// and the main switches. toggles / sliders / choices / key capture. changes apply right away (keys re-read too) and
+    /// get saved with MelonPreferences.Save() on close or "Save". while open: game's own pause (ConfigPauseGame), cursor
+    /// free, keyboard input to the game blocked; arcade HUD stays visible behind it with example callout / kill feed lines
+    /// so you can see size changes
     internal static class ConfigMenu
     {
         public static bool IsOpen { get; private set; }
         public static bool PausedByMenu { get; private set; }
         static bool _cursorVisible, _dirty;
-        static EventSystem _uiOff;      // the game's menu input, off while the window is up (clicks would fall through to it)
+        static EventSystem _uiOff;      // game's menu input, off while the window is up (else clicks fall through to it)
         static CursorLockMode _cursorLock;
         static int _tab;
         internal static int Tab { get => _tab; set => _tab = value; }
-        /// Self-test: a tab by its name.
+        /// self-test: a tab by its name
         internal static void TestTab(string name) { int i = Array.IndexOf(Tabs, name); if (i >= 0) { _tab = i; _scroll = Vector2.zero; } }
         static Vector2 _scroll;
         static MelonPreferences_Entry _capturing;
@@ -36,15 +36,15 @@ namespace GHPCHitCam
         static readonly string[] Tabs = { "Quick setup", "Hit cam", "X-ray", "World & sound", "HUD", "Tools", "Keys", "Advanced" };
         internal static int TabIndex(string name) => Math.Max(0, Array.IndexOf(Tabs, name));
 
-        /// The window: tab, section, its settings in this order. A setting listed nowhere goes to Advanced (a key: to Keys).
+        /// the window: tab, section, its settings in this order. a setting listed nowhere goes to Advanced (a key: to Keys)
         static readonly (string tab, string title, string[] ids)[] Layout =
         {
             ("Hit cam", "Window", new[] { "Enabled", "PipSize", "PipCorner", "Style", "HullTexture", "HitCamAntiAliasing" }),
-            ("Hit cam", "Which hits", new[] { "PlayerShotsOnly", "MinCaliberMm", "BurstCaliberMm", "LightAutocannonCam", "QueueHits" }),
+            ("Hit cam", "Which hits", new[] { "PlayerShotsOnly", "HitCamOnWrecks", "MinCaliberMm", "BurstCaliberMm", "LightAutocannonCam", "QueueHits" }),
             ("Hit cam", "Timing", new[] { "HitCamPace", "ConstantSlowMo", "ApproachSeconds", "InteriorSeconds", "AftermathSeconds", "ImpactSlowMo" }),
             ("Hit cam", "Ammunition fires and cook-offs", new[] { "CookOffWait", "CookOffReplay" }),
             ("X-ray", "Camera", new[] { "CinematicXray", "RodCam" }),
-            ("X-ray", "Crew and physics", new[] { "XrayPhysics", "XrayPhysicsSpeed", "DetailedCrew", "CrewPanic", "AmmoExplosionKillsCrew" }),
+            ("X-ray", "Crew and physics", new[] { "XrayPhysics", "XrayPhysicsSpeed", "DetailedCrew", "CrewPanic", "AmmoExplosionKillsCrew", "CrewInAmmoExplosion" }),
             ("X-ray", "Round and armour", new[] { "RodSoftBody", "ShowAllSpall", "ArmorHoles" }),
             ("World & sound", "Damage on the real vehicles", new[] { "WorldDamage", "CutModels", "MaxWorldPlates", "WorldVentJets" }),
             ("World & sound", "Shrapnel", new[] { "WorldShrapnel", "MaxDebris", "DebrisSeconds" }),
@@ -66,7 +66,7 @@ namespace GHPCHitCam
         };
         static readonly HashSet<string> Unlisted = new HashSet<string> { "PipWidth" };   // old, unused
 
-        /// What a setting costs in frame rate (1 small, 2 noticeable, 3 big) and why. The presets set these.
+        /// what a setting costs in fps (1 small, 2 noticeable, 3 big) and why. presets set these
         static readonly Dictionary<string, (int lvl, string why)> Cost = new Dictionary<string, (int, string)>
         {
             { "XrayPhysics", (3, "a physics world of its own runs while the hit cam plays (ragdolls, plate pieces)") },
@@ -92,7 +92,7 @@ namespace GHPCHitCam
         };
 
 
-        /// Section lists of the current tab: (title, entries).
+        /// section lists of the current tab: (title, entries)
         static readonly List<(int tab, string title, List<MelonPreferences_Entry> rows)> _sections = new List<(int, string, List<MelonPreferences_Entry>)>();
         static readonly Dictionary<string, MelonPreferences_Entry> _byId = new Dictionary<string, MelonPreferences_Entry>();
 
@@ -137,10 +137,11 @@ namespace GHPCHitCam
             { "MinimapEnemies", new[] { "Spotted", "Always", "Off" } },
             { "HitCamAntiAliasing", new[] { "Off", "2x", "4x", "8x" } },
             { "HitCamPace", new[] { "Cinematic", "Constant" } },
+            { "CrewInAmmoExplosion", new[] { "Gone", "Outline", "Stay" } },
             { "UpdateCheck", new[] { "Ask", "Auto", "Off" } },
         };
 
-        /// The mod's entries (its own category, and any other category whose name says HitCam).
+        /// the mod's entries (its own category plus any other category with HitCam in the name)
         static readonly List<MelonPreferences_Entry> _entries = new List<MelonPreferences_Entry>();
         static void Collect()
         {
@@ -172,7 +173,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("Settings window: " + e.Message); }
         }
 
-        /// The first install's welcome: Quick setup with a few words on top.
+        /// first install welcome: Quick setup with a few words on top
         public static bool Welcome;
 
         public static void OpenWelcome()
@@ -225,10 +226,10 @@ namespace GHPCHitCam
 
         static int _closedFrame = -10;
 
-        /// The game's player input (driving, the gun, Q, Tab, ESC...) waits while the window is up, and on the frame it
-        /// closes: the ESC that closed it doesn't also open the game's menu. Holding the game's whole input update keeps
-        /// its own state (BlockKeyboardInput, which the game sets in a mission's planning phase) untouched; setting that
-        /// and putting it back later restored a stale value.
+        /// game's player input (driving, gun, Q, Tab, ESC...) waits while the window is up and on the frame it closes, so
+        /// the ESC that closed it doesn't also open the game menu. holding the game's whole input update leaves its own state
+        /// (BlockKeyboardInput, which the game sets in a mission's planning phase) alone; setting that and putting it back
+        /// later restored a stale value
         public static bool HoldsGameInput => IsOpen || Time.frameCount - _closedFrame <= 1;
 
         public static void Install(HarmonyLib.Harmony h)
@@ -246,8 +247,8 @@ namespace GHPCHitCam
 
         static readonly Dictionary<string, int> _inputErrors = new Dictionary<string, int>();
 
-        /// An error in the game's player input update (another mod's hook in the Q menu, say) is written to the log with
-        /// where it came from, a few times each: the game itself only stops that frame's input there.
+        /// an error in the game's player input update (another mod's hook in the Q menu, say) goes to the log with where it
+        /// came from, a few times each: the game itself just drops that frame's input there
         static Exception PlayerUpdateFinalizer(Exception __exception)
         {
             if (__exception == null) return null;
@@ -270,7 +271,7 @@ namespace GHPCHitCam
 
         static void Say(string m) { _status = m; _statusAt = Time.unscaledTime; }
 
-        /// (The keys are read from their settings each time they're checked: Hotkeys.)
+        /// (keys are re-read from their settings every time they're checked: Hotkeys)
         static void RefreshKeys() { }
 
         // ------------------------------------------------------------------ drawing
@@ -323,8 +324,8 @@ namespace GHPCHitCam
                 try
                 {
                     if (!IsOpen) return;
-                    // over everything else of the mod's (drawn last): the rest dimmed, and what's under it hidden and
-                    // taking no clicks (the Armor Sim fired a round through it)
+                    // on top of everything else of the mod's (drawn last): the rest dimmed, what's under it hidden and taking no
+                    // clicks (the Armor Sim fired a round through it)
                     var dim = GUI.color;
                     GUI.color = new Color(0f, 0f, 0f, 0.55f);
                     GUI.DrawTexture(new Rect(0f, 0f, W, H), Texture2D.whiteTexture);
@@ -383,12 +384,12 @@ namespace GHPCHitCam
             GUILayout.Space(2);
         }
 
-        /// First tab: the presets, the main switches, the hit cam window, the keys.
+        /// first tab: presets, main switches, hit cam window, keys
         static void QuickSetup()
         {
             if (Welcome)
             {
-                // a first install: what this is and where things are, before the choices
+                // first install: what this is and where things are, before the choices
                 Section("Welcome to GHPC Combat Overhaul");
                 GUILayout.Label("Pick how much of it you want: a quality preset and the main switches below. Everything else is in the other tabs, "
                     + $"and this window is always on {Hotkeys.Label(Settings.ConfigKey)}. ARMOR SIM and PROVING GROUND in the main menu are the mod's too. "
@@ -480,7 +481,7 @@ namespace GHPCHitCam
                     GUILayout.FlexibleSpace();
                     if (cap)
                     {
-                        // the key with the modifiers held with it (Alt+K); a modifier on its own waits for the key
+                        // key with the modifiers held with it (Alt+K), a modifier alone waits for the key
                         var ev = Event.current;
                         if (ev.type == EventType.KeyDown && ev.keyCode != KeyCode.None && !IsModifier(ev.keyCode))
                         {
@@ -509,7 +510,7 @@ namespace GHPCHitCam
             }
             GUI.enabled = true;
             GUILayout.EndHorizontal();
-            // under it: what it does, and what it costs
+            // under it: what it does and what it costs
             string help = e.Description;
             if (e is MelonPreferences_Entry<string> ke && e.Identifier.EndsWith("Key") && ke.Value != "None")
             {
@@ -551,7 +552,7 @@ namespace GHPCHitCam
             if (e.Identifier.EndsWith("Key")) RefreshKeys();
         }
 
-        /// Names that read better written out than split from the identifier.
+        /// names that read better written out than split from the identifier
         static readonly Dictionary<string, string> Labels = new Dictionary<string, string>
         {
             { "Enabled", "Hit cam" }, { "CinematicXray", "Cinematic x-ray camera" }, { "PipSize", "Hit cam size" }, { "PipCorner", "Hit cam corner" },
@@ -564,9 +565,10 @@ namespace GHPCHitCam
             { "MinCaliberMm", "Min caliber (mm)" }, { "LightAutocannonCam", "Light hit cam for autocannons" }, { "UpdateCheck", "Check for updates" }, { "ProvingGroundBriefing", "Briefing when it's ready" }, { "ProvingGroundRespawnSeconds", "Targets come back after (s)" }, { "ProvingGroundEmptyMap", "Empty map (only the range)" }, { "ProvingGroundBuildKey", "Proving ground in this mission" }, { "ToggleKey", "Hit cam on / off" }, { "ReplayKey", "Replay the last hit" }, { "ConfigKey", "This window" }, { "AarKey", "After Action Report" }, { "ArmorSimKey", "Armor Sim" }, { "ProvingGroundKey", "Proving ground tools" }, { "ArsenalKey", "Arsenal" }, { "ArcadeKey", "Arcade HUD on / off" }, { "MinimapZoomInKey", "Minimap zoom in" }, { "MinimapZoomOutKey", "Minimap zoom out" }, { "ArsenalPrevKey", "Arsenal: round before" }, { "ArsenalNextKey", "Arsenal: next round" }, { "FireNowKey", "Arsenal: fire it now" }, { "RangeKey", "Test range (spawns enemies)" }, { "BurstCaliberMm", "Short replay below (mm)" }, { "ApproachSeconds", "Approach (s)" },
             { "InteriorSeconds", "Penetration (s)" }, { "AftermathSeconds", "Aftermath (s)" }, { "ImpactSlowMo", "Impact slow motion (s)" }, { "HitCamPace", "Hit cam pace" }, { "ConstantSlowMo", "Constant slow motion (x)" },
             { "DebugLog", "Debug log" }, { "ArmorHoles", "Armour holes" }, { "PlayerShotsOnly", "Only my shots" },
+            { "HitCamOnWrecks", "Hit cam on wrecks" }, { "CrewInAmmoExplosion", "Crew in an ammo explosion" },
         };
 
-        /// "ArcadeSfxVolume" -> "Arcade sfx volume".
+        /// "ArcadeSfxVolume" -> "Arcade sfx volume"
         static readonly Dictionary<string, string> _pretty = new Dictionary<string, string>();
         static string Pretty(string id)
         {

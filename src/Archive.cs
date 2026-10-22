@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Saves every hit as JSON (target-local paths, armor hits, timed events) so it can be replayed / inspected later.
+    /// saves every hit as JSON (target-local paths, armor hits, timed events) to replay / look at later
     internal static class Archive
     {
         static string _session;
@@ -22,16 +22,16 @@ namespace GHPCHitCam
             public string ammo; public string ammoCategory; public float caliber; public float penetration; public float distance;
             public Vector3 entry; public Vector3 entryDir; public float interiorEnd; public float approachStart;
             public Vector3 boundsCenter; public Vector3 boundsSize;
-            // After Action Report: enough to replay the hit later on a box model of the vehicle
+            // after action report (AAR): enough to replay the hit later on a box model of the vehicle
             public float coreEnd, missionTime, ammoMass, ammoArea, ammoTnt, ammoSpeed; public bool onPlayer, killed, knockedOut;
             public List<FragDto> fragments = new List<FragDto>();
             public List<ArmorDto> armor = new List<ArmorDto>();
             public List<EventDto> events = new List<EventDto>();
-            public AarBoxesDto boxes;   // the vehicle as boxes (flat lists); last, so a problem here can't cost the fields above
+            public AarBoxesDto boxes;   // vehicle as boxes (flat lists), last so a problem here can't cost the fields above
         }
 
-        /// Hits go to disk only for past missions someone wants to keep: the report shows this mission and the last one
-        /// from memory (the self-test checks the files, so it always writes them).
+        /// hits only go to disk for past missions someone wants to keep, the report shows this mission and the last one
+        /// from memory (self-test checks the files so it always writes them)
         public static bool Keeping => Settings.SaveRecords.Value && (Settings.PastMissionsKept.Value > 0 || AutoTest.Active);
 
         public static void Save(HitRecord rec)
@@ -81,8 +81,8 @@ namespace GHPCHitCam
                         frag = e.Frag?.Id ?? 0, noPos = !e.HasPos, speed = e.Speed, power = e.Power, mass = e.Mass, spallHit = e.Spall, jetHit = e.Jet, hasDir = e.HasDir, dir = e.DirL });
 
                 string file = Path.Combine(_session, $"hit_{rec.Id:0000}_{Safe(rec.TargetName)}.json");
-                // the JSON (hundreds of spall paths, tens of ms) is written on a worker thread: in the frame it was a hitch
-                // every time a hit cam closed. JsonUtility drops nested classes (fragments, armor, events): Newtonsoft.
+                // JSON (hundreds of spall paths, tens of ms) is written on a worker, in the frame it hitched every time a hit cam
+                // closed. JsonUtility drops nested classes (fragments, armor, events) so Newtonsoft
                 System.Threading.ThreadPool.QueueUserWorkItem(_ =>
                 {
                     try { File.WriteAllText(file, AarJson.Write(d)); }
@@ -98,7 +98,7 @@ namespace GHPCHitCam
 
         static volatile string _bgError;
 
-        /// The folder of the current mission's hits (created on demand). One folder per mission: NewSession() at mission start.
+        /// folder of the current mission's hits (made on demand), one per mission: NewSession() at mission start
         public static string SessionDir(bool create = false)
         {
             if (_session == null && create)
@@ -111,8 +111,8 @@ namespace GHPCHitCam
 
         public static void NewSession() { _session = null; Prune(false); }
 
-        /// Keeps the disk tidy: the hits of at most PastMissionsKept finished missions (the newest), the running
-        /// mission's aside. Called when the report closes and when a mission starts; deleted on a worker.
+        /// keeps the disk tidy: hits of at most PastMissionsKept finished missions (newest), running mission left alone.
+        /// called when the report closes and when a mission starts, deleting runs on a worker
         public static void Prune(bool missionRunning)
         {
             try
@@ -122,7 +122,7 @@ namespace GHPCHitCam
                 int keep = Mathf.Max(0, Settings.PastMissionsKept.Value);
                 string running = missionRunning ? _session : null;
                 var dirs = new List<string>(Directory.GetDirectories(root, "hits_*"));
-                dirs.Sort((a, b) => string.CompareOrdinal(b, a));   // newest first (the names are dates)
+                dirs.Sort((a, b) => string.CompareOrdinal(b, a));   // newest first (names are dates)
                 var drop = new List<string>();
                 int kept = 0;
                 foreach (var d in dirs)
@@ -153,7 +153,7 @@ namespace GHPCHitCam
 
         static volatile string _pruned;
 
-        /// Main thread: reports what the worker tidied up.
+        /// main thread: reports what the worker cleaned up
         public static void Update()
         {
             var p = _pruned;

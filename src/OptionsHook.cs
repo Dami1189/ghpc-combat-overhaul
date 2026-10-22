@@ -10,9 +10,9 @@ using UnityEngine.UI;
 
 namespace GHPCHitCam
 {
-    /// The mod's settings window from GHPC's own Options: an "Overhaul" tab added to every options tab bar the game builds
-    /// (the main menu's options and the in-mission menu's), a copy of the game's own last tab so it looks like one of them.
-    /// Clicking it opens the settings window (ConfigMenu). Nothing else in the game's menus changes.
+    /// mod settings window from GHPC's own Options: an "Overhaul" tab added to every options tab bar the game builds
+    /// (main menu options and the in-mission menu), a copy of the game's own last tab so it looks like one of them.
+    /// clicking it opens the settings window (ConfigMenu), nothing else in the game's menus changes
     internal static class OptionsHook
     {
         const string TabName = "HitCam settings tab";
@@ -22,10 +22,9 @@ namespace GHPCHitCam
 
         static readonly System.Collections.Generic.HashSet<int> _looked = new System.Collections.Generic.HashSet<int>();
 
-        /// Once a second while a menu can be up (the cursor is free): any options tab bar (they come with each scene's
-        /// menus) that has no HitCam tab yet gets one. Each tab bar is looked at once: telling an options bar from the
-        /// others searches the whole menu under it, and doing that every second for every bar was a 25 ms hitch every
-        /// second.
+        /// once a second while a menu can be up (cursor free): any options tab bar (they come with each scene's menus)
+        /// without a HitCam tab yet gets one. each bar only gets looked at once: telling an options bar from the others
+        /// searches the whole menu under it, and doing that every second for every bar was a 25 ms hitch every second
         public static void Update()
         {
             if (Time.unscaledTime < _next || !Cursor.visible) return;
@@ -54,7 +53,7 @@ namespace GHPCHitCam
         {
             var tabs = tg.GetComponentsInChildren<TabButton>(true);
             if (tabs.Length == 0) return;
-            // copy the last tab that is shown (Cheats sits last but hidden unless cheats are on)
+            // copy the last tab that's shown (Cheats sits last but hidden unless cheats are on)
             var src = tabs[tabs.Length - 1];
             for (int i = tabs.Length - 1; i >= 0; i--) if (tabs[i].gameObject.activeSelf) { src = tabs[i]; break; }
             var bar = src.transform.parent;
@@ -67,12 +66,12 @@ namespace GHPCHitCam
             go.transform.SetAsLastSibling();
             go.SetActive(true);
             UnityEngine.Object.DestroyImmediate(go.GetComponent<TabButton>());
-            // the game's localisation would put the copied tab's own name back
+            // game's localisation would put the copied tab's own name back
             foreach (var c in go.GetComponentsInChildren<Component>(true))
                 if (c != null && c.GetType().Name.IndexOf("Locali", StringComparison.OrdinalIgnoreCase) >= 0) UnityEngine.Object.DestroyImmediate(c);
             SetText(go, "Overhaul");
             go.AddComponent<OptionsTab>().Init(go.GetComponent<Image>(), idle);
-            // a bar without a layout group: step the copy along like the tabs before it
+            // bar without a layout group: step the copy along like the tabs before it
             int si = Array.IndexOf(tabs, src);
             if (bar.GetComponent<LayoutGroup>() == null && si >= 1 && tabs[si - 1].transform is RectTransform a
                 && src.transform is RectTransform b && go.transform is RectTransform rt)
@@ -120,7 +119,7 @@ namespace GHPCHitCam
         }
     }
 
-    /// The HitCam tab in the game's options: opens the settings window; lights up on hover like the game's tabs.
+    /// HitCam tab in the game's options: opens the settings window, lights up on hover like the game's tabs
     internal class OptionsTab : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
     {
         Image _bg;

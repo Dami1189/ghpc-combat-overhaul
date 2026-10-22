@@ -4,9 +4,8 @@ using UnityEngine.Rendering;
 
 namespace GHPCHitCam
 {
-    /// CPU mesh helpers for real holes: ray vs mesh, and cutting ragged holes into readable meshes.
-    /// Game plates are often a couple of huge triangles, so triangles near a hole are subdivided first,
-    /// then the small pieces inside the (jittered) hole radius are dropped -> torn edge.
+    /// CPU mesh helpers for real holes: ray vs mesh and cutting ragged holes into readable meshes. game plates are often
+    /// a couple of huge tris, so tris near a hole get subdivided first, then bits inside the (jittered) radius dropped -> torn edge
     internal static class MeshCutter
     {
         class Cached { public Vector3[] V; public int[] T; public Grid G; }
@@ -22,12 +21,11 @@ namespace GHPCHitCam
             return c;
         }
 
-        /// Reads a readable mesh and builds its ray grid now (the warm-up), so the first hit on it doesn't.
+        /// reads a readable mesh and builds its ray grid now (warm-up) so the first hit on it doesn't have to
         public static void Prepare(Mesh m) { if (m != null && m.isReadable) Data(m); }
 
-        /// The mesh's triangles sorted into a uniform grid of cells (about two triangles a cell), built once per mesh:
-        /// a ray tests only the triangles of the cells it crosses. A hull mesh has tens of thousands of triangles, and
-        /// testing all of them took 5-15 ms a ray.
+        /// mesh tris sorted into a uniform grid (about two a cell), built once per mesh, a ray only tests the cells it crosses.
+        /// a hull mesh has tens of thousands of tris, testing all of them was 5-15 ms a ray
         sealed class Grid
         {
             public Vector3 Min, Max, Cell;
@@ -39,7 +37,7 @@ namespace GHPCHitCam
         static Grid BuildGrid(Vector3[] V, int[] T)
         {
             int nt = T.Length / 3;
-            if (nt < 200 || V.Length == 0) return null;          // small meshes: testing every triangle is quick
+            if (nt < 200 || V.Length == 0) return null;          // small meshes: testing every tri is quick anyway
             Vector3 min = V[0], max = V[0];
             for (int i = 1; i < V.Length; i++) { min = Vector3.Min(min, V[i]); max = Vector3.Max(max, V[i]); }
             Vector3 size = max - min + Vector3.one * 1e-4f;
@@ -62,7 +60,7 @@ namespace GHPCHitCam
                 Range(t, out int x0, out int x1, out int y0, out int y1, out int z0, out int z1);
                 for (int x = x0; x <= x1; x++) for (int y = y0; y <= y1; y++) for (int z = z0; z <= z1; z++) count[(x * ny + y) * nz + z]++;
                 total += (long)(x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1);
-                if (total > 4000000) return null;                // a few enormous triangles over everything: not worth it
+                if (total > 4000000) return null;                // a few huge tris over everything: not worth it
             }
             g.Start = new int[cells + 1];
             for (int i = 0; i < cells; i++) g.Start[i + 1] = g.Start[i] + count[i];
@@ -77,7 +75,7 @@ namespace GHPCHitCam
             return g;
         }
 
-        /// Möller-Trumbore: distance along the ray to triangle t (index of its first corner), or -1.
+        /// Möller-Trumbore: distance along the ray to triangle t (index of its first corner), or -1
         static float HitTri(Vector3[] V, int[] T, int t, Vector3 o, Vector3 d)
         {
             Vector3 a = V[T[t]], b = V[T[t + 1]], c = V[T[t + 2]];
@@ -95,7 +93,7 @@ namespace GHPCHitCam
             return Vector3.Dot(e2, q) * inv;
         }
 
-        /// Walks the cells along the ray (Amanatides-Woo) and tests their triangles, nearest cells first.
+        /// walks the cells along the ray (Amanatides-Woo) and tests their tris, nearest cells first
         static int GridRay(Cached data, Vector3 o, Vector3 d, float len, out float best)
         {
             var g = data.G; var V = data.V; var T = data.T;
@@ -139,7 +137,7 @@ namespace GHPCHitCam
             return bestTri;
         }
 
-        /// Nearest hit of a world ray on a readable mesh (any face direction).
+        /// nearest hit of a world ray on a readable mesh (any face direction)
         public static bool Raycast(Mesh m, Matrix4x4 l2w, Ray worldRay, float maxDist, out float dist, out Vector3 normalW)
         {
             dist = float.MaxValue;
@@ -172,16 +170,16 @@ namespace GHPCHitCam
             return true;
         }
 
-        /// Copy of `src` with ragged holes cut out. Holes are given in the space that `meshToSpace` maps into.
-        /// Returns null if nothing was cut (or the mesh is not CPU-readable).
+        /// copy of `src` with ragged holes cut out, holes given in the space `meshToSpace` maps into.
+        /// null if nothing got cut (or the mesh isn't CPU-readable)
         public static Mesh Cut(Mesh src, Matrix4x4 meshToSpace, List<(Vector3 p, float r)> holes, int seed)
         {
             var job = Begin(src, meshToSpace, holes, seed, false);
             return job == null ? null : Finish(job);
         }
 
-        /// A cut in the making: the mesh's data read on the main thread, the cutting on a worker (Begin with
-        /// async), the new mesh made on the main thread again (Finish, once Done).
+        /// a cut in progress: mesh data read on the main thread, cutting on a worker (Begin with async), new mesh built on the
+        /// main thread again (Finish, once Done)
         internal sealed class Job
         {
             public string Name;
@@ -213,7 +211,7 @@ namespace GHPCHitCam
             }
             if (lh.Count == 0) return null;
 
-            // gather every attribute we need to interpolate
+            // grab every attribute we need to interpolate
             var job = new Job { Name = src.name, Holes = lh, Seed = seed, V = new List<Vector3>(src.vertices), N = new List<Vector3>(src.normals),
                                 Tg = new List<Vector4>(src.tangents), C = new List<Color>(src.colors), Uvs = new List<List<Vector4>>(), Subs = new int[src.subMeshCount][] };
             for (int ch = 0; ch < 4; ch++)
@@ -235,7 +233,7 @@ namespace GHPCHitCam
             job.Done = true;
         }
 
-        /// The cutting itself: arithmetic on the copied data only (worker thread).
+        /// the cutting itself: math on the copied data only (worker thread)
         static void Compute(Job job)
         {
             var V = job.V; var N = job.N; var Tg = job.Tg; var C = job.C; var uvs = job.Uvs; var lh = job.Holes;
@@ -301,7 +299,7 @@ namespace GHPCHitCam
             job.Changed = changed;
         }
 
-        /// The holed mesh of a finished job (main thread), or null when nothing was cut.
+        /// holed mesh of a finished job (main thread), null when nothing got cut
         public static Mesh Finish(Job job)
         {
             if (!job.Done || !job.Changed) return null;

@@ -7,9 +7,9 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Self-test pictures of the world module damage (AutoTest shots aimed at a barrel, a track, an engine deck or a tail
-    /// boom): an inspection camera looks at the spot at several moments after the hit, so a bend / break, a falling track,
-    /// a growing fire or a tail boom coming off can be judged. Files: module{shot}_{n}.png.
+    /// self-test pics of world module damage (AutoTest shots at a barrel, track, engine deck or tail boom): an inspection
+    /// camera looks at the spot at a few moments after the hit, to judge a bend/break, falling track, growing fire or a
+    /// tail boom coming off. files: module{shot}_{n}.png
     internal static class ModuleTest
     {
         public static bool IsModuleAspect(string aspect) =>
@@ -21,7 +21,7 @@ namespace GHPCHitCam
             float t0 = Time.realtimeSinceStartup;
             var cam = NewCamera(out var rt);
             var go = cam.gameObject;
-            // the shot comes from aim + shotDir * 30; seen from the round's side, the far side, and wider
+            // shot comes from aim + shotDir * 30; seen from the round's side, the far side, and wider
             Vector3 d = -shotDir.normalized;               // toward the shooter
             Vector3 side = Vector3.Cross(Vector3.up, d).normalized;
             Transform tt = target != null ? target.transform : null;
@@ -30,7 +30,7 @@ namespace GHPCHitCam
             for (int k = 0; k < at.Length; k++)
             {
                 while (Time.realtimeSinceStartup - t0 < at[k]) yield return null;
-                // follow the vehicle (it may move); a helicopter's falling tail is looked at where it is
+                // follow the vehicle (it may move); a heli's falling tail is looked at where it is
                 Vector3 c = tt != null ? tt.TransformPoint(local) : aim;
                 Vector3 pos;
                 Vector3 look = c;
@@ -50,7 +50,7 @@ namespace GHPCHitCam
                 }
                 else if (aspect == "cook")
                 {
-                    // the whole vehicle, the side the round came in, a little above: the game's own fire and cook-off
+                    // whole vehicle, side the round came in, a bit above: game's own fire and cook-off
                     Vector3[] views = { d * 9f + Vector3.up * 4f + side * 4f, d * 9f + Vector3.up * 4f - side * 4f, d * 10f + Vector3.up * 5f,
                                         d * 9f + Vector3.up * 4f + side * 4f, d * 11f + Vector3.up * 6f - side * 3f, d * 12f + Vector3.up * 7f };
                     pos = c + views[k];
@@ -64,7 +64,7 @@ namespace GHPCHitCam
                 }
                 else
                 {
-                    // the tail boom: on the helicopter until it breaks, then on the falling piece
+                    // tail boom: on the heli until it breaks, then on the falling piece
                     var piece = UnityEngine.Object.FindObjectsOfType<Rigidbody>().Where(r => r != null && r.name == "HitCam tail boom").OrderByDescending(r => r.GetInstanceID()).FirstOrDefault();
                     if (piece != null) look = piece.worldCenterOfMass;
                     pos = look + d * 16f + Vector3.up * 4f + side * 6f;
@@ -90,7 +90,7 @@ namespace GHPCHitCam
             rt.Release();
         }
 
-        /// One picture now, from `from` looking at `look` (self-test close-ups of a moment: world vent flames).
+        /// one picture now, from `from` looking at `look` (self-test close-ups of a moment: world vent flames)
         public static void Snap(Vector3 look, Vector3 from, string name, string note, int w = 1280, int h = 720, float fov = 40f, bool post = true)
         {
             if (!AutoTest.Active) return;
@@ -119,8 +119,8 @@ namespace GHPCHitCam
             if (rt != null) rt.Release();
         }
 
-        /// A track shot filmed from one view, three-quarter front from the struck track's side: a frame every 1/30 s of
-        /// game time (Time.captureFramerate holds the game to the capture), module{shot}_f{n}.png.
+        /// track shot filmed from one view, 3/4 front from the hit track's side: a frame every 1/30 s of game time
+        /// (Time.captureFramerate holds the game to the capture), module{shot}_f{n}.png
         static IEnumerator Film(Vector3 aim, Vector3 shotDir, int shot, string outDir, Unit target, float seconds)
         {
             var cam = NewCamera(out var rt);
@@ -158,7 +158,7 @@ namespace GHPCHitCam
             rt.Release();
         }
 
-        /// A camera like the game's main one (its render effects, not its scripts), drawing into a 1280x720 picture.
+        /// camera like the game's main one (its render fx, not its scripts), drawing into a 1280x720 picture
         static Camera NewCamera(out RenderTexture rt, int w = 1280, int h = 720)
         {
             Vis.Init();

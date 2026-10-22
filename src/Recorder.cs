@@ -15,9 +15,9 @@ using DC = GHPC.Equipment.DestructibleComponent;
 
 namespace GHPCHitCam
 {
-    using ShotInfo = GHPC.Weapons.ShotInfo;   // the game also has a legacy global ShotInfo
+    using ShotInfo = GHPC.Weapons.ShotInfo;   // game also has a legacy global ShotInfo
 
-    /// Listens to the game's own ballistics / damage code (Harmony) and builds a timestamped HitRecord per shot.
+    /// listens to the game's own ballistics / damage code (Harmony) and builds a timestamped HitRecord per shot
     internal static class Recorder
     {
         static readonly Dictionary<ShotInfo, HitRecord> _records = new Dictionary<ShotInfo, HitRecord>();
@@ -25,7 +25,7 @@ namespace GHPCHitCam
         static int _nextId = 1;
         static int _nextFragId = 1;
 
-        // context of the round currently being simulated (rounds update one at a time on the main thread)
+        // context of the round being simulated right now (rounds update one at a time on the main thread)
         static LiveRound _currentRound;
         static bool _inPenCheck;
         static Vector3 _penPoint;
@@ -55,8 +55,8 @@ namespace GHPCHitCam
             Patch(h, AccessTools.Method(typeof(FlammableItem), "Ignite"), nameof(IgnitePrefix), nameof(IgnitePostfix));
             Patch(h, AccessTools.Method(typeof(FlammablesManager), "NotifyDidBurst"), null, nameof(BurstPostfix));
             Patch(h, AccessTools.Method(typeof(Compartment), "NotifyExplosion"), null, nameof(CompartmentExplosionPostfix));
-            // what the game shows of a fire / cook-off (the x-ray draws the same): flames out of the exits, flame bursts,
-            // hatches blown open, a turret thrown off, and where in the hull the rack detonated
+            // what the game shows of a fire / cook-off (x-ray draws the same): flames out of the exits, flame bursts,
+            // hatches blown open, turret thrown off, and where in the hull the rack went off
             try
             {
                 _exitFire = AccessTools.FieldRefAccess<CompartmentExit, float>("_fireRatio");
@@ -100,6 +100,7 @@ namespace GHPCHitCam
         {
             _records.Clear();
             _recent.Clear();
+            Thrown.Clear();
             _currentRound = null;
             _inPenCheck = false;
         }
@@ -163,14 +164,34 @@ namespace GHPCHitCam
 
         static Vector3 EventPos() => _inPenCheck ? _penPoint : (_currentRound != null ? _currentRound.transform.position : Vector3.zero);
 
-        /// The last autocannon hit's copy of its target, shared by the burst's next rounds on it (see SetTarget).
+        /// last autocannon hit's copy of its target, shared by the burst's next rounds on it (see SetTarget)
         static (Unit unit, GhostSnapshot snap, float at) _burstSnap;
         const float BurstSnapshotSeconds = 1.5f;
+
+        /// knocked out for good: destroyed, abandoned, turret thrown off or the whole crew dead (one that only can't drive
+        /// and shoot still has its crew, finishing it off keeps its hit cam)
+        static bool IsWreck(Unit u)
+        {
+            try
+            {
+                if (u.Destroyed || u.Abandoned || Thrown.ContainsKey(u)) return true;
+                var crew = u.CrewManager?.CrewMembers;
+                if (crew == null || !crew.Any()) return false;
+                foreach (var cm in crew)
+                {
+                    if (cm == null || cm.Evacuated) continue;
+                    if (!(cm.Human is GHPC.Humans.Human h) || h.GetOverallStatus() != HealthStatus.Dead) return false;
+                }
+                return true;
+            }
+            catch { return false; }
+        }
 
         static void SetTarget(HitRecord rec, Unit u)
         {
             if (!AfterAction.Accept(rec, u)) { _records.Remove(rec.RootShot); return; }   // someone else's round that didn't hit you
             rec.Target = u;
+            rec.OnWreck = IsWreck(u);
             rec.TargetName = SafeName(u);
             rec.FirstImpactReal = Time.time;
             rec.W2LAtImpact = u.transform.worldToLocalMatrix;
@@ -185,9 +206,9 @@ namespace GHPCHitCam
                     f.HasStart = true;
                 }
             }
-            // an autocannon burst: the rounds that follow on the same vehicle within a moment share the first one's copy of
-            // it (a fresh copy of the model, the crew and their skins took 3-25 ms, for every round, every 75 ms). The light
-            // hit cam shows the whole burst on one copy anyway.
+            // autocannon burst: rounds that follow on the same vehicle within a moment share the first one's copy (a fresh
+            // copy of the model, crew and their skins took 3-25 ms, for every round, every 75 ms). the light hit cam shows the
+            // whole burst on one copy anyway
             float cal = rec.Ammo != null ? Mathf.Max(rec.Ammo.Caliber, rec.Ammo.Radius * 2000f) : 999f;
             bool burst = cal < Settings.BurstCaliberMm.Value;
             if (burst && _burstSnap.unit == u && _burstSnap.snap != null && Time.time - _burstSnap.at < BurstSnapshotSeconds)
@@ -196,8 +217,8 @@ namespace GHPCHitCam
             {
                 try { using (Perf.T("Recorder/snapshot")) rec.Snapshot = GhostSnapshot.Capture(u); }
                 catch (Exception e) { HitCamMod.Log.Error("Snapshot failed for " + rec.TargetName + ": " + e); }
-                // a hit the hit cam will show: its crew skin is worked out in the background from now on
-                if (rec.Snapshot != null && (rec.PlayerShot || !Settings.PlayerShotsOnly.Value) && (Settings.Enabled.Value || AutoTest.Active))
+                // a hit the hit cam will show: its crew skin gets worked out in the background from now on
+                if (rec.Snapshot != null && (rec.PlayerShot || !Settings.PlayerShotsOnly.Value) && (Settings.Enabled.Value || AutoTest.Active) && HitCamPlayer.ShowsWreck(rec))
                     using (Perf.T("Recorder/skin prepare")) { CrewBuilder.Prepare(rec.Snapshot); GhostPhysics.Prebake(rec.Snapshot); }
                 _burstSnap = burst && rec.Snapshot != null ? (u, rec.Snapshot, Time.time) : (null, null, 0f);
             }
@@ -237,7 +258,7 @@ namespace GHPCHitCam
                     var ammo = __instance.Info;
                     float cal = Mathf.Max(ammo.Caliber, ammo.Radius * 2000f);
                     if (cal < Settings.RecordMinCaliberMm) return;
-                    if (Settings.PlayerShotsOnly.Value && !shot.IsPlayerShot && !AfterAction.Recording) return;   // the AAR keeps hits on you too (SetTarget drops the rest)
+                    if (Settings.PlayerShotsOnly.Value && !shot.IsPlayerShot && !AfterAction.Recording) return;   // AAR keeps hits on you too (SetTarget drops the rest)
                     var rec = new HitRecord
                     {
                         Id = _nextId++,
@@ -250,7 +271,7 @@ namespace GHPCHitCam
                     };
                     _records[shot] = rec;
                     var main = FragFor(rec, shot);
-                    main.StartW = __instance.transform.position; // converted to local when the target is known
+                    main.StartW = __instance.transform.position; // made local once the target is known
                     main.StartSpeed = __instance.CurrentSpeed;
                     main.Power = ammo.RhaPenetration;
                 }
@@ -308,7 +329,7 @@ namespace GHPCHitCam
                 if (frameData.IsDamaging) f.Damaging = true;
                 // keep only the last part of a long flight before the target is known
                 if (rec.Target == null && f.Points.Count > 40) f.Points.RemoveAt(0);
-                // what's still going on at the target (a rod flying on after it went through, or off after a ricochet, isn't)
+                // what's still going on at the target (a rod flying on after going through, or off after a ricochet, isn't)
                 if (rec.Target == null || p.Impact || (position - rec.Target.transform.position).sqrMagnitude < 12f * 12f) rec.LastActivityReal = Time.time;
             }
             catch (Exception e) { HitCamMod.Log.Error("AddShotFramePostfix: " + e); }
@@ -323,11 +344,11 @@ namespace GHPCHitCam
             public Vector3 Point, Normal, Dir;
             public float Los, Nominal, Pen, Angle;
             public bool WasSpall;
-            public bool PreJet;     // HEAT shell body touching the plate, before the jet forms
+            public bool PreJet;     // HEAT shell body touching the plate before the jet forms
             public float Speed;     // m/s when it reached the plate
             public Unit Unit;
             public Collider Col;
-            public DC Module;       // a module hit zone (barrel, track, tail drive...): world module damage only
+            public DC Module;       // module hit zone (barrel, track, tail drive...): world module damage only
         }
 
         static void PenCheckPrefix(LiveRound __instance, Collider cObject, Vector3 surfaceNormal, Vector3 roundPath, Vector3 impactPoint, ITarget targetStruck, out PenState __state)
@@ -335,7 +356,7 @@ namespace GHPCHitCam
             __state = null;
             _inPenCheck = true;
             _penPoint = impactPoint;
-            // (spall is left out: a vehicle blowing up throws fragments at its own tracks)
+            // (spall left out: a vehicle blowing up throws fragments at its own tracks)
             if (__instance.IsSpall) WorldModules.PenEnded(); else WorldModules.PenStarted(targetStruck?.Owner, impactPoint);
             try
             {
@@ -350,11 +371,11 @@ namespace GHPCHitCam
                     if (IsVehicle(u)) SetTarget(rec, u);
                 }
                 if (armor == null || __instance.IsSpall || __instance.Info == null) return;
-                // modules and crew body parts are armor too in GHPC; they get their own damage events
+                // modules and crew body parts are armor too in GHPC, they get their own damage events
                 var moduleDc = cObject.GetComponent<DC>();
                 if (moduleDc != null)
                 {
-                    // the world damage draws some modules from outside (a holed / bent barrel, a chewed track, a helicopter's tail)
+                    // world damage draws some modules from outside (holed / bent barrel, chewed track, a heli's tail)
                     Unit mu = armor.Unit as Unit ?? targetStruck?.Owner;
                     if (IsVehicle(mu) && Mathf.Max(__instance.Info.Caliber, __instance.Info.Radius * 2000f) >= Settings.RecordMinCaliberMm && WorldModules.Wants(mu, moduleDc))
                         __state = new PenState { Unit = mu, Col = cObject, Armor = armor, Module = moduleDc, Point = impactPoint, Normal = surfaceNormal, Dir = roundPath.normalized,
@@ -440,8 +461,8 @@ namespace GHPCHitCam
                                  : col != null ? col.GetType().Name : "null";
                     HitCamMod.Log.Msg($"  armour hit {ah.Name}: collider '{col?.name}' {shape}, angle {ah.Angle:0.#}, los {ah.Los:0} nom {ah.Nominal:0}, pen={ah.Penetrated} ric={ah.Ricochet}");
                 }
-                // the game can re-test the same plate many times while a round slides along / through it (HE on a
-                // curved turret gave ~60 hits a few mm apart): that's one impact, keep the first
+                // game can re-test the same plate many times while a round slides along / through it (HE on a curved
+                // turret gave ~60 hits a few mm apart): that's one impact, keep the first
                 float merge = Mathf.Max(0.1f, ah.HoleRadius * 1.5f);
                 foreach (var o in rec.ArmorHits)
                     if (o.Frag == f && o.Name == ah.Name && o.PreJet == ah.PreJet && (o.L - ah.L).sqrMagnitude < merge * merge)
@@ -469,9 +490,9 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Error("PenCheckPostfix: " + e); }
         }
 
-        /// The struck armour collider's triangles in target-local space (GHPC's armour pieces are small readable meshes,
-        /// e.g. "9mm004" with 34 vertices; boxes are expanded to their 12 triangles). Big meshes: only what lies near the hit.
-        /// rec == null: world space (the in-world plates).
+        /// struck armour collider's tris in target-local space (GHPC armour pieces are small readable meshes, e.g.
+        /// "9mm004" with 34 verts, boxes expand to their 12 tris). big meshes: only what's near the hit.
+        /// rec == null: world space (the in-world plates)
         internal static Vector3[] PlateGeometry(Collider col, Vector3 point, HitRecord rec)
         {
             Vector3 L(Vector3 w) => rec != null ? rec.ToLocal(w) : w;
@@ -513,14 +534,14 @@ namespace GHPCHitCam
             return null;
         }
 
-        /// Energy (J) the projectile brings to this plate.
+        /// energy (J) the projectile brings to this plate
         static float ImpactEnergy(LiveRound r, bool preJet)
         {
             var a = r.Info;
             switch (a.Category)
             {
                 case AmmoType.AmmoCategory.ShapedCharge:
-                    // the jet: roughly 0.4 kJ per mm of RHA it can still defeat; the shell body before it forms is slow
+                    // the jet: roughly 0.4 kJ per mm of RHA it can still defeat, the shell body before it forms is slow
                     return preJet ? 0.5f * Mathf.Max(a.Mass, 1f) * r.CurrentSpeed * r.CurrentSpeed * 0.2f : 400f * Mathf.Max(r.CurrentPenRating, 1f);
                 case AmmoType.AmmoCategory.Explosive:
                     // contact charge: ~15 % of 4.184 MJ/kg TNT couples into the plate, plus the shell's own impact
@@ -532,7 +553,7 @@ namespace GHPCHitCam
 
         static float HoleRadius(AmmoType ammo, float nominalMm)
         {
-            // what the round physically leaves; visuals scale it up a bit so it reads at hit-cam distance
+            // what the round physically leaves, visuals scale it up a bit so it reads at hit cam distance
             float calR = Mathf.Max(ammo.Caliber, ammo.Radius * 2000f) * 0.0005f;           // caliber radius in m
             float rodR = Mathf.Sqrt(Mathf.Max(ammo.SectionalArea, 1e-5f) / Mathf.PI);          // penetrator radius
             switch (ammo.Category)
@@ -556,8 +577,8 @@ namespace GHPCHitCam
             try
             {
                 if (__instance.IsSpall) return;   // spall story lines duplicate the module events
-                // an HE / HEAT round going off (also on a helicopter's plain hull box, which isn't armour): the world damage
-                // works out what it did to nearby helicopter tails
+                // HE / HEAT round going off (also on a heli's plain hull box, which isn't armour): world damage works out
+                // what it did to nearby heli tails
                 if (eventString != null && eventString.IndexOf("detonat", StringComparison.OrdinalIgnoreCase) >= 0 && __instance.Info != null && __instance.Info.TntEquivalentKg > 0f)
                     WorldModules.OnDetonation(_inPenCheck ? _penPoint : __instance.transform.position, __instance.Info);
                 var rec = RecordFor(__instance.ShotInfo);
@@ -683,7 +704,7 @@ namespace GHPCHitCam
                 bool ammo = __instance.Explosive;
                 string name = Pretty(__instance.gameObject.name);
                 if (!rec.Dedupe.Add("fire:" + name)) return;
-                // the fire burns where the thing is, not at its pivot (often a corner): its colliders' (or renderers') box
+                // fire burns where the thing is, not at its pivot (often a corner): its colliders' (or renderers') box
                 Vector3 at = rec.ToLocal(__instance.transform.position), ext = Vector3.zero;
                 if (LocalBox(__instance.transform, rec, out var bc, out var be)) { at = bc; ext = be; }
                 rec.AddEvent(new HitEvent
@@ -702,7 +723,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Error("IgnitePostfix: " + e); }
         }
 
-        /// The target-local box of a part: its colliders, else its renderers.
+        /// target-local box of a part: its colliders, else its renderers
         static bool LocalBox(Transform t, HitRecord rec, out Vector3 centre, out Vector3 half)
         {
             centre = half = Vector3.zero;
@@ -718,7 +739,7 @@ namespace GHPCHitCam
                     Vector3 p = rec.ToLocal(wb.center + Vector3.Scale(wb.extents, new Vector3((i & 1) != 0 ? 1 : -1, (i & 2) != 0 ? 1 : -1, (i & 4) != 0 ? 1 : -1)));
                     if (first) { lb = new Bounds(p, Vector3.zero); first = false; } else lb.Encapsulate(p);
                 }
-            if (lb.size.magnitude > 6f) return false;    // not a part (a whole-vehicle collider)
+            if (lb.size.magnitude > 6f) return false;    // not a part (whole-vehicle collider)
             centre = lb.center;
             half = lb.extents;
             return true;
@@ -730,10 +751,9 @@ namespace GHPCHitCam
             Explosion(__instance.transform, tntEquivalentKg, "burst");
         }
 
-        /// Realism (AmmoExplosionKillsCrew): an ammunition rack going off inside a closed hull kills the crew within the
-        /// confined blast's lethal reach, ~2.2 W^(1/3) m (the reflected overpressure fills the compartment: all of a tank
-        /// for a rack's 10+ kg, a couple of metres for a small one). GHPC itself sometimes leaves a crewman alive in
-        /// a tank whose carousel blew up.
+        /// realism (AmmoExplosionKillsCrew): an ammo rack going off inside a closed hull kills the crew within the confined
+        /// blast's lethal reach, ~2.2 W^(1/3) m (reflected overpressure fills the compartment: whole tank for a 10+ kg rack,
+        /// a couple of metres for a small one). GHPC itself sometimes leaves a crewman alive in a tank whose carousel blew up
         static void KillCrewInBlast(FlammablesManager fm, float tnt)
         {
             try
@@ -747,7 +767,7 @@ namespace GHPCHitCam
                 foreach (var cm in unit.CrewManager.CrewMembers)
                 {
                     if (cm == null || cm.Evacuated || cm.Human == null || cm.Human.IsDead) continue;
-                    // the crewman's body: the middle of his hit zones
+                    // crewman's body: middle of his hit zones
                     Vector3 p = Vector3.zero; int n = 0;
                     if (cm.BodyPartRegistry != null && cm.BodyPartRegistry.BodyParts != null)
                         foreach (var b in cm.BodyPartRegistry.BodyParts)
@@ -791,8 +811,8 @@ namespace GHPCHitCam
             return Pretty(n);
         }
 
-        /// How big an exit is: its hatch lid's own size across (the lids are the exit's animated parts), else the game's
-        /// radius for the exit (a hole the round made has the round's).
+        /// how big an exit is: its hatch lid's own size across (lids are the exit's animated parts), else the game's
+        /// radius for the exit (a hole the round made has the round's)
         static float ExitRadius(CompartmentExit x, out string from)
         {
             float best = 0f;
@@ -806,13 +826,13 @@ namespace GHPCHitCam
                     if (t == null) continue;
                     Vector3 n = marker.forward;
                     Vector3 a = Vector3.Cross(n, Mathf.Abs(n.y) > 0.9f ? Vector3.forward : Vector3.up).normalized, b = Vector3.Cross(n, a);
-                    // a lid swings on a hinge at the edge of its opening: from the hinge to the opening's middle is its radius
+                    // lid swings on a hinge at the edge of its opening: hinge to the opening's middle = its radius
                     float hinge = Vector3.ProjectOnPlane(t.position - marker.position, n).magnitude;
                     sb?.Append($" [{t.name}: hinge {hinge * 1000f:0} mm");
-                    // (its pivot stands a little off the rim, and a lid that swings aside pivots further out: 0.8 x, at most 0.28 m)
+                    // (its pivot sits a bit off the rim, and a lid that swings aside pivots further out: 0.8 x, max 0.28 m)
                     float hr = 0.8f * Mathf.Min(hinge, 0.35f);
                     if (hinge > 0.1f && hinge < 0.8f && hr > best) { best = hr; from = "hinge of " + t.name; }
-                    // the lid's own mesh, if it is one of its own: its half-size across the opening
+                    // lid's own mesh, if it has its own: half its size across the opening
                     foreach (var r in t.GetComponentsInChildren<Renderer>(true))
                     {
                         if (r == null || r is ParticleSystemRenderer) continue;
@@ -821,7 +841,7 @@ namespace GHPCHitCam
                         float rb = Mathf.Abs(b.x) * e.x + Mathf.Abs(b.y) * e.y + Mathf.Abs(b.z) * e.z;
                         float across = 0.5f * (ra + rb);
                         sb?.Append($", mesh {r.name} {across * 1000f:0} mm");
-                        if (e.magnitude > 1.2f) continue;      // a whole turret / hull mesh, not a lid
+                        if (e.magnitude > 1.2f) continue;      // whole turret / hull mesh, not a lid
                         if (across > best) { best = across; from = "hatch lid " + r.name; }
                     }
                     sb?.Append("]");
@@ -831,7 +851,7 @@ namespace GHPCHitCam
             return Mathf.Clamp(best, 0.03f, 0.7f);
         }
 
-        /// A round broke into a compartment: the game opens a small exit there (its fire and gas can get out of it).
+        /// a round broke into a compartment: the game opens a small exit there (its fire and gas can get out)
         static void BreachPostfix(Compartment __instance, AmmoType roundType, Vector3 impactPoint, Vector3 roundPath)
         {
             try
@@ -841,7 +861,7 @@ namespace GHPCHitCam
                 var rec = RecordForDamage(unit);
                 if (rec == null) return;
                 if (!rec.Dedupe.Add($"breach:{Mathf.RoundToInt(impactPoint.x * 20f)},{Mathf.RoundToInt(impactPoint.y * 20f)},{Mathf.RoundToInt(impactPoint.z * 20f)}")) return;
-                // the exit the game just opened there (its flame, when the fire reaches it)
+                // exit the game just opened there (its flame, when the fire reaches it)
                 CompartmentExit exit = null;
                 if (__instance.Exits != null)
                     foreach (var x in __instance.Exits)
@@ -877,7 +897,7 @@ namespace GHPCHitCam
             rec.AddEvent(new HitEvent
             {
                 Extent = new Vector3(rad, rad, rad),
-                Power = rad,                    // (archived; the extent is not)
+                Power = rad,                    // (archived, the extent isn't)
                 Kind = kind,
                 Text = text,
                 Subject = ExitName(x),
@@ -893,7 +913,7 @@ namespace GHPCHitCam
 
         static void ExitFirePrefix(CompartmentExit __instance, out float __state) { __state = _exitFire != null ? _exitFire(__instance) : 0f; }
 
-        /// Flames start coming out of an exit (a hatch, a vent, a hole the round made): the fire inside venting there.
+        /// flames start coming out of an exit (hatch, vent, hole the round made): the fire inside venting there
         static void ExitFirePostfix(CompartmentExit __instance, float ratio, float __state)
         {
             try
@@ -910,7 +930,7 @@ namespace GHPCHitCam
             __state = c != null && _compBurstT != null ? _compBurstT(c) : -1f;
         }
 
-        /// A flame burst out of an open exit (the game's effect for a detonation inside, sized by its TNT).
+        /// flame burst out of an open exit (game's effect for a detonation inside, sized by its TNT)
         static void ExitBurstPostfix(CompartmentExit __instance, float ratio, float __state)
         {
             try
@@ -924,7 +944,7 @@ namespace GHPCHitCam
 
         static void ExitOpenPrefix(CompartmentExit __instance, out bool __state) { __state = __instance.Closed; }
 
-        /// A hatch blown open by the pressure inside (the game opens them that way with lockAnim).
+        /// hatch blown open by the pressure inside (the game opens them that way with lockAnim)
         static void ExitOpenPostfix(CompartmentExit __instance, bool lockAnim, bool __state)
         {
             try
@@ -935,18 +955,27 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Error("ExitOpenPostfix: " + e.Message); }
         }
 
+        /// parts the game threw off each vehicle (turret after a cook-off): the copy of the wreck leaves them out. kept here
+        /// because once thrown they're not under the vehicle any more
+        internal static readonly Dictionary<Unit, List<Transform>> Thrown = new Dictionary<Unit, List<Transform>>();
+
         static void DetachPrefix(DetachableParent __instance, out (bool was, Unit unit) __state)
         {
             __state = (__instance.Detached, CodeUtils.GetParentUnitFollowAware(__instance.transform));
         }
 
-        /// The turret (or another part) thrown off by the pressure or the flames inside.
+        /// turret (or another part) thrown off by the pressure or flames inside
         static void DetachPostfix(DetachableParent __instance, float detachForce, (bool was, Unit unit) __state)
         {
             try
             {
                 if (__state.was || !__instance.Detached) return;
                 var part = __instance.Transform != null ? __instance.Transform : __instance.transform;
+                if (__state.unit != null)
+                {
+                    if (!Thrown.TryGetValue(__state.unit, out var list)) Thrown[__state.unit] = list = new List<Transform>();
+                    if (!list.Contains(part)) list.Add(part);
+                }
                 BlastSound.OnDetach(part.position);
                 WorldDamage.OpenedUp(__state.unit, part);
                 var rec = RecordForDamage(__state.unit);
@@ -969,7 +998,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Error("DetachPostfix: " + e.Message); }
         }
 
-        /// A compartment's rack detonating (the game calls the blast with a reduced fragment factor for those): where it went.
+        /// a compartment's rack going off (game calls the blast with a reduced fragment factor for those): where it went
         static void RoundBlastPrefix(LiveRound __instance)
         {
             if (__instance != null && !__instance.IsSpall) WorldModules.OnRoundBlast(__instance.transform.position, __instance.Info);
@@ -990,11 +1019,11 @@ namespace GHPCHitCam
                 var unit = CodeUtils.GetParentUnitFollowAware(t);
                 var rec = RecordForDamage(unit);
                 if (rec == null) return;
-                // the round's own filler going off in the compartment (HEAT / HE): the warhead, not the vehicle's ammunition
+                // the round's own filler going off in the compartment (HEAT / HE): the warhead, not the vehicle's ammo
                 if (rec.Ammo != null && rec.Ammo.TntEquivalentKg > 0f && Mathf.Abs(tnt - rec.Ammo.TntEquivalentKg) <= rec.Ammo.TntEquivalentKg * 0.01f + 1e-3f
                     && Time.time - rec.FirstImpactReal < 0.5f) return;
                 if (!rec.Dedupe.Add("explosion")) return;
-                // where the rack went (the game's own detonation point, this frame), else the compartment
+                // where the rack went (game's own detonation point, this frame), else the compartment
                 bool atRack = Time.time - _detTime < 0.05f;
                 rec.AddEvent(new HitEvent
                 {
@@ -1004,7 +1033,7 @@ namespace GHPCHitCam
                     L = rec.ToLocal(atRack ? _detAt : t.position),
                     HasPos = true,
                     RealT = Time.time,
-                    After = atRack ? Mathf.Max(tnt, _detTnt) : tnt,     // the compartment's own figure can be 0: the blast's is real
+                    After = atRack ? Mathf.Max(tnt, _detTnt) : tnt,     // compartment's own figure can be 0, the blast's is real
                     Severity = 3,
                 });
                 HitCamPlayer.OnLateExplosion(rec);
@@ -1068,8 +1097,8 @@ namespace GHPCHitCam
         {
             if (string.IsNullOrEmpty(goName)) return "?";
             string s = goName.Replace("_", " ").Replace("(Clone)", "").Trim();
-            // a developer's note left as the part's name (the BMP-2's oil tank is "In Manual, this is labeled as oil tank,
-            // the cap on top IS oil cap, but this thing is huge, ..."): what it names
+            // a dev note left as the part's name (BMP-2's oil tank is "In Manual, this is labeled as oil tank, the cap on
+            // top IS oil cap, but this thing is huge, ..."): what it names
             if (s.Length > 32 || s.Contains(","))
             {
                 string low = s.ToLowerInvariant();
@@ -1087,22 +1116,22 @@ namespace GHPCHitCam
             if (_records.Count == 0) return;
             float now = Time.time;
             List<ShotInfo> drop = null;
-            // two hits a frame at most join the hit cam (a burst's rounds finishing together each built their part of the
-            // x-ray, its timeline, spall and round, all in one frame); the rest a frame later
+            // max two hits a frame join the hit cam (a burst's rounds finishing together each built their part of the x-ray,
+            // timeline, spall and round, all in one frame), the rest a frame later
             int readied = 0;
             foreach (var kv in _records)
             {
                 var rec = kv.Value;
                 if (rec.Target == null)
                 {
-                    // a round still flying (or one that only hit the ground); give up after its max flight time
+                    // round still flying (or only hit the ground), give up after its max flight time
                     if (now - rec.CreatedReal > 95f) (drop ??= new List<ShotInfo>()).Add(kv.Key);
                     continue;
                 }
                 if (!rec.Ready)
                 {
-                    // nothing more at the target for a few frames (the round stopped, or flew on out of it): the hit cam
-                    // (already being built since the impact) can play
+                    // nothing more at the target for a few frames (round stopped or flew on out of it): the hit cam (being built
+                    // since the impact) can play
                     float sinceImpact = now - rec.FirstImpactReal;
                     if (((now - rec.LastActivityReal > 0.12f && sinceImpact > 0.2f) || sinceImpact > 1.0f) && readied < 2)
                     {

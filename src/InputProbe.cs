@@ -9,8 +9,8 @@ using UnityEngine.UI;
 
 namespace GHPCHitCam
 {
-    /// Self-test steps with real input, the way a player does it: keys and mouse clicks into the game's own window (only
-    /// while it is the window in front, so nothing else ever gets them).
+    /// self-test steps with real input like a player: keys and mouse clicks into the game window (only while it's in
+    /// front, so nothing else ever gets them)
     ///   key:<Q|TAB|F12|ESC|ALT+HOME...>[:<held s>]   state:<label>   qclick   unitclick   endplanning
     internal static class InputProbe
     {
@@ -27,7 +27,7 @@ namespace GHPCHitCam
         {
             ["Q"] = 0x51, ["TAB"] = 0x09, ["ESC"] = 0x1B, ["F12"] = 0x7B, ["F2"] = 0x71, ["M"] = 0x4D, ["P"] = 0x50, ["H"] = 0x48,
             ["K"] = 0x4B, ["U"] = 0x55, ["J"] = 0x4A, ["HOME"] = 0x24, ["INSERT"] = 0x2D, ["ALT"] = 0x12, ["ENTER"] = 0x0D,
-            ["SPACE"] = 0x20, ["W"] = 0x57, ["1"] = 0x31, ["2"] = 0x32, ["F9"] = 0x78, ["F10"] = 0x79, ["9"] = 0x39, ["0"] = 0x30,
+            ["SPACE"] = 0x20, ["W"] = 0x57, ["1"] = 0x31, ["2"] = 0x32, ["F9"] = 0x78, ["F10"] = 0x79, ["9"] = 0x39, ["0"] = 0x30, ["F11"] = 0x7A, ["F3"] = 0x72, ["END"] = 0x23, ["CTRL"] = 0x11, ["SHIFT"] = 0x10,
         };
 
         public static int Skipped;
@@ -35,7 +35,7 @@ namespace GHPCHitCam
 
         static void Log(string s) => HitCamMod.Log.Msg("INPUT: " + s);
 
-        /// The game's window, when it is the one in front.
+        /// game window, if it's the one in front
         static IntPtr OurWindow()
         {
             var h = GetForegroundWindow();
@@ -53,7 +53,17 @@ namespace GHPCHitCam
 
         public static IEnumerator Key(string combo, float hold)
         {
-            if (OurWindow() == IntPtr.Zero) { Log($"game not in front, {combo} NOT pressed"); Skipped++; yield break; }
+            if (OurWindow() == IntPtr.Zero)
+            {
+                // only the mod's own key check gets it then (the game's keys don't)
+                Hotkeys.FakeCombo = combo;
+                Hotkeys.FakeFrame = Time.frameCount + 1;
+                yield return null;
+                yield return null;
+                yield return new WaitForSecondsRealtime(0.6f);
+                Log($"game not in front, {combo} only faked for the mod's keys: " + Brief());
+                yield break;
+            }
             var vks = combo.Split('+').Select(p => Vk.TryGetValue(p.Trim(), out var v) ? v : (byte)0).ToArray();
             if (vks.Any(v => v == 0)) { Log("unknown key " + combo); yield break; }
             foreach (var v in vks) { Send(v, false); yield return new WaitForSecondsRealtime(0.03f); }
@@ -63,7 +73,7 @@ namespace GHPCHitCam
             Log($"pressed {combo}" + (hold > 0.2f ? $" for {hold:0.0} s" : "") + ": " + Brief());
         }
 
-        /// A real left click at a point of the game's window (pixels from its top left).
+        /// real left click at a point in the game window (pixels from its top left)
         static IEnumerator ClickAt(Vector2 client, string what)
         {
             var h = OurWindow();
@@ -78,7 +88,7 @@ namespace GHPCHitCam
             yield return new WaitForSecondsRealtime(0.5f);
         }
 
-        /// A real left click on a UI element's centre. True when its button's onClick ran.
+        /// real left click on a UI element's centre, true when its button's onClick ran
         static IEnumerator Click(Button b, string what, bool[] result)
         {
             result[0] = false;
@@ -119,9 +129,15 @@ namespace GHPCHitCam
 
         static string Brief()
         {
+            try { return BriefNow(); } catch (Exception e) { return "(state not readable: " + e.GetType().Name + ")"; }
+        }
+
+        static string BriefNow()
+        {
             var pi = Pi;
             var es = EventSystem.current;
             return $"Q menu {(QOpen() ? "open" : "shut")}, unit menu {(UnitMenuOpen() ? "open" : "shut")}, F12 {(ConfigMenu.IsOpen ? "open" : "shut")}, "
+                + $"our AAR {(AfterAction.IsOpen ? "open" : "shut")}, game's AAR {(GHPC.AarController.InAar ? "on" : "off")}, "
                 + $"kb blocked {(pi != null ? pi.BlockKeyboardInput.ToString() : "?")}, UI input {(es != null ? es.name + (es.enabled ? "" : " OFF") : "NONE")}, "
                 + $"unit {(pi != null && pi.CurrentPlayerUnit != null ? pi.CurrentPlayerUnit.FriendlyName : "-")}";
         }
@@ -138,7 +154,7 @@ namespace GHPCHitCam
             return s;
         }
 
-        /// One step of the shot list. False when it isn't one of these.
+        /// one shot list step, false if it isn't one of these
         public static bool Step(string[] spec, out IEnumerator run)
         {
             run = null;
@@ -153,6 +169,14 @@ namespace GHPCHitCam
                     return true;
                 case "qclick": run = QClick(); return true;
                 case "reset": run = Reset(); return true;
+                case "loadmenu": run = LoadMenu(spec[1]); return true;
+                case "menufps": run = MenuFpsUncapped(spec.Length > 1 ? spec[1] : "menu"); return true;
+                case "invoke": run = Invoke(spec[1]); return true;
+                case "missionend": try { var pu = Pi?.CurrentPlayerUnit; GHPC.World.ScenarioResultManager.Instance.ForceMissionResult(pu.Allegiance, true); Log("missionend: won the mission"); } catch (Exception e) { Log("missionend: " + e.Message); } run = Nothing(); return true;
+                case "gameaar":try { GHPC.AarController.StartAar(); Log("gameaar: the game's own AAR started"); } catch (Exception e) { Log("gameaar: " + e.Message); } run = Nothing(); return true;
+                case "tomenu": try { UnityEngine.Object.FindObjectOfType<GHPC.SceneController>().LoadMainMenu(); Log("tomenu: back to the main menu"); } catch (Exception e) { Log("tomenu: " + e.Message); } run = Nothing(); return true;
+                case "waitfor": run = WaitFor(spec[1], spec.Length > 2 ? float.Parse(spec[2], System.Globalization.CultureInfo.InvariantCulture) : 120f); return true;
+                case "asleave": run = AsLeave(spec.Length > 1 ? spec[1] : "menu"); return true;
                 case "uiclick": run = UiClick(spec[1]); return true;
                 case "failhook": FailHook(spec[1]); run = Nothing(); return true;
                 case "f12click": run = F12Click(spec[1]); return true;
@@ -170,7 +194,7 @@ namespace GHPCHitCam
 
         static IEnumerator Nothing() { yield return null; }
 
-        /// The Q menu's first button (Restock, a submenu: harmless), clicked for real.
+        /// clicks the Q menu's first button for real (Restock, a submenu: harmless)
         static IEnumerator QClick()
         {
             var root = Pi != null ? Pi.ContextMenuRoot : null;
@@ -180,7 +204,7 @@ namespace GHPCHitCam
             yield return Click(b, "Q menu '" + b.name + "'", r);
         }
 
-        /// The unit menu (Tab): a click on another vehicle of the platoon; the player should be in it afterwards.
+        /// unit menu (Tab): click another vehicle of the platoon, player should be in it after
         static IEnumerator UnitClick()
         {
             var u = GHPC.UI.UnitMenu.UnitMenuController.Instance;
@@ -198,8 +222,7 @@ namespace GHPCHitCam
             Log($"unitclick: player unit {(me != null ? me.FriendlyName : "-")} -> {(now != null ? now.FriendlyName : "-")} ({(now != me ? "SWITCHED" : "same unit")})");
         }
 
-        /// A real click in the settings window: f12click:close (its Close button) or f12click:tab<n> (a tab), where
-        /// ConfigMenu.Window puts them.
+        /// real click in the settings window: f12click:close (Close button) or f12click:tab<n> (a tab), where ConfigMenu.Window puts them
         static IEnumerator F12Click(string what)
         {
             if (!ConfigMenu.IsOpen) { Log("f12click: the settings window isn't open"); yield break; }
@@ -210,7 +233,7 @@ namespace GHPCHitCam
             Log($"clicked settings window {what}: " + Brief());
         }
 
-        /// Back to plain driving between test blocks: the settings window, the Q and unit menus and the game's menus shut.
+        /// back to plain driving between test blocks: settings window, Q and unit menus and the game's menus closed
         static IEnumerator Reset()
         {
             if (ConfigMenu.IsOpen) ConfigMenu.Close();
@@ -225,8 +248,8 @@ namespace GHPCHitCam
             Log("reset: " + State());
         }
 
-        /// uiclick:<text>: a real click on the game's visible UI element whose name or label has that text (a button, or
-        /// any element that takes a click, like the options tabs).
+        /// uiclick:<text>: real click on the visible game UI element whose name or label has that text (a button or anything
+        /// that takes a click, like the options tabs)
         static IEnumerator UiClick(string text)
         {
             GameObject hit = null;
@@ -245,15 +268,87 @@ namespace GHPCHitCam
             var cv = hit.GetComponentInParent<Canvas>();
             Camera cam = cv != null && cv.renderMode != RenderMode.ScreenSpaceOverlay ? cv.worldCamera : null;
             Vector2 sp = RectTransformUtility.WorldToScreenPoint(cam, rt.TransformPoint(rt.rect.center));
-            yield return ClickAt(new Vector2(sp.x, Screen.height - sp.y), $"'{text}' ({hit.name})");
+            string hitName = hit.name;   // click may load another scene, then the element is gone
+            yield return ClickAt(new Vector2(sp.x, Screen.height - sp.y), $"'{text}' ({hitName})");
             yield return new WaitForSecondsRealtime(0.5f);
-            Log($"uiclick '{text}' ({hit.name}): " + Brief());
+            Log($"uiclick '{text}' ({hitName}): " + Brief());
+        }
+
+        /// waitfor:menu|as|pg|mission[:<s>]: until the main menu has the mod's buttons, Armor Sim is up, proving ground is
+        /// ready, or a mission with the player in a vehicle
+        static IEnumerator WaitFor(string what, float max)
+        {
+            float t0 = Time.realtimeSinceStartup;
+            Func<bool> done = what == "menu" ? (Func<bool>)(() => ArmorSimMenu.Button != null && SceneUtil.Player == null)
+                : what == "as" ? () => ArmorSim.Active
+                : what == "pg" ? () => ProvingGround.Active
+                : (Func<bool>)(() => Pi != null && Pi.CurrentPlayerUnit != null);
+            while (!done() && Time.realtimeSinceStartup - t0 < max) yield return null;
+            Log($"waitfor {what}: {(done() ? "yes" : "NO")} after {Time.realtimeSinceStartup - t0:0.0} s; " + Brief());
+        }
+
+        /// asleave:menu|stay: Armor Sim's Leave button, then the answer to its question (back to main menu, or stay)
+        static IEnumerator AsLeave(string how)
+        {
+            if (!ArmorSim.Active) { Log("asleave: the Armor Sim isn't up"); yield break; }
+            ArmorSim.RequestClose();
+            yield return new WaitForSecondsRealtime(0.5f);
+            if (how == "menu") ArmorSim.LeaveToMainMenu();
+            else HarmonyLib.AccessTools.Method(typeof(ArmorSim), "Exit").Invoke(null, new object[] { "closed, staying in the mission" });
+            yield return new WaitForSecondsRealtime(1f);
+            Log($"asleave {how}: Armor Sim up {ArmorSim.Active}; " + Brief());
+        }
+
+        /// loadmenu:<scene>: load one of the game's main menu variants on purpose (game picks one at random, unlocked ones
+        /// too) without touching the player's unlocks
+        /// menufps:<label>: frame time here with no frame cap, and which parts of the mod it went to
+        static IEnumerator MenuFpsUncapped(string label)
+        {
+            int vs = QualitySettings.vSyncCount, fr = Application.targetFrameRate;
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = -1;
+            try { yield return FpsProbe.MenuFps(label + " uncapped, " + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name); }
+            finally { QualitySettings.vSyncCount = vs; Application.targetFrameRate = fr; }
+        }
+
+        static IEnumerator LoadMenu(string name)
+        {
+            var sc = UnityEngine.Object.FindObjectOfType<GHPC.SceneController>();
+            int idx = -1;
+            try
+            {
+                foreach (var r in sc.MenuSceneRefs) if (r != null && r.Name == name) idx = r.BuildIndex;
+                foreach (var u in sc.UnlockableMenuScenes) if (u?.UnlockedScene != null && u.UnlockedScene.Name == name) idx = u.UnlockedScene.BuildIndex;
+                Log("loadmenu: the game's menus: " + string.Join(", ", sc.MenuSceneRefs.Select(r => r.Name)) + " | unlockable: " + string.Join(", ", sc.UnlockableMenuScenes.Select(u => u.UnlockedScene.Name + " (" + u.UnlockKey + ")")));
+            }
+            catch (Exception e) { Log("loadmenu: " + e.Message); }
+            if (sc == null || idx < 0) { Log($"loadmenu: no menu scene '{name}'"); yield break; }
+            sc.LoadSceneByIndex(idx);
+            Log($"loadmenu: loading {name} (build index {idx})");
+            yield return new WaitForSecondsRealtime(3f);
+        }
+
+        /// invoke:<text>: press a button through its own click event (no mouse, works while the game isn't in front)
+        static IEnumerator Invoke(string text)
+        {
+            Button hit = null;
+            foreach (var b in UnityEngine.Object.FindObjectsOfType<Button>())
+            {
+                if (b == null || !b.isActiveAndEnabled) continue;
+                var t = b.GetComponentInChildren<TMPro.TMP_Text>(true);
+                if (((t != null ? t.text : "") + " " + b.name).IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0) { hit = b; break; }
+            }
+            if (hit == null) { Log($"invoke: no button says '{text}'"); yield break; }
+            string n = hit.name;
+            hit.onClick.Invoke();
+            yield return new WaitForSecondsRealtime(0.5f);
+            Log($"invoke '{text}' ({n})");
         }
 
         static string _failName;
 
-        /// failhook:<vehicle key>: stands in for another mod's hook on the game's spawn that throws once the vehicle is
-        /// made (what a mission with several mods did to half the test range).
+        /// failhook:<vehicle key>: fakes another mod's hook on the game's spawn that throws once the vehicle is made (what a
+        /// mission with several mods did to half the test range)
         static void FailHook(string key)
         {
             _failName = key + " (range)";

@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// IMGUI overlay: the picture-in-picture, result banner, module/crew status row and event list.
+    /// IMGUI overlay: PiP, result banner, module/crew status row and event list
     internal static class HitCamUI
     {
         static GUIStyle _title, _text, _small, _chip;
@@ -11,7 +11,7 @@ namespace GHPCHitCam
         static int _styleFor;
         public static Rect PipRect;
 
-        // War Thunder's own HUD colours for module state
+        // module state colours, same as War Thunder's HUD
         static readonly Color Olive = new Color32(0x90, 0x9E, 0x35, 255);
         static readonly Color Amber = new Color32(0xF6, 0xB2, 0x36, 255);
         static readonly Color WtRed = new Color32(0xFD, 0x00, 0x01, 255);
@@ -34,7 +34,7 @@ namespace GHPCHitCam
             var p = HitCamPlayer.Current;
             var rt = HitCamPlayer.Texture;
             if (p == null || rt == null) return;
-            if (ArmorSim.FullScreenHitCam) return;   // the Armor Sim draws its shots full screen itself
+            if (ArmorSim.FullScreenHitCam) return;   // Armor Sim draws its shots full screen itself
             float a = p.Alpha;
             if (a <= 0.001f) return;
 
@@ -45,7 +45,7 @@ namespace GHPCHitCam
             string corner = Settings.PipCorner.Value ?? "TopRight";
             bool right = !corner.Contains("Left");
             bool top = !corner.Contains("Bottom");
-            float extra = 26f * k + 7 * 19f * k;   // status row + event list below / above the picture
+            float extra = 26f * k + 7 * 19f * k;   // status row + event list below/above the pic
             float x = right ? Screen.width - w - m : m;
             float y = top ? m : Screen.height - h - m - extra;
             PipRect = new Rect(x, y, w, h);
@@ -55,10 +55,10 @@ namespace GHPCHitCam
             Box(new Rect(x - 3, y - 3, w + 6, h + 6), new Color(0f, 0f, 0f, 0.65f * a));
             GUI.color = new Color(1, 1, 1, a);
             GUI.DrawTexture(PipRect, rt, ScaleMode.StretchToFill, false);
-            GUI.color = Color.white;   // everything below carries its own alpha
+            GUI.color = Color.white;   // stuff below has its own alpha
             bool cine = Settings.CinematicXray.Value;
             if (cine && p.RedFlash > 0.01f) Box(PipRect, new Color(0.85f, 0.08f, 0.05f, 0.5f * p.RedFlash * a));
-            if (cine && p.BlastFlash > 0.01f) Box(PipRect, new Color(1f, 0.55f, 0.15f, 0.5f * p.BlastFlash * a));   // an explosion inside lights up the whole view
+            if (cine && p.BlastFlash > 0.01f) Box(PipRect, new Color(1f, 0.55f, 0.15f, 0.5f * p.BlastFlash * a));   // explosion inside lights up the whole view
 
             var rec = p.Latest;
             // info strip
@@ -68,7 +68,7 @@ namespace GHPCHitCam
                 + (p.Hits > 1 ? $"   ·   hits {p.Hits}" : "");
             Shadow(new Rect(x + 8 * k, y + h - 20f * k, w - 16 * k, 20f * k), info, _small, new Color(0.9f, 0.92f, 0.95f, a));
 
-            // title banner (War Thunder shows it for ~3 s)
+            // title banner (WT shows it ~3 s)
             if (p.TitleWall >= 0f)
             {
                 float age = p.T - p.TitleWall;
@@ -114,7 +114,7 @@ namespace GHPCHitCam
                 var lr = new Rect(x, ly, w, 19f * k);
                 Box(lr, new Color(0f, 0f, 0f, 0.42f * c.a));
                 if (e.Severity >= 3 && age < 0.6f)
-                    Box(new Rect(x, ly, w * Mathf.Clamp01(age / 0.4f), 19f * k), new Color(0.75f, 0.05f, 0.03f, 0.35f * a));   // WT-style red sweep
+                    Box(new Rect(x, ly, w * Mathf.Clamp01(age / 0.4f), 19f * k), new Color(0.75f, 0.05f, 0.03f, 0.35f * a));   // WT style red sweep
                 Shadow(new Rect(x + 8 * k, ly, w - 16 * k, 19f * k), "•  " + e.Text, _text, c);
                 ly += 19f * k + 1f;
             }

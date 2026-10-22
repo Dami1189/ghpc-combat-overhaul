@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Sun, sky and camera for lighting the world plates on the CPU (their shader is unlit).
+    /// sun, sky and camera for lighting the world plates on the CPU (their shader is unlit)
     internal struct SceneLight
     {
         public Vector3 L;            // towards the sun
@@ -13,11 +13,10 @@ namespace GHPCHitCam
         public bool Linear;
     }
 
-    /// World mode of the struck plate: the same failure physics as the x-ray (mode, petals, plug, crater, cracks,
-    /// grazing grooves and slots), on a real vehicle in the game world. It lies on the real armour plate (the struck
-    /// collider's own face) and stops at its edges. The panel is only the damaged spot: ~2x the hole, or the groove and its
-    /// lips along the path. It is laid onto the game's armour colliders and the drawn paint, folds in ~0.3 s of real time
-    /// and then freezes. Its colours are steel, soot and a hot edge that cools, lit like the scene.
+    /// struck plate in the game world: same failure physics as the x-ray (petals, plug, crater, cracks, grooves, slots)
+    /// on a real vehicle. sits on the struck collider's own face and stops at its edges, panel is just the damaged spot
+    /// (~2x the hole, or the groove + lips). laid onto the armour colliders and the drawn paint, folds in ~0.3 s real time
+    /// then freezes. steel, soot and a hot edge that cools, lit like the scene
     internal partial class HoleFx
     {
         public const float WorldFold = 0.3f;     // real seconds the fold takes
@@ -25,48 +24,48 @@ namespace GHPCHitCam
         const int Grid = 17;                      // conform samples across the panel
 
         public delegate bool HullRay(Vector3 origin, Vector3 dir, float len, out float dist);
-        /// Depth of the vehicle's visible surface over a square of half-size `half` on a plate frame, `res` x `res`
-        /// samples (row-major, +x right, +y up), as plate z (+ into the plate); NaN where nothing is drawn, -Infinity where a
-        /// cover the plate must never be drawn over (a camo net) is the nearest thing. Null if unavailable.
+        /// depth of the visible surface over a square (half-size `half`, `res` x `res`, row-major, +x right, +y up) as plate z
+        /// (+ into the plate). NaN where nothing is drawn, -Infinity where a cover we must never draw over (camo net) is nearest,
+        /// null if unavailable
         public const int ProbeRes = 32;
 
         float _wDish, _wFold, _wR, _wPunchR;
-        Vector3 _fn, _fat;      // the plate face's normal and the hit on it
-        float _wCoreK = 1f;     // oblique holes: the punched core reaches this much further along the path
-        bool _wExit;            // the far wall where the round came out: seen from outside, the plate bulges toward the viewer
+        Vector3 _fn, _fat;      // plate face normal and the hit on it
+        float _wCoreK = 1f;     // oblique holes: punched core reaches this much further along the path
+        bool _wExit;            // exit wall: seen from outside the plate bulges toward the viewer
         float[] _wJag;          // torn-edge radius factor per column angle (petals, HE tears)
         float[] _wCover, _wAlpha, _wHot, _wSpec, _gz;     // _gz: hull heights on the conform grid
-        // the conform grid's frame in panel space: point = _cu * u + _cv * v, u in [_u0, _u1], v in [_v0, _v1]
+        // conform grid frame in panel space: point = _cu * u + _cv * v, u in [_u0, _u1], v in [_v0, _v1]
         Vector2 _cu = Vector2.right, _cv = Vector2.up;
         float _u0, _u1, _v0, _v1, _du, _dv;
         int _gu = Grid, _gv = Grid;
-        public bool OnPaint { get; private set; }     // laid onto the drawn surface (not just the armour collider)
+        public bool OnPaint { get; private set; }     // laid on the drawn surface, not just the armour collider
         Color[] _wAlb;
         int _wDropped = -1;
         readonly List<int> _wTri = new List<int>();
-        // the hole into the vehicle: a short bore through the plate, then a dark cup
+        // hole into the vehicle: short bore through the plate, then a dark cup
         Vector3[] _cupPos, _cupNrm;
         Color[] _cupCol, _cupAlb;
         float[] _cupHot;
 
         public float Radius => _hx;
-        /// Radius of the opening into the vehicle, 0 for a dent or gouge.
+        /// radius of the opening into the vehicle, 0 for a dent or gouge
         public float Opening { get; private set; }
-        /// How deep behind the surface the panel, bore and cup reach (the depth punch has to clear it).
+        /// how deep the panel, bore and cup go behind the surface (depth punch has to clear it)
         public float Depth { get; private set; }
         public int OnHull { get; private set; }
         public bool Exit => _wExit;
-        /// Laid on the struck armour piece's own face (not just the hull colliders around the hit).
+        /// laid on the struck armour piece's own face, not just the hull colliders around the hit
         public bool OnRealPlate => _hasPlate;
         public float GrooveLength => Mode == PlateMode.Trench ? _tr.Len : 0f;
         public bool GrooveCut => Mode == PlateMode.Trench && _tr.Slot;
-        /// The middle of the damage (a groove's middle, not where it starts) and how far it reaches, for close-ups.
+        /// middle of the damage (groove's middle, not its start) and how far it reaches, for close-ups
         public Vector3 ViewCenter => T == null ? Vector3.zero : Mode == PlateMode.Trench ? T.TransformPoint(new Vector3(_g.x, _g.y, 0f) * (0.5f * _tr.Len)) : T.position;
         public float ViewRadius => Mode == PlateMode.Trench ? 0.5f * _tr.Len + _ty : _hx * _wCoreK;
-        /// A point of the damage that is on view (a groove's start can lie under another plate): what the occlusion test aims at.
+        /// visible point of the damage for the occlusion test to aim at (a groove's start can be under another plate)
         public Vector3 VisiblePoint => T == null ? Vector3.zero : T.TransformPoint(_wVis);
         Vector3 _wVis;
-        /// Why the panel isn't on the hull, if it isn't (self-test log).
+        /// why the panel isn't on the hull, if it isn't (self-test log)
         public string ConformNote { get; private set; } = "";
         public Mesh PlateMesh => _mesh;
         public Mesh CupMesh { get; private set; }
@@ -76,12 +75,11 @@ namespace GHPCHitCam
                               Steel = new Color(0.055f, 0.055f, 0.058f), Bright = new Color(0.1f, 0.1f, 0.105f),
                               Blued = new Color(0.03f, 0.032f, 0.045f);
 
-        /// `hull` finds the vehicle's outer surface along a ray; `struck` is the same against the struck collider only (fallback).
-        /// `exit`: the round came out through this face (petals and bulge toward the outside). `plateTris`: the struck
-        /// armour piece's triangles (world space, physics pose), or null.
-        /// The build comes in two halves, so the picture of the drawn surface (a GPU read-back) never stalls a frame:
-        /// BeginWorld lays the plate on the struck armour piece (face, mesh, collider rays) in the physics pose; the caller then
-        /// moves T to the drawn pose, takes the surface picture at ProbeFrame and calls FinishWorld when it is back (or with null).
+        /// `hull` = ray to the vehicle's outer surface, `struck` = same vs the struck collider only (fallback). `exit`: round came
+        /// out through this face (petals and bulge go outward). `plateTris`: struck armour piece's tris (world, physics pose) or null
+        /// build is split in two so the surface picture (GPU read-back) never stalls a frame: BeginWorld lays the plate on the
+        /// struck piece in the physics pose, caller moves T to the drawn pose, grabs the picture at ProbeFrame, then FinishWorld
+        /// when it's back (or with null)
         public static HoleFx BeginWorld(ArmorHit ah, int seed, bool exit, HullRay hull, HullRay struck, Vector3[] plateTris, Vector3 centre)
         {
             var fx = new HoleFx { Hit = ah, _rnd = new System.Random(seed), _wExit = exit };
@@ -90,7 +88,7 @@ namespace GHPCHitCam
             return null;
         }
 
-        /// No hull under the hit at all (the vehicle moved away, an odd collider), or the spot is covered: the flat decals have to do.
+        /// no hull under the hit (vehicle moved away, odd collider) or the spot is covered: flat decals have to do
         public void Abandon()
         {
             if (AutoTest.Active) HitCamMod.Log.Msg("World plate on " + Hit.Name + ": no hull found under it " + ConformNote);
@@ -98,7 +96,7 @@ namespace GHPCHitCam
             Dispose();
         }
 
-        /// The square the surface picture has to cover (world pose of its centre, looking into the plate), from where T is now.
+        /// square the surface picture has to cover (world pose of its centre, looking into the plate), from where T is now
         public void ProbeFrame(out Vector3 pos, out Quaternion rot, out float half, out float back)
         {
             float uc = 0.5f * (_u0 + _u1), vc = 0.5f * (_v0 + _v1);
@@ -109,7 +107,7 @@ namespace GHPCHitCam
             back = 0.6f + half;
         }
 
-        /// The second half: the drawn surface (null if there's no picture), the rest of the conform, cracks, colours, cup.
+        /// second half: drawn surface (null if no picture), rest of the conform, cracks, colours, cup
         public bool FinishWorld(float[] vis)
         {
             _sw.Restart();
@@ -119,7 +117,7 @@ namespace GHPCHitCam
             BuildCracks();
             _times += Lap("cracks");
             WorldLook();
-            Positions(1f);      // the settled shape, for the hole's rim and the punch depth
+            Positions(1f);      // settled shape, for the hole rim and the punch depth
             BuildCup();
             _owned.Add(CupMesh);
             _owned.Add(PunchMesh);
@@ -129,8 +127,8 @@ namespace GHPCHitCam
             return true;
         }
 
-        /// Collider meshes can hold every triangle twice (once per winding): the plate's outline is then lost (each edge
-        /// looks shared). One copy of each.
+        /// collider meshes can have every tri twice (once per winding), then each edge looks shared and the outline is lost.
+        /// keep one copy of each
         static Vector3[] Unique(Vector3[] t)
         {
             if (t == null) return null;
@@ -160,9 +158,8 @@ namespace GHPCHitCam
             var ah = Hit;
             var go = new GameObject("HitCam plate " + ah.Name);
             T = go.transform;
-            // world space: L / NormalL / DirL are world vectors here; +Z points into the plate.
-            // The plate is the face of the struck armour piece the round met (on an exit: the face it came out of), which
-            // also gives the real angle to it: below the graze angle the round ploughs along it instead of going in.
+            // world space: L / NormalL / DirL are world vectors here, +Z into the plate. plate = face of the struck armour piece the
+            // round met (on exit: the face it came out of), that also gives the real angle: below graze angle it ploughs along it
             Vector3 n = ah.NormalL.normalized, at = ah.L;
             List<Vector3> face = null;
             if (plateTris != null)
@@ -170,8 +167,8 @@ namespace GHPCHitCam
                 ah.PlateTris = plateTris;
                 Vector3 keep = ah.DirL;
                 if (_wExit) ah.DirL = -keep;
-                // which way is out: the struck collider's own normal at the hit (outward on the face the round met), and for
-                // faces edge-on to it the vehicle's centre, in world space (PlateFace's centre is the x-ray's, target-local)
+                // which way is out: struck collider's normal at the hit, and for faces edge-on to it the vehicle centre, world space
+                // (PlateFace's centre is the x-ray's, target-local)
                 ah.HasSurf = true;
                 ah.SurfNormalL = n;
                 Vector3 keepCentre = CentreL;
@@ -199,8 +196,8 @@ namespace GHPCHitCam
             _stretchOn = true;
             if (Mode == PlateMode.Trench)
             {
-                // the groove (or slot), its plowed lips and the scuffing a few widths to each side, from just before the
-                // impact to past the end where the rod climbs out; it ends where the plate does
+                // groove (or slot), plowed lips and scuffing a few widths each side, from just before impact to past where the rod
+                // climbs out, cut off where the plate ends
                 float w = _tr.HalfW;
                 _wPunchR = Mathf.Clamp(3.2f * w, 0.02f, 0.3f);
                 _ty = _wPunchR * 1.08f;
@@ -218,22 +215,21 @@ namespace GHPCHitCam
             }
             else
             {
-                // only the damaged spot (~2x the hole: petals, crater, lip, torn edge) is drawn over the paint (depth punch);
-                // around it the flat soot ring carries the blast mark, so the punch can't paint over much of whatever stands
-                // in front of the hull (nets, handles). The panel is just big enough to hold that.
+                // only the damaged spot (~2x the hole) gets drawn over the paint (depth punch), the flat soot ring does the blast mark
+                // around it so the punch can't paint over stuff in front of the hull (nets, handles). panel is just big enough for that
                 _wPunchR = Mathf.Clamp(Mathf.Max(1.45f * _rFeat, 2f * rh), 0.04f, 0.85f);
                 _hx = _hy = _wPunchR * 1.08f;
                 Size = 2f * _hx;
-                _low = _wPunchR < 0.1f;     // autocannon-sized: a coarser mesh is plenty (and 5x cheaper)
-                // an oblique hole is stretched along the path (Stretch): so are the core, the grid and the punch
+                _low = _wPunchR < 0.1f;     // autocannon size: coarser mesh is plenty (and 5x cheaper)
+                // oblique hole is stretched along the path (Stretch), so core, grid and punch are too
                 float rf = Mathf.Max(_rFeat, 1e-3f);
                 _wCoreK = _stretch <= 1.001f ? 1f : Mathf.Lerp(_stretch, 1f + (_stretch - 1f) * 0.3f, Smooth(1.5f * rf, 6f * rf, _wPunchR));
                 _cu = _g; _cv = _gn;
                 _u0 = -_hx * Mathf.Max(_stretch, 1f); _u1 = -_u0; _v0 = -_hx; _v1 = _hx;
             }
             _gv = Grid;
-            _gu = Mathf.Clamp(Mathf.RoundToInt(Grid * (_u1 - _u0) / (_v1 - _v0)), Grid, 45) | 1;    // odd: a node on the hit
-            // the far-field dishing is mostly outside this small panel: keep its real (not doubled) shape relative to the panel edge
+            _gu = Mathf.Clamp(Mathf.RoundToInt(Grid * (_u1 - _u0) / (_v1 - _v0)), Grid, 45) | 1;    // odd so there's a node on the hit
+            // far-field dishing is mostly outside this small panel: keep its real (not doubled) shape vs the panel edge
             _wDish = Mode == PlateMode.Trench ? 0f : _dish / VisualDish;
             _wR = _R;
             _dish = 0f;
@@ -244,8 +240,8 @@ namespace GHPCHitCam
             BuildMesh();
             TearEdge();
             _times += Lap("mesh");
-            // (the x-ray's OnPlate tests every vertex against every face triangle; here the conform grid knows the plate,
-            // and its cover and edge distance are interpolated per vertex)
+            // (x-ray's OnPlate tests every vertex vs every face tri, here the conform grid knows the plate and cover / edge
+            // distance get interpolated per vertex)
             if (_hasPlate)
             {
                 float ext = 0f;
@@ -265,8 +261,7 @@ namespace GHPCHitCam
             return Mathf.Max(0f, _wDish * (Mathf.Exp(k * r * r) - Mathf.Exp(k * _hx * _hx)));
         }
 
-        /// Big armour pieces have hundreds of triangles; only those under the panel matter for its vertices and grid (per-vertex
-        /// tests against all of them cost tens of ms).
+        /// big armour pieces have hundreds of tris, keep only the ones under the panel (testing all of them per vertex costs tens of ms)
         void NearFace()
         {
             float m = 0.05f, eu0 = _u0 - m, eu1 = _u1 + m, ev0 = _v0 - m, ev1 = _v1 + m;
@@ -284,13 +279,13 @@ namespace GHPCHitCam
             var ol = new List<Vector2>();
             for (int i = 0; i + 1 < _outline.Length; i += 2)
                 if (Overlaps(_outline[i], _outline[i + 1], _outline[i + 1])) { ol.Add(_outline[i]); ol.Add(_outline[i + 1]); }
-            if (tri.Count == 0) return;      // keep everything: the panel is past the face (shouldn't happen)
+            if (tri.Count == 0) return;      // panel is past the face (shouldn't happen): keep everything
             _faceTri = tri.ToArray();
             _faceZ = tz.ToArray();
             _outline = ol.ToArray();
         }
 
-        /// Panel point (stretched for oblique holes) -> conform-grid coordinates.
+        /// panel point (stretched for oblique holes) -> conform grid coords
         Vector2 GridUV(Vector2 p) => new Vector2(Vector2.Dot(p, _cu), Vector2.Dot(p, _cv));
         Vector2 Panel(float u, float v) => _cu * u + _cv * v;
 
@@ -301,12 +296,11 @@ namespace GHPCHitCam
             return false;
         }
 
-        /// Heights of the struck plate under the panel, from rays along its normal. Only that plate counts (its face, when
-        /// the game's armour piece is known): the damage never runs past its edge, and wherever another armour piece lies on
-        /// top of it (an add-on plate, a skirt, ERA) that part is covered and not drawn. Within it the surface is followed
-        /// outward from the hit point only while it stays continuous; vertices with no plate under them fade out.
-        /// `hull` hits any of the vehicle's armour, `struck` only the struck collider.
-        // the conform grid between the two build halves
+        /// heights of the struck plate under the panel, rays along its normal. only that plate counts: damage never runs past
+        /// its edge, and where another armour piece sits on top (add-on plate, skirt, ERA) that part is covered and not drawn.
+        /// surface is followed out from the hit only while it stays continuous, verts with no plate under them fade out.
+        /// `hull` hits any of the vehicle's armour, `struck` only the struck collider
+        // conform grid, kept between the two build halves
         float[] _cz, _cedge;
         bool[] _chit;
         int _cc;
@@ -318,7 +312,7 @@ namespace GHPCHitCam
             float probe = Mathf.Clamp(0.5f * Mathf.Max(_v1, 0.5f * (_u1 - _u0)) + 0.05f, 0.08f, 0.5f);
             var z = new float[N];
             var hit = new bool[N];
-            var edge = new float[N];      // distance to the real plate's edge (0 off it)
+            var edge = new float[N];      // distance to the real plate edge (0 off it)
             Vector3 o = T.position, fwd = T.forward;
             Quaternion q = T.rotation;
             bool round = Mode != PlateMode.Trench;
@@ -330,7 +324,7 @@ namespace GHPCHitCam
                     float u = _u0 + i * du, vv = _v0 + j * dv;
                     if (round && (u / ru) * (u / ru) + (vv / rv) * (vv / rv) > 1.17f) continue;    // outside the round (stretched) panel
                     Vector2 p = Panel(u, vv);
-                    if (_hasPlate && !OnFace(p)) continue;                                           // past the real plate's edge
+                    if (_hasPlate && !OnFace(p)) continue;                                           // past the real plate edge
                     inside++;
                     if (_hasPlate)
                     {
@@ -351,11 +345,11 @@ namespace GHPCHitCam
                     }
                     else if (!_hasPlate && hh && Mathf.Abs(dh - probe) < 0.05f + 0.3f * Mathf.Sqrt(u * u + vv * vv))
                     {
-                        // no plate shape and the struck collider's own ray missed (an odd mesh): the hull there
+                        // no plate shape and the struck collider's ray missed (odd mesh): use the hull there
                         hit[k] = true; z[k] = dh - probe;
                     }
                 }
-            // the hit's node; a groove that starts at the plate's edge, or under another plate, takes the first node on view along its path
+            // hit's node; a groove starting at the plate edge or under another plate takes the first visible node along its path
             int jc = Mathf.Clamp(Mathf.RoundToInt(-_v0 / dv), 0, GV - 1), ic = Mathf.Clamp(Mathf.RoundToInt(-_u0 / du), 0, GU - 1);
             int c = jc * GU + ic;
             if (!round && !hit[c])
@@ -369,7 +363,7 @@ namespace GHPCHitCam
             _wVis = new Vector3(Panel(_u0 + (c % GU) * du, _v0 + (c / GU) * dv).x, Panel(_u0 + (c % GU) * du, _v0 + (c / GU) * dv).y, z[c]);
             if (round && Mathf.Abs(z[c]) > 1e-4f)
             {
-                // the reported impact point is off the collider's face: sit on the face
+                // reported impact point is off the collider face: sit on the face
                 ConformNote += $"[re-centred {z[c] * 100f:0.0} cm] ";
                 float zc = z[c];
                 T.position += fwd * zc;
@@ -395,7 +389,7 @@ namespace GHPCHitCam
                 ConformNote += "[covered at the centre] ";
                 return false;
             }
-            float step = Mathf.Max(du, dv) + 0.006f;   // up to ~45 degrees off the impact plane
+            float step = Mathf.Max(du, dv) + 0.006f;   // up to ~45 deg off the impact plane
             var queue = new Queue<int>();
             on[c] = true;
             queue.Enqueue(c);
@@ -414,7 +408,7 @@ namespace GHPCHitCam
                     queue.Enqueue(nb);
                 }
             }
-            // nodes off the hull take their neighbour's height, so the faded edge doesn't spike
+            // nodes off the hull take their neighbour's height, else the faded edge spikes
             var set = (bool[])on.Clone();
             for (int pass = 0; pass < GU + GV; pass++)
             {
@@ -457,7 +451,7 @@ namespace GHPCHitCam
                 _v[k] = vx;
             }
 
-            // the depth punch: the damaged core's footprint on the hull (see WorldPlate)
+            // depth punch: the damaged core's footprint on the hull (see WorldPlate)
             var pv = new Vector3[N];
             for (int k = 0; k < N; k++)
             {
@@ -487,14 +481,13 @@ namespace GHPCHitCam
             return true;
         }
 
-        /// The armour colliders only roughly follow the drawn hull (the paint can sit a few cm off them), and things
-        /// without colliders lie on top of it (camouflage nets, stowage, cables). A depth picture of the visible surface
-        /// moves the panel onto the paint, and drops it where something else covers the armour, or where nothing is drawn.
-        /// `vis`: the picture taken at ProbeFrame (ProbeRes x ProbeRes).
+        /// armour colliders only roughly follow the drawn hull (paint can be a few cm off) and stuff without colliders sits on
+        /// top (camo nets, stowage, cables). a depth picture of the visible surface moves the panel onto the paint and drops
+        /// it where something else covers the armour or nothing is drawn. `vis`: picture from ProbeFrame (ProbeRes x ProbeRes)
         void Paintwork(float[] vis, float[] z, bool[] hit, int GU, int GV, float du, float dv, int c)
         {
             const int R = ProbeRes;
-            // a square over the grid's rectangle, turned with it (see ProbeFrame)
+            // square over the grid's rectangle, turned with it (see ProbeFrame)
             float uc = 0.5f * (_u0 + _u1), vc = 0.5f * (_v0 + _v1), half = 0.5f * Mathf.Max(_u1 - _u0, _v1 - _v0);
             float px = 2f * half / R;
             float Vis(int k)
@@ -504,13 +497,13 @@ namespace GHPCHitCam
                 return vis[j * R + i];
             }
             int N = GU * GV;
-            // not every material draws with the depth shader (custom render types): where nothing came back, the colliders decide
+            // not every material draws with the depth shader (custom render types): where nothing came back colliders decide
             int seen = 0, nodes = 0;
             for (int k = 0; k < N; k++) if (hit[k]) { nodes++; if (!float.IsNaN(Vis(k))) seen++; }
             int covered = 0, moved = 0;
             float centre = Vis(c) - z[c];
-            // the picture covers most of the spot: follow the paint point by point; only some of it: move the whole panel by
-            // the typical paint offset (point by point would leave steps between the samples that came back and those that didn't)
+            // picture covers most of the spot: follow the paint point by point. only some of it: shift the whole panel by the
+            // typical paint offset (point by point would leave steps between samples that came back and ones that didn't)
             bool full = seen >= nodes * 0.8f;
             var offs = new List<float>();
             for (int k = 0; k < N; k++)
@@ -518,7 +511,7 @@ namespace GHPCHitCam
                 if (!hit[k]) continue;
                 float zv = Vis(k);
                 if (float.IsNaN(zv)) continue;
-                // drawn well in front of the armour: a wheel, a box, a fender (or a camo net at any distance, see SurfaceProbe)
+                // drawn well in front of the armour: wheel, box, fender (or a camo net at any distance, see SurfaceProbe)
                 if (zv < z[k] - 0.12f) { hit[k] = false; covered++; continue; }
                 if (zv > z[k] + 0.12f) continue;      // drawn surface far behind the collider: trust the collider
                 if (full) { z[k] = zv; moved++; }
@@ -535,14 +528,14 @@ namespace GHPCHitCam
             ConformNote += $"[paint: {(moved < 0 ? "shifted by " + -moved + " samples" : moved + " on")}, {covered} covered, {seen}/{nodes} seen, centre {(float.IsNaN(centre) ? "-" : float.IsNegativeInfinity(centre) ? "net" : (centre * 100f).ToString("0.0") + " cm")}] ";
         }
 
-        /// Petals and HE tears don't tear on a circle: every petal gets its own length and the edge between them is ragged.
+        /// petals and HE tears aren't a circle: each petal gets its own length and the edge between them is ragged
         void TearEdge()
         {
             if (Mode != PlateMode.Petal && Mode != PlateMode.Tear) return;
             float amp = Mode == PlateMode.Tear ? 0.3f : 0.14f;
             float p1 = Rn(0f, 6.3f), p2 = Rn(0f, 6.3f), p3 = Rn(0f, 6.3f);
             float Jag(float th) => 1f + amp * (0.55f * Mathf.Sin(3f * th + p1) + 0.3f * Mathf.Sin(7f * th + p2) + 0.2f * Mathf.Sin(13f * th + p3));
-            // a petal shorter than its sector leaves the middle open (the round punched it out)
+            // petal shorter than its sector leaves the middle open (round punched it out)
             var petalLen = new Dictionary<int, float>();
             for (int wi = 0; wi < _w.Count; wi++) if (_w[wi].Petal) petalLen[wi] = 1f - Rn(0f, Mode == PlateMode.Tear ? 0.35f : 0.2f);
             float r1 = _rFeat * 1.7f;
@@ -550,7 +543,7 @@ namespace GHPCHitCam
             {
                 var vx = _v[k];
                 if (vx.R >= r1) continue;
-                // full jag up to the torn edge, blending back into the plate further out
+                // full jag up to the torn edge, blends back into the plate further out
                 float w = 1f - Smooth(_rFeat, r1, vx.R);
                 vx.P *= 1f + (Jag(vx.Th) - 1f) * w;
                 var wd = _w[vx.W];
@@ -568,8 +561,8 @@ namespace GHPCHitCam
             for (int i = 0; i < m; i++) _wJag[i] = Jag(i * Mathf.PI * 2f / m);
         }
 
-        /// What each vertex is made of: scorched paint fading into the real paint at the panel edge, soot toward the
-        /// hole, bare torn / sheared / pushed / scraped steel at the failure, and which parts glow.
+        /// what each vertex is made of: scorched paint fading into real paint at the edge, soot toward the hole, bare torn /
+        /// sheared / pushed / scraped steel at the failure, and which parts glow
         void WorldLook()
         {
             int n = _v.Length;
@@ -580,15 +573,14 @@ namespace GHPCHitCam
             if (_wCover == null) { _wCover = new float[n]; for (int k = 0; k < n; k++) _wCover[k] = 1f; }
             bool trench = Mode == PlateMode.Trench;
             float hw = trench ? _tr.HalfW : 0f;
-            // the panel fades out just inside the punched core (beyond it, it would fight with the paint); a groove's core
-            // is measured from its axis
+            // panel fades out just inside the punched core (past it it fights the paint), a groove's core is measured from its axis
             float fade1 = _wPunchR * 0.85f, fade0 = trench ? Mathf.Min(1.4f * hw, fade1 * 0.6f) : Mathf.Min(Mathf.Max(_rFeat * 1.1f, fade1 * 0.6f), fade1 * 0.9f);
             for (int k = 0; k < n; k++)
             {
                 var vx = _v[k];
                 var w = _w[vx.W];
                 float r = vx.R;
-                // no blast on the side the round came out of, nor along a skimming rod's groove: scuffed paint, not soot
+                // no blast on the exit side or along a skimming rod's groove: scuffed paint, not soot
                 Color alb = _wExit || trench ? Scorch * 1.3f : Color.Lerp(Scorch, Soot, 1f - Smooth(_rFeat * 0.8f, _hx * 0.8f, r));
                 float spec = 0.03f, hot = 0f;
                 float alpha = 1f - Smooth(fade0, fade1, trench ? vx.Re : r);
@@ -601,7 +593,7 @@ namespace GHPCHitCam
                             float a = Vector2.Dot(vx.P, w.E);
                             if (a < w.Ah)
                             {
-                                // the petal: scorched paint at its hinge, torn bright steel toward the tip
+                                // petal: scorched paint at the hinge, torn bright steel toward the tip
                                 float tip = 1f - Mathf.Clamp01(a / Mathf.Max(w.Ah, 1e-4f));
                                 alb = Color.Lerp(Scorch * 1.4f, Color.Lerp(Blued, Steel, tip), 0.25f + 0.65f * tip);
                                 spec = 0.08f + 0.3f * tip;
@@ -626,7 +618,7 @@ namespace GHPCHitCam
                     case PlateMode.Jet:
                         if (r < _rCrater * 1.45f)
                         {
-                            // metal pushed aside into the funnel and the raised lip: bright where it flowed, hottest at the hole
+                            // metal pushed into the funnel and the raised lip: bright where it flowed, hottest at the hole
                             float f = Mathf.Clamp01(r / _rCrater);
                             Color pushed = Mode == PlateMode.Jet ? Color.Lerp(Steel * 0.6f, Scorch, f) : Color.Lerp(Bright, Steel, f);
                             alb = r < _rCrater ? pushed : Color.Lerp(Steel, alb, Smooth(_rCrater, _rCrater * 1.45f, r));
@@ -641,7 +633,7 @@ namespace GHPCHitCam
                         float qd = vx.Re / Mathf.Max(_rCrater, 1e-4f);
                         if (qd < 1.7f)
                         {
-                            // a KE round leaves a bright scuffed crater, a blast a sooty one
+                            // KE round leaves a bright scuffed crater, a blast a sooty one
                             bool clean = !_he;
                             Color floor = clean ? Color.Lerp(Bright, Steel, Mathf.Clamp01(qd)) : Soot;
                             alb = qd < 1f ? floor : Color.Lerp(clean ? Steel : Soot, alb, Smooth(1f, 1.7f, qd));
@@ -659,8 +651,7 @@ namespace GHPCHitCam
                         {
                             if (along && ay < 1.6f * hw)
                             {
-                                // the cut's edges: a thin face of freshly sheared steel, hot where the rod went through; the edge
-                                // dragged into the plate beside it is scuffed paint
+                                // cut edges: thin face of fresh sheared steel, hot where the rod went through; edge dragged in beside it is scuffed paint
                                 float e = Smooth(0.95f * hw, 1.6f * hw, ay);
                                 alb = Color.Lerp(Bright, alb, e);
                                 spec = Mathf.Lerp(0.6f, 0.05f, e);
@@ -673,7 +664,7 @@ namespace GHPCHitCam
                             float qd = vx.Re / Mathf.Max(hw, 1e-4f);
                             if (qd < 2.2f)
                             {
-                                // the groove's floor scraped bright and hot by the rod, the plowed lips, the mound where it climbed out
+                                // groove floor scraped bright and hot by the rod, plowed lips, mound where it climbed out
                                 alb = qd < 1f ? Color.Lerp(Bright, Steel, qd) : Color.Lerp(Steel, alb, Smooth(1f, 2.2f, qd));
                                 spec = qd < 1f ? 0.8f : 0.3f * (1f - Smooth(1f, 2.2f, qd));
                                 hot = (1f - Smooth(0.3f, 1.1f, qd)) * (_tr.Ric ? 0.7f : 0.9f);
@@ -690,7 +681,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Plate shape at fraction u of the fold (0 = untouched, 1 = settled). Torn-off petals and the plug leave the plate.
+        /// plate shape at fold fraction u (0 = untouched, 1 = settled), torn-off petals and the plug leave the plate
         public void ShapeWorld(float u)
         {
             int dropped = Positions(u);
@@ -718,7 +709,7 @@ namespace GHPCHitCam
             _mesh.GetNormals(_nrm);
         }
 
-        /// Vertex positions at fraction u of the fold; returns how many pieces have left the plate.
+        /// vertex positions at fold fraction u, returns how many pieces left the plate
         int Positions(float u)
         {
             u = Mathf.Clamp01(u);
@@ -746,8 +737,8 @@ namespace GHPCHitCam
             return dropped;
         }
 
-        /// The way into the vehicle: the hole's wall through the plate (bright, sheared or pushed steel), then a dark cup.
-        /// It is visible only through the opening: around it the panel itself hides it.
+        /// way into the vehicle: hole wall through the plate (bright sheared or pushed steel), then a dark cup.
+        /// only seen through the opening, the panel hides it everywhere else
         void BuildCup()
         {
             CupMesh = new Mesh { name = "plate cup" };
@@ -777,7 +768,7 @@ namespace GHPCHitCam
                 case PlateMode.Ductile:
                 case PlateMode.Jet:
                 {
-                    // the hole edge as the plate has it: ring 0 of the main block
+                    // hole edge as the plate has it: ring 0 of the main block
                     var w = _w.Find(x => x.ToBorder);
                     Opening = Mode == PlateMode.Plug ? _rPlug : _rHole;
                     int stepC = Mathf.Max(1, w.Cols / 48);
@@ -787,7 +778,7 @@ namespace GHPCHitCam
                 }
                 case PlateMode.Trench when _tr.Slot && _w.Count == 2:
                 {
-                    // the slot: between the cut's two edges (the path-side rows of the two half-grids), out along one and back the other
+                    // slot: between the cut's two edges (path-side rows of the two half-grids), out along one and back along the other
                     Wedge lo = _w[0], hi = _w[1];
                     Opening = 0.85f * _tr.HalfW;
                     for (int c = 0; c <= lo.Cols; c++) rim.Add(_pos[lo.V0 + c * lo.Rings]);
@@ -804,7 +795,7 @@ namespace GHPCHitCam
             Vector3 cen = Vector3.zero;
             foreach (var p in rim) cen += p;
             cen /= nR;
-            // rings: rim, bore bottom, cup wall bottom; then the cup floor's centre
+            // rings: rim, bore bottom, cup wall bottom, then the cup floor centre
             var pos = new List<Vector3>();
             var alb = new List<Color>();
             var hot = new List<float>();
@@ -837,13 +828,13 @@ namespace GHPCHitCam
 
         void PunchDepth()
         {
-            // the deepest the folded petals or the slot's dragged-in edges reach
+            // deepest the folded petals or the slot's dragged-in edges go
             float zMax = 0f;
             for (int k = 0; k < _pos.Length; k++) if (_pos[k].z > zMax) zMax = _pos[k].z;
             Depth = Mathf.Max(Depth, zMax) + 0.05f;
         }
 
-        /// Hull height (panel z) under a panel point, from the conform grid.
+        /// hull height (panel z) under a panel point, from the conform grid
         float HullZ(Vector2 p)
         {
             if (_gz == null) return 0f;
@@ -870,7 +861,7 @@ namespace GHPCHitCam
         static Color Ambient(in SceneLight sl, Vector3 n)
             => n.y >= 0f ? Color.Lerp(sl.AmbSide, sl.AmbUp, n.y) : Color.Lerp(sl.AmbSide, sl.AmbDown, -n.y);
 
-        /// Lit colours for the scene's sun and sky. `age` = real seconds since the impact (the hot parts cool), `shadow` = 0..1 sun visibility.
+        /// lit colours for the scene's sun and sky. `age` = real s since impact (hot parts cool), `shadow` = 0..1 sun visibility
         public void PaintWorld(in SceneLight sl, float age, float shadow)
         {
             float heat = Mathf.Pow(Mathf.Clamp01(1f - age / WorldCool), 1.6f);
@@ -917,7 +908,7 @@ namespace GHPCHitCam
         static Color Lit(in SceneLight sl, Vector3 pW, Vector3 nW, Color alb, float spec, float shadow)
         {
             Vector3 view = (sl.Cam - pW).normalized;
-            if (Vector3.Dot(nW, view) < 0f) nW = -nW;    // two-sided sheet: the side we see
+            if (Vector3.Dot(nW, view) < 0f) nW = -nW;    // two-sided sheet: use the side we see
             float ndl = Mathf.Max(0f, Vector3.Dot(nW, sl.L));
             Color light = sl.Sun * (ndl * shadow) + Ambient(sl, nW);
             Color c = new Color(alb.r * light.r, alb.g * light.g, alb.b * light.b, 1f);

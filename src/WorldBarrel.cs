@@ -10,13 +10,13 @@ using UnityEngine.Rendering;
 
 namespace GHPCHitCam
 {
-    /// A hit on a gun barrel, on the real vehicle: the hole the round makes in the tube (and where it came out on the far
-    /// side), and what the hit did to the tube as a structure. The tube is a hollow steel beam held at the mantlet; the
-    /// hit's impulse sets the muzzle part swinging against the part behind the hit, and the damaged section there bends
-    /// (a plastic hinge) until that motion is used up, or tears through and lets the muzzle end go. Its own weight can
-    /// fold a tube that is mostly cut through. Nothing is pre-made: holes, bend and break come from the round, the hit
-    /// point and the tube's own size, and are cut into the game's own barrel mesh (skinned or not, read back from the
-    /// GPU when the game keeps it there), so the bent tube still elevates and traverses with the gun.
+    /// hit on a gun barrel on the real vehicle: the hole the round makes in the tube (and the exit on the far side) and
+    /// what the hit did to the tube as a structure. tube = hollow steel beam held at the mantlet; the hit's impulse swings
+    /// the muzzle part against the part behind the hit, and the damaged section there bends (plastic hinge) until that
+    /// motion is used up, or tears through and lets the muzzle end go. its own weight can fold a mostly cut tube.
+    /// nothing is pre-made: holes, bend and break come from the round, hit point and tube size, and get cut into the
+    /// game's own barrel mesh (skinned or not, read back from the GPU when the game keeps it there), so the bent tube
+    /// still elevates and traverses with the gun
     internal sealed class WorldBarrel
     {
         static readonly Dictionary<WeaponSystem, WorldBarrel> _all = new Dictionary<WeaponSystem, WorldBarrel>();
@@ -24,14 +24,14 @@ namespace GHPCHitCam
         const float Steel = 7850f;      // kg/m3
         const float Yield = 1.05e9f;    // Pa, gun tube steel
         const float Gravity = 9.81f;
-        const int NPhi = 48, NRad = 4;  // the tube's cross-section, in cells
+        const int NPhi = 48, NRad = 4;  // tube cross-section, in cells
         const float Bin = 0.01f, U0 = -0.15f;
 
         public WeaponSystem Ws;
         public Unit U;
-        public Transform F;             // the game's muzzle point: +z out of the muzzle, the tube runs back along -z
+        public Transform F;             // game's muzzle point: +z out of the muzzle, tube runs back along -z
         public float Bore, Length;      // m
-        float _rTube;                   // the tube's drawn radius near the muzzle
+        float _rTube;                   // drawn tube radius near the muzzle
         float[] _prof;                  // drawn outer radius every 1 cm from the muzzle back (U0 first)
         readonly List<Part> _parts = new List<Part>();
         readonly List<Feature> _feat = new List<Feature>();
@@ -39,18 +39,18 @@ namespace GHPCHitCam
         bool _bent;
         float _bendU, _bendW, _bentAngle;
         Quaternion _bendQ = Quaternion.identity;
-        float _cutU = -1f;              // broken off here (the muzzle side, u < _cutU, is gone)
+        float _cutU = -1f;              // broken off here (muzzle side, u < _cutU, is gone)
         float _cutBorn, _cutPhi, _tongue, _peel, _flare;
-        Mesh _tear;                     // the stump's torn end (inside of the wall, rim, bore), F space
+        Mesh _tear;                     // torn end of the stump (inside of the wall, rim, bore), F space
         int _cutSeed;
-        bool _blown;                    // blown off by a blast (scorched, ragged) rather than torn by the swing
+        bool _blown;                    // blown off by a blast (scorched, ragged), not torn by the swing
         GameObject _fx;                 // wounds, bore, caps: in F's space
         int _layer, _seed;
         string _why;
 
         sealed class Part { public Renderer R; public MeshCopy Mc; public Mesh Mine; }
 
-        Matrix4x4 _wl;                  // world -> F (the gun frame has no scale)
+        Matrix4x4 _wl;                  // world -> F (gun frame has no scale)
         Vector3 ToF(Vector3 w) => _wl.MultiplyPoint3x4(w);
 
         enum FK { Perf, Gouge, Blast }
@@ -89,7 +89,7 @@ namespace GHPCHitCam
             if (Bore < 0.015f && Ws.CurrentAmmoType != null && Ws.CurrentAmmoType.Caliber > 15f) Bore = Ws.CurrentAmmoType.Caliber * 0.001f;
             _layer = WorldDamage.VisibleLayer(U);
 
-            // the renderers around the tube's line, read in full (the game keeps most of them on the GPU only)
+            // renderers around the tube's line, read in full (game keeps most of them on the GPU only)
             Vector3 M = F.position, a = F.forward;
             var seg = new Bounds(M, Vector3.zero);
             seg.Encapsulate(M - a * 7.5f);
@@ -124,7 +124,7 @@ namespace GHPCHitCam
                 }
             if (cands.Count == 0) return "no model around the barrel";
 
-            // the drawn radius along the tube, from every triangle edge near its line (long triangles have no vertices mid-way)
+            // drawn radius along the tube from every triangle edge near its line (long triangles have no vertices mid-way)
             int nb = Mathf.CeilToInt((7.5f - U0) / Bin);
             _prof = new float[nb];
             for (int i = 0; i < nb; i++) _prof[i] = -1f;
@@ -140,7 +140,7 @@ namespace GHPCHitCam
                         SampleEdge(A, B); SampleEdge(B, C); SampleEdge(C, A);
                     }
             }
-            // gaps (between ring stations of a coarse model): straight between the known ones
+            // gaps (between ring stations of a coarse model): straight line between the known ones
             int last = -1;
             for (int i = 0; i < nb; i++)
             {
@@ -152,7 +152,7 @@ namespace GHPCHitCam
             int first = Array.FindIndex(_prof, x => x >= 0f);
             if (first < 0) return "no tube found";
             for (int i = 0; i < first; i++) _prof[i] = -1f;
-            // the tube near the muzzle, then back to where the mantlet / turret starts (the drawn radius jumps)
+            // tube near the muzzle, then back to where mantlet / turret starts (drawn radius jumps)
             var nearMuzzle = new List<float>();
             for (float u = 0.05f; u < 0.7f; u += Bin) { float r = RawProf(u); if (r > 0f) nearMuzzle.Add(r); }
             if (nearMuzzle.Count < 5) return "no tube near the muzzle";
@@ -173,7 +173,7 @@ namespace GHPCHitCam
             if (Bore <= 0f) Bore = 1.2f * _rTube;
             Bore = Mathf.Min(Bore, 1.8f * _rTube);
 
-            // the parts that draw the tube itself
+            // parts that draw the tube itself
             foreach (var c in cands)
             {
                 int on = 0;
@@ -206,7 +206,7 @@ namespace GHPCHitCam
             return _prof[i];
         }
 
-        /// The drawn outer radius at u (m from the muzzle).
+        /// drawn outer radius at u (m from the muzzle)
         float Rvis(float u)
         {
             float r = RawProf(Mathf.Clamp(u, 0f, Length));
@@ -223,9 +223,9 @@ namespace GHPCHitCam
         // ------------------------------------------------------------------ the tube as a steel beam
 
         float Ri => Bore * 0.5f;
-        /// Wall thickness: thin at the muzzle, thick toward the chamber (as gun tubes are made).
+        /// wall thickness: thin at the muzzle, thick toward the chamber (like real gun tubes)
         float Wall(float u) { float x = Mathf.Clamp01(u / Mathf.Max(Length, 0.1f)); return Bore * (0.17f + 0.25f * x * x); }
-        /// The steel's outer radius (thermal sleeves and fume extractors are drawn bigger than the steel inside).
+        /// steel outer radius (thermal sleeves and fume extractors are drawn bigger than the steel inside)
         float Ro(float u)
         {
             float ro = Ri + Wall(u), vis = Rvis(u);
@@ -248,7 +248,7 @@ namespace GHPCHitCam
                             if (dist >= f.R) break;
                             if (f.Through) return true;
                             Vector2 d2 = new Vector2(f.D.x, f.D.y);
-                            if (Vector2.Dot(new Vector2(q.x, q.y), -d2) > -0.2f * r) return true;   // the entry wall only
+                            if (Vector2.Dot(new Vector2(q.x, q.y), -d2) > -0.2f * r) return true;   // entry wall only
                             break;
                         }
                     case FK.Gouge:
@@ -262,7 +262,7 @@ namespace GHPCHitCam
             return false;
         }
 
-        /// The plastic bending moment the section at u still carries about bending toward `dir` (and the intact value).
+        /// plastic bending moment the section at u still carries for bending toward `dir` (and the intact value)
         float Capacity(float u, Vector2 dir, out float intact)
         {
             float ro = Ro(u), dr = (ro - Ri) / NRad, dphi = Mathf.PI * 2f / NPhi;
@@ -298,8 +298,8 @@ namespace GHPCHitCam
             return Yield * m;
         }
 
-        /// The muzzle part beyond a hinge at uh (mass, first and second moments about the hinge) and the inertia of
-        /// everything behind it about the mount.
+        /// muzzle part past a hinge at uh (mass, first and second moments about the hinge) and inertia of everything
+        /// behind it about the mount
         void Beam(float uh, out float mf, out float s1, out float s2, out float iN)
         {
             mf = s1 = s2 = 0f;
@@ -322,7 +322,7 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ a hit
 
-        /// A round on the barrel's own hit zone (the game's collider for it). Positions in the drawn pose.
+        /// a round on the barrel's own hit zone (game's collider for it). positions in the drawn pose
         public void Hit(Vector3 pointW, Vector3 normalW, Vector3 dirW, bool pen, bool ric, AmmoType ammo, float speed, float holeR)
         {
             _wl = F.worldToLocalMatrix;
@@ -337,14 +337,14 @@ namespace GHPCHitCam
             float rv = Rvis(u), ro = Ro(u), t = ro - Ri;
             Vector3 surf = new Vector3(Mathf.Cos(phi) * rv, Mathf.Sin(phi) * rv, -u);
             Vector3 nrm = new Vector3(Mathf.Cos(phi), Mathf.Sin(phi), 0f);
-            if (Vector3.Dot(d, nrm) > 0f) d = -nrm;            // the collider and the drawn tube disagree: straight in
+            if (Vector3.Dot(d, nrm) > 0f) d = -nrm;            // collider and drawn tube disagree: go straight in
             bool he = ammo.Category == AmmoType.AmmoCategory.Explosive;
             bool heat = ammo.Category == AmmoType.AmmoCategory.ShapedCharge;
             int seed = _seed++ * 7919 + Time.frameCount;
 
-            // what the round does to the tube: the material it takes out, and the impulse it gives
+            // what the round does to the tube: material it takes out and the impulse it gives
             Vector3 J = Vector3.zero;          // impulse on the tube (N s), in F's space
-            float jAtHinge = 1f;               // share applied at the hit station (the rest spread over the blast's footprint)
+            float jAtHinge = 1f;               // share applied at the hit station (rest spread over the blast's footprint)
             float half = 0.05f;                // axial half-length of the loaded zone
             float cut = 0f;                    // blast: fraction of what cutting the whole section takes
             string what = null;
@@ -353,7 +353,7 @@ namespace GHPCHitCam
                 float W = Mathf.Max(ammo.TntEquivalentKg, 0.01f) * (heat ? 0.5f : 1f);
                 Vector3 burst = surf + nrm * 0.05f;
                 float dist = Mathf.Max(RXY(burst), ro + 0.01f);
-                // fragments of the shell case (Gurney) and the detonation products that hit the tube
+                // shell case fragments (Gurney) and detonation products hitting the tube
                 float mc = Mathf.Max(ammo.Mass - ammo.TntEquivalentKg, 0.1f * ammo.TntEquivalentKg + 0.02f);
                 float cm = W / mc;
                 float vFrag = 2440f * Mathf.Sqrt(cm / (1f + 0.5f * cm));
@@ -362,7 +362,7 @@ namespace GHPCHitCam
                 J = -nrm * share * pTot * 1.3f;
                 half = Mathf.Max(1.5f * (dist - ro) + ro, 0.08f);
                 jAtHinge = 0f;
-                // contact charge against the section (FM 5-25 steel cutting: P = 3/8 A, lb and in2), shell not placed: ~35 %
+                // contact charge vs the section (FM 5-25 steel cutting: P = 3/8 A, lb and in2), shell not placed: ~35 %
                 float aIn2 = Mathf.PI * (ro * ro - Ri * Ri) * 1550f;
                 float pCut = 0.375f * aIn2 * 0.4536f;
                 cut = 0.35f * W / Mathf.Max(pCut, 0.01f);
@@ -377,7 +377,7 @@ namespace GHPCHitCam
             }
             else if (pen && !ric)
             {
-                // a long rod / AP shot through the tube: the material in its path, and the drag it pays going through
+                // long rod / AP shot through the tube: material in its path and the drag it pays going through
                 float rodR = Mathf.Sqrt(Mathf.Max(ammo.SectionalArea, 1e-5f) / Mathf.PI);
                 float r = Mathf.Max(rodR * 1.3f, 0.008f);
                 bool through = AddPerforation(surf, d, r, true, WK.Entry, seed, ref what);
@@ -387,7 +387,7 @@ namespace GHPCHitCam
             }
             else
             {
-                // glanced off: a gouge, and the sideways push of turning the round
+                // glanced off: a gouge plus the sideways push from turning the round
                 float graze = Mathf.Asin(Mathf.Clamp01(-Vector3.Dot(d, nrm)));
                 float r = Mathf.Max(holeR, 0.01f);
                 float depth = Mathf.Min(0.6f * t, r);
@@ -398,7 +398,7 @@ namespace GHPCHitCam
                 what = $"glanced off at {graze * Mathf.Rad2Deg:0} deg: gouge {depth * 1000f:0} mm deep";
             }
 
-            // the swing: the muzzle part against the part behind the hit (two rigid links, hinged at the hit)
+            // the swing: muzzle part vs the part behind the hit (two rigid links, hinged at the hit)
             Vector3 jp = new Vector3(J.x, J.y, 0f);
             float jm = jp.magnitude;
             Vector2 bdir = jm > 1e-4f ? new Vector2(jp.x, jp.y) / jm : new Vector2(-nrm.x, -nrm.y);
@@ -416,7 +416,7 @@ namespace GHPCHitCam
             float mp = Capacity(u, bdir, out float mp0);
             float theta = mp > 1f ? eh / mp : 10f;
             float sgn = Mathf.Sign(w2 - w1);
-            // its own weight on what is left
+            // its own weight on what's left
             Vector3 g = F.InverseTransformDirection(Vector3.down);
             Vector2 g2 = new Vector2(g.x, g.y);
             float mg = Gravity * s1 * g2.magnitude;
@@ -446,8 +446,8 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("World barrel: " + e); }
         }
 
-        /// A new wound, or a bigger one where it overlaps one already there: hits close together on the tube read as one torn
-        /// patch (each its own ragged rim drew a chain of rings around the barrel). The stronger kind wins (dent < hole < tear).
+        /// new wound, or a bigger one where it overlaps an existing one: hits close together read as one torn patch
+        /// (before, each one's ragged rim drew a chain of rings around the barrel). stronger kind wins (dent < hole < tear)
         void AddWound(Wound w)
         {
             float r = Mathf.Max(Rvis(w.U), 0.01f);
@@ -473,11 +473,11 @@ namespace GHPCHitCam
         static float Sq(float x) => x * x;
         static int Rank(WK k) => k == WK.Dent ? 0 : k == WK.Tear ? 2 : 1;
 
-        /// A round going through: its hole where it went in, and where it came out of the far wall.
+        /// round going through: hole where it went in and where it came out of the far wall
         bool AddPerforation(Vector3 surf, Vector3 d, float r, bool pen, WK kind, int seed, ref string what)
         {
             float u = -surf.z, phi = Mathf.Atan2(surf.y, surf.x);
-            // where the line leaves the tube (2D: the tube runs along z)
+            // where the line leaves the tube (2D, tube runs along z)
             Vector2 p2 = new Vector2(surf.x, surf.y), d2 = new Vector2(d.x, d.y);
             float a = Vector2.Dot(d2, d2), b = 2f * Vector2.Dot(p2, d2), rv = Rvis(u);
             float c = Vector2.Dot(p2, p2) - rv * rv;
@@ -502,7 +502,7 @@ namespace GHPCHitCam
 
         static Vector3 Cyl(float u, float phi, float r) => new Vector3(Mathf.Cos(phi) * r, Mathf.Sin(phi) * r, -u);
 
-        /// The ragged outline of a wound: its radius at angle a around its centre (on the tube's surface).
+        /// ragged outline of a wound: its radius at angle a around its centre (on the tube surface)
         static float Jag(Wound w, float a)
         {
             int k = Mathf.FloorToInt(Mathf.Repeat(a, Mathf.PI * 2f) / (Mathf.PI * 2f) * 20f);
@@ -518,7 +518,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Surface distance of a point on the tube (F space) from a wound's centre, in units of its ragged radius.
+        /// surface distance of a point on the tube (F space) from a wound's centre, in units of its ragged radius
         float InWound(Wound w, Vector3 q)
         {
             float u = -q.z, phi = Mathf.Atan2(q.y, q.x);
@@ -528,7 +528,7 @@ namespace GHPCHitCam
             return dist / Mathf.Max(w.Rho * Jag(w, Mathf.Atan2(dt, du)), 1e-4f);
         }
 
-        /// Cuts every wound into the tube's mesh: triangles near it are split until they are small, those inside go.
+        /// cuts every wound into the tube mesh: triangles near it get split until small, the ones inside go
         void CutWounds()
         {
             foreach (var p in _parts)
@@ -560,8 +560,8 @@ namespace GHPCHitCam
             for (int i = 0; i < _wounds.Count; i++) { var w = _wounds[i]; w.Cut = true; _wounds[i] = w; }
         }
 
-        /// Bends the muzzle part about a plastic hinge at uh: smoothly over about a tube diameter, with the wall on the
-        /// inside of the bend buckled outward.
+        /// bends the muzzle part about a plastic hinge at uh: smooth over about a tube diameter, wall on the inside of
+        /// the bend buckled outward
         void Bend(float uh, Vector2 bdir, float thetaImpulse, Vector2 g2, float droop)
         {
             Vector3 z = Vector3.forward;
@@ -571,7 +571,7 @@ namespace GHPCHitCam
             Quaternion q = qg * qb;
             if (_bent)
             {
-                // a second bend near the first adds to it; elsewhere the tube is already wrecked, leave it
+                // a second bend near the first adds to it, anywhere else the tube is already wrecked so leave it
                 if (Mathf.Abs(uh - _bendU) > 0.5f) return;
                 q = q * _bendQ;
                 uh = _bendU;
@@ -601,7 +601,7 @@ namespace GHPCHitCam
                     float w = uh - (-qu.z);                    // + toward the muzzle
                     if (w < -wz) continue;
                     float s = PartKit.Smooth01((w + wz) / (2f * wz));
-                    // the buckle on the inside of the bend
+                    // buckle on the inside of the bend
                     float r = RXY(qv);
                     if (r > 1e-4f && ins != Vector2.zero)
                     {
@@ -622,7 +622,7 @@ namespace GHPCHitCam
             _bentAngle = Quaternion.Angle(Quaternion.identity, q) * Mathf.Deg2Rad;
         }
 
-        /// Where a point of the straight tube is now (the bend applied).
+        /// where a point of the straight tube is now (bend applied)
         Vector3 MapBent(Vector3 q)
         {
             if (!_bent) return q;
@@ -633,7 +633,7 @@ namespace GHPCHitCam
             return pivot + Quaternion.Slerp(Quaternion.identity, _bendQ, s) * (q - pivot);
         }
 
-        /// Where a point of the bent tube was on the straight one.
+        /// where a point of the bent tube was on the straight one
         Vector3 Unbend(Vector3 q)
         {
             if (!_bent) return q;
@@ -645,10 +645,10 @@ namespace GHPCHitCam
             return pivot + Quaternion.Inverse(Quaternion.Slerp(Quaternion.identity, _bendQ, s)) * (q - pivot);
         }
 
-        /// The tube tears through at uh and the muzzle end comes off as a physics body with what is left of the swing.
-        /// The tear runs in ragged tongues round the tube (reaching ~0.9 of a diameter either way when a blast tore it, ~0.35
-        /// when the swing overloaded a holed section); near the tear both broken ends are peeled back and flared outward
-        /// (pushed in on the side the shell burst on), so the wall shows its thickness, its sooty inside and a bright torn rim.
+        /// tube tears through at uh and the muzzle end comes off as a physics body with what's left of the swing.
+        /// tear runs in ragged tongues round the tube (~0.9 of a diameter either way when a blast tore it, ~0.35 when the
+        /// swing overloaded a holed section); near the tear both broken ends get peeled back and flared out (pushed in on the
+        /// side the shell burst on), so the wall shows its thickness, sooty inside and a bright torn rim
         void Sever(float uh, float phiHit, Vector2 bdir, float w1, float w2, float xs, float cmFromHinge, float mf, float eh, float eTear, bool blown)
         {
             float D = 2f * Rvis(uh);
@@ -672,7 +672,7 @@ namespace GHPCHitCam
             foreach (var p in _parts)
             {
                 var mc = p.Mc;
-                // small triangles over the torn zone, so the ragged line and the peel have something to bend
+                // small triangles over the torn zone so the ragged line and the peel have something to bend
                 float small = Mathf.Max(D / 10f, 0.008f);
                 mc.Subdivide((A, B, C) =>
                 {
@@ -683,7 +683,7 @@ namespace GHPCHitCam
                     if (hi < zLo || lo > zHi) return false;
                     return OnTube(a, 1.6f) || OnTube(b, 1.6f) || OnTube(c, 1.6f);
                 }, 10, mc.Count + 80000);
-                // each triangle to the side of the tear its middle is on
+                // each triangle goes to the side of the tear its middle is on
                 var far = new List<int>[mc.Tris.Length];
                 var near = new List<int>[mc.Tris.Length];
                 int farN = 0, nearTube = 0;
@@ -704,7 +704,7 @@ namespace GHPCHitCam
                 }
                 diag.Add($"{p.R.name}: {farN} triangles leave, {near.Sum(l => l.Count) / 3} stay ({nearTube} of them muzzle-side of the tear, within 0.4 m of the axis)");
                 if (farN == 0) { mc.Tris = near; continue; }
-                // the muzzle end's own torn lip: peeled, copied out, then the stump's vertices are put back
+                // muzzle end's own torn lip: peeled, copied out, then the stump's vertices get put back
                 var keepData = mc.Data.Select(d => (byte[])d.Clone()).ToArray();
                 var keepW = new List<Vector3>(mc.W);
                 var farV = MeshCopy.Used(far);
@@ -722,14 +722,14 @@ namespace GHPCHitCam
             }
             _wounds.RemoveAll(w => w.U < zHi);
 
-            // the end that leaves: what is left of its swing, plus the vehicle's motion
+            // the end that flies off: what's left of its swing plus the vehicle's motion
             var rb = U.GetComponent<Rigidbody>();
             Vector3 vVeh = rb != null ? rb.GetPointVelocity(cmW) : Vector3.zero;
             float keep = Mathf.Sqrt(Mathf.Clamp01(1f - eTear / Mathf.Max(eh, 1f)) * 0.9f + 0.1f);
             Vector3 b3 = F.TransformDirection(new Vector3(bdir.x, bdir.y, 0f));
             Vector3 vel = b3 * (xs * w1 + cmFromHinge * w2) * keep + vVeh;
             Vector3 om = F.TransformDirection(Vector3.Cross(Vector3.forward, new Vector3(bdir.x, bdir.y, 0f))) * w2 * keep;
-            om = Vector3.ClampMagnitude(om, 15f);     // a 1-2 m steel tube doesn't spin much faster than that and stay whole
+            om = Vector3.ClampMagnitude(om, 15f);     // a 1-2 m steel tube doesn't spin much faster than that and stay in one piece
             if (blown) vel += F.TransformDirection(Vector3.forward) * 2f;
             if (pieces.Count > 0)
             {
@@ -755,7 +755,7 @@ namespace GHPCHitCam
                               $"tear tongues +-{_tongue * 1000f:0} mm, peeled {_peel * 1000f:0} mm, flared {_flare * 1000f:0} mm; " + string.Join("; ", diag));
         }
 
-        /// Where the tear runs at angle phi round the tube (m from the muzzle): ragged teeth either side of the break.
+        /// where the tear runs at angle phi round the tube (m from the muzzle): ragged teeth either side of the break
         float BreakU(float phi)
         {
             int k = 5 + (int)(PartKit.Hash(_cutSeed, 77) * 3f);
@@ -766,10 +766,10 @@ namespace GHPCHitCam
             return _cutU + Mathf.Lerp(H(i), H(i + 1), f);
         }
 
-        /// How far from the tear a point on one broken end is (side -1: the stump, toward the mantlet; +1: the muzzle end).
+        /// how far a point on one broken end is from the tear (side -1: stump, toward the mantlet; +1: muzzle end)
         float FromTear(Vector3 q, int side) => side < 0 ? -q.z - BreakU(Mathf.Atan2(q.y, q.x)) : BreakU(Mathf.Atan2(q.y, q.x)) - (-q.z);
 
-        /// The peeled lip: near the tear the wall is bent outward (pushed in where the shell burst) and curls back.
+        /// peeled lip: near the tear the wall bends outward (pushed in where the shell burst) and curls back
         float PeelR(float e, float phi)
         {
             float s = Mathf.Clamp01(1f - e / Mathf.Max(_peel, 1e-3f));
@@ -795,7 +795,7 @@ namespace GHPCHitCam
             float du = side * -1f * 0.3f * Mathf.Abs(dr) * s;
             Vector3 radial = new Vector3(q.x / r, q.y / r, 0f);
             Vector3 moved = q + radial * dr + Vector3.forward * -du;
-            // the surface tilts with the flare: its normal leans back from the tear
+            // surface tilts with the flare: normal leans back from the tear
             float slope = (dr - dr2) / 0.005f;
             Vector3 along = side < 0 ? Vector3.forward : Vector3.back;      // toward the tear
             Vector3 n = (radial - along * slope).normalized;
@@ -803,9 +803,9 @@ namespace GHPCHitCam
             mc.MoveTo(v, F.TransformPoint(MapBent(moved)), rot);
         }
 
-        /// The torn end's own surfaces, from its triangles in the torn zone: the wall's sooty inside (submesh 0, the outer
-        /// skin moved in by the wall's thickness, facing in) and the bright torn rim joining the two along the tear (submesh 1).
-        /// Built in F space, then through `toSpace`.
+        /// torn end's own surfaces from its triangles in the torn zone: sooty inside of the wall (submesh 0, outer skin
+        /// moved in by wall thickness, facing in) and the bright torn rim joining the two along the tear (submesh 1).
+        /// built in F space, then through `toSpace`
         Mesh TearSkin(MeshCopy mc, List<int>[] tris, int side, Matrix4x4 toSpace)
         {
             var b = new PartKit.Builder(3);
@@ -850,7 +850,7 @@ namespace GHPCHitCam
                 Vector3 toAxis = r > 1e-4f ? -new Vector3(m.x, m.y, 0f) / r : Vector3.zero;
                 b.TriO(0, In(a), In(c), In(d), toAxis);
             }
-            // the rim: edges of the zone that lie along the tear (the others join the rest of the tube)
+            // rim: zone edges that lie along the tear (the others join the rest of the tube)
             foreach (var (a, c, d) in zone)
                 foreach (var (x, y) in new[] { (a, c), (c, d), (d, a) })
                 {
@@ -861,7 +861,7 @@ namespace GHPCHitCam
                     Vector3 want = side < 0 ? Vector3.forward : Vector3.back;
                     b.QuadO(1, Out(x), Out(y), In(y), In(x), want);
                 }
-            // a dark plug some way down the bore, so the broken end isn't see-through
+            // dark plug some way down the bore so the broken end isn't see-through
             float uPlug = side < 0 ? _cutU + _tongue + _peel + 0.25f : _cutU - _tongue - _peel - 0.15f;
             if (uPlug > 0.02f && uPlug < Length)
             {
@@ -895,7 +895,7 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ drawing it
 
-        /// Rebuilds the tube's meshes and everything drawn around the wounds.
+        /// rebuilds the tube meshes and everything drawn around the wounds
         void Rebuild()
         {
             foreach (var p in _parts)
@@ -943,7 +943,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// A hot glow over a wound's fresh edges (the submesh `sub` of the mesh), cooling down `seconds` after `born`.
+        /// hot glow over a wound's fresh edges (submesh `sub` of the mesh), cools down `seconds` after `born`
         static void AddGlow(Transform parent, Mesh src, int sub, float seconds, float born)
         {
             float left = seconds - (Time.time - born);
@@ -962,9 +962,9 @@ namespace GHPCHitCam
             go.AddComponent<Cool>().Init(go.GetComponent<MeshRenderer>(), new Color(0.75f, 0.22f, 0.05f) * k, left);
         }
 
-        /// The wound around a hole: its ragged lip or outward petals (submesh 0, scorched steel), the hole's fresh cut face
-        /// down through the wall (submesh 1, bright steel) and, for blasts, the blackened inward-bent petals (submesh 2).
-        /// Built on the straight tube, then bent with it.
+        /// wound around a hole: ragged lip or outward petals (submesh 0, scorched steel), the fresh cut face down through
+        /// the wall (submesh 1, bright steel) and for blasts the blackened inward-bent petals (submesh 2).
+        /// built on the straight tube, then bent with it
         PartKit.Builder WoundMesh(Wound w)
         {
             if (_cutU >= 0f && w.U < _cutU) return null;
@@ -974,7 +974,7 @@ namespace GHPCHitCam
             const float lift = 0.0015f;
             float A(int k) => k * Mathf.PI * 2f / K;
             float R(int k) => w.Rho * Jag(w, A(k));
-            // a point near the wound: rad from its centre on the surface at angle a, at radius r from the axis
+            // point near the wound: rad from its centre on the surface at angle a, at radius r from the axis
             // (NaN: on the drawn surface)
             Vector3 P(float a, float rad, float r)
             {
@@ -992,7 +992,7 @@ namespace GHPCHitCam
                 case WK.Entry:
                 case WK.Jet:
                     {
-                        // a raised, rolled lip (thick wall, fast round) and the cut face down to the bore
+                        // raised rolled lip (thick wall, fast round) and the cut face down to the bore
                         float lip = w.Kind == WK.Jet ? 0.05f : 0.14f;
                         var o = new int[K]; var l = new int[K]; var e = new int[K]; var e2 = new int[K]; var bt = new int[K];
                         for (int k = 0; k < K; k++)
@@ -1046,7 +1046,7 @@ namespace GHPCHitCam
                     }
                 case WK.Tear:
                     {
-                        // a blast through the wall: blackened petals pushed in, ragged, some torn away
+                        // blast through the wall: blackened petals pushed in, ragged, some torn away
                         var o = new int[K]; var e = new int[K]; var e2 = new int[K]; var bt = new int[K];
                         for (int k = 0; k < K; k++)
                         {
@@ -1074,7 +1074,7 @@ namespace GHPCHitCam
                     }
                 case WK.Dent:
                     {
-                        // a gouge, or a blast dent that didn't go through: a scraped hollow, no hole
+                        // gouge, or a blast dent that didn't go through: scraped hollow, no hole
                         const int Rn = 4;
                         var rings = new int[Rn + 1, K];
                         for (int j = 0; j <= Rn; j++)
@@ -1098,7 +1098,7 @@ namespace GHPCHitCam
             return b;
         }
 
-        /// Soot round a wound (alpha by distance).
+        /// soot round a wound (alpha by distance)
         Mesh SootMesh(Wound w)
         {
             if (w.Kind == WK.Dent && w.Depth < 0.002f) return null;
@@ -1123,8 +1123,8 @@ namespace GHPCHitCam
             return b.Build("HitCam barrel soot");
         }
 
-        /// The dark bore between uLo and uHi (inside the wall, open where a wound goes through), closed at both ends
-        /// unless the tube is broken off there.
+        /// dark bore between uLo and uHi (inside the wall, open where a wound goes through), closed at both ends unless
+        /// the tube is broken off there
         Mesh BoreMesh(float uLo, float uHi)
         {
             const int NP = 36;
@@ -1157,7 +1157,7 @@ namespace GHPCHitCam
 
     }
 
-    /// Self-test: logs where a loose piece is a few seconds after it came off (did it fly, fall, land?).
+    /// self-test: logs where a loose piece is a few seconds after it came off (did it fly, fall, land?)
     internal class PieceLog : MonoBehaviour
     {
         string _what; float _at; Vector3 _p0; bool _done;

@@ -13,9 +13,9 @@ using DC = GHPC.Equipment.DestructibleComponent;
 
 namespace GHPCHitCam
 {
-    /// Visible damage to a vehicle's parts in the game world, beyond the armour plates: running gear that gets chewed up
-    /// instead of holed, and (driven by the game's own damage events) burning engines, ammo cook-off, bent or broken gun
-    /// barrels, helicopters losing their tail, thrown tracks. Purely visual: the game's damage model is not touched.
+    /// visible damage to vehicle parts in the world besides the armour plates: running gear that gets chewed up not holed,
+    /// and from the game's own damage events burning engines, ammo cook-off, bent / broken barrels, helis losing their
+    /// tail, thrown tracks. visual only, the game's damage model isn't touched
     internal static class WorldModules
     {
         static Material _bare, _burnt;
@@ -25,7 +25,7 @@ namespace GHPCHitCam
         static readonly List<GameObject> _bodies = new List<GameObject>();
         const int MaxBodies = 16;
 
-        /// Freshly torn / cut steel.
+        /// freshly torn / cut steel
         internal static Material Bare
         {
             get
@@ -43,7 +43,7 @@ namespace GHPCHitCam
 
         static Material _darkM;
 
-        /// The dark inside of a bore or a torn shell (unlit near-black).
+        /// dark inside of a bore or a torn shell (unlit near-black)
         internal static Material Dark
         {
             get
@@ -53,7 +53,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Steel blackened by a blast.
+        /// steel blackened by a blast
         internal static Material Burnt
         {
             get
@@ -83,8 +83,8 @@ namespace GHPCHitCam
 
         public static void Forget(Unit u) { if (u != null) _gear.Remove(u); }
 
-        /// A big loose part (a barrel's muzzle end, a tail boom): a rigidbody without colliders (the caller adds them),
-        /// with its own small cap so the cap on shrapnel never takes it.
+        /// big loose part (barrel muzzle end, tail boom): rigidbody with no colliders (caller adds them), with its own small
+        /// cap so the shrapnel cap never eats it
         internal static GameObject SpawnBody(string name, Vector3 pos, Quaternion rot, Vector3 vel, Vector3 angVel, float mass, float life)
         {
             var go = new GameObject(name) { layer = WorldDamage.DebrisLayer };
@@ -104,7 +104,7 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ the game's own damage events
 
-        /// The game's module hit zones (DestructibleComponent colliders) the world damage draws something for.
+        /// game's module hit zones (DestructibleComponent colliders) that world damage draws something for
         public static bool Wants(Unit u, DC dc)
         {
             if (u == null || dc == null || !Settings.WorldDamage.Value) return false;
@@ -127,7 +127,7 @@ namespace GHPCHitCam
             return null;
         }
 
-        /// A round on one of the game's module hit zones (physics pose, as the round saw it).
+        /// round on one of the game's module hit zones (physics pose, like the round saw it)
         public static void OnModuleHit(int roundId, Unit u, Collider col, DC dc, Vector3 point, Vector3 normal, Vector3 dir, bool pen, bool ric,
                                        AmmoType ammo, float speed, float holeR)
         {
@@ -162,8 +162,8 @@ namespace GHPCHitCam
 
         static readonly Dictionary<Unit, (Vector3 point, float time)> _bursts = new Dictionary<Unit, (Vector3, float)>();
 
-        // the round a pen check is running for: the game deals a module's damage inside that check (on the collider it
-        // struck, through a proxy hit zone or by the HEAT blast), before the check's postfix gets to record the hit
+        // round a pen check is running for: game deals module damage inside that check (on the struck collider, via a proxy
+        // hit zone or the HEAT blast), before the check's postfix gets to record the hit
         static Unit _penUnit;
         static Vector3 _penPoint;
         static int _penFrame = -1;
@@ -177,8 +177,8 @@ namespace GHPCHitCam
             return c.ClosestPoint(p);
         }
 
-        /// A module hit zone's box in the world. Some of them (the T-72M1's tracks) are "Raycast Only" colliders the game
-        /// switches on only while a round's ray goes past: switched off, Unity reports an empty box in the vehicle's middle.
+        /// module hit zone's box in the world. some (T-72M1 tracks) are "Raycast Only" colliders the game only switches on
+        /// while a round's ray goes past, when they're off unity reports an empty box in the middle of the vehicle
         internal static Bounds ZoneBounds(Collider c)
         {
             if (c == null) return default;
@@ -196,7 +196,7 @@ namespace GHPCHitCam
             return w;
         }
 
-        /// A track that died inside the pen check of a round that touched it (or burst right beside it): where (drawn pose).
+        /// track that died inside the pen check of a round that touched it (or burst right beside it): where (drawn pose)
         static Vector3? PenAt(Unit u, DC dc)
         {
             if (_penFrame != Time.frameCount || (_penUnit != null && _penUnit != u) || dc.ComponentCollision == null) return null;
@@ -206,8 +206,8 @@ namespace GHPCHitCam
             return WorldDamage.PhysicsToRender(tc).MultiplyPoint3x4(c);
         }
 
-        /// A round's own blast (HE on impact or fuzed, a HEAT warhead): ground vehicles beside it get it as a burst, so a
-        /// track its fragments kill breaks where it was nearest. A vehicle's ammunition going off is not one of these.
+        /// a round's own blast (HE on impact or fuzed, HEAT warhead): ground vehicles next to it get it as a burst so a track
+        /// its fragments kill breaks where it was nearest. a vehicle's own ammo going off doesn't count
         public static void OnRoundBlast(Vector3 at, AmmoType ammo)
         {
             try
@@ -224,8 +224,8 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("World modules (round blast): " + e.Message); }
         }
 
-        /// An HE / HEAT burst on a vehicle's armour (drawn pose): helicopters keep track of what it did to their tail;
-        /// a track destroyed right after by the blast breaks where it was nearest the burst.
+        /// HE / HEAT burst on a vehicle's armour (drawn pose): helis remember what it did to their tail, a track the blast
+        /// kills right after breaks where it was nearest the burst
         public static void OnBurst(Unit u, Vector3 point, AmmoType ammo)
         {
             try
@@ -237,8 +237,8 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("World modules (burst): " + e); }
         }
 
-        /// A round detonating anywhere: helicopters within reach get the burst (their plain hull boxes set fuzes off
-        /// without being armour, so this is how a shell bursting beside a tail boom reaches it).
+        /// round going off anywhere: helis in reach get the burst (their plain hull boxes set off fuzes without being armour,
+        /// so this is how a shell bursting beside a tail boom reaches it)
         public static void OnDetonation(Vector3 at, AmmoType ammo)
         {
             try
@@ -265,7 +265,7 @@ namespace GHPCHitCam
             return (c - b.point).magnitude < 2.5f ? c : (Vector3?)null;
         }
 
-        /// A module's health changed (the game's own damage model).
+        /// a module's health changed (game's own damage model)
         public static void OnHealth(DC dc, float before, float after)
         {
             try
@@ -280,8 +280,8 @@ namespace GHPCHitCam
                 if (n.Contains("engine")) EngineFire.Start(u, dc, recent ? hit.ammo : null);
                 else if (n.Contains("track"))
                 {
-                    // the game zeroes every module of a vehicle that blows up; a track breaks only where a round or a burst got it
-                    // (the round being checked right now first: the game kills the track before that check's hit is recorded)
+                    // game zeroes every module of a vehicle that blows up, a track only breaks where a round or burst got it
+                    // (round being checked right now first: game kills the track before that check's hit is recorded)
                     Vector3? at = PenAt(u, dc) ?? (recent ? hit.point : NearBurst(u, dc));
                     if (AutoTest.Active) HitCamMod.Log.Msg($"World track {Recorder.SafeName(u)} '{dc.Name}': destroyed, {(PenAt(u, dc).HasValue ? "by the round being checked" : recent ? "by a recent hit on it" : at.HasValue ? "by a burst beside it" : "nothing near it")}");
                     if (at.HasValue) WorldTrack.Break(u, dc, at);
@@ -302,7 +302,7 @@ namespace GHPCHitCam
 
         static readonly string[] GearWords = { "track", "tread", "wheel", "sprocket", "idler", "roller", "bogie", "link", "rubber", "tire", "tyre" };
 
-        /// Tracks, wheels, sprockets, idlers, rubber flaps: not plates, so no plate failure is drawn on them.
+        /// tracks, wheels, sprockets, idlers, rubber flaps: not plates, so no plate failure on them
         public static bool IsRunningGear(Unit u, Collider col)
         {
             if (col == null) return false;
@@ -317,15 +317,15 @@ namespace GHPCHitCam
             return false;
         }
 
-        /// A round on the running gear: sparks and a little scorch, and pieces that fit what was hit. A track throws a
-        /// couple of links (more for a blast), a wheel or sprocket a few chips off its rim; nothing is holed.
+        /// round on the running gear: sparks, a bit of scorch and pieces that fit what got hit. track throws a couple links
+        /// (more for a blast), wheel or sprocket a few chips off its rim, nothing gets holed
         public static void RunningGearHit(Unit u, Collider col, Vector3 point, Vector3 normal, Vector3 dir, bool he, bool heat, bool pen, float tnt, float caliberM, int layer)
         {
             WorldDamage.EnsureInit();
             string n = col.name.ToLowerInvariant();
             bool track = n.Contains("track") || n.Contains("tread") || n.Contains("link");
             float blast = he ? Mathf.Clamp(Mathf.Pow(Mathf.Max(tnt, 0.05f), 0.33f), 0.4f, 3f) : heat ? 0.6f : 0.25f;
-            // sparks off steel; a blast's fireball is the game's own
+            // sparks off steel, a blast's fireball is the game's own
             Vector3 spray = Vector3.Lerp(normal, -dir, 0.4f).normalized;
             WorldDamage.Sparks(point - dir * 0.02f, spray, he ? 160 : 70, he ? 22f : 15f, 50f, layer);
             // scorch: a blast blackens the wheels / links around it, a KE hit only scuffs
@@ -335,7 +335,7 @@ namespace GHPCHitCam
             root.transform.SetPositionAndRotation(point + normal * 0.01f, q);
             WorldDamage.Quad(root.transform, "soot", WorldDamage.SootDisc, Matrix4x4.Scale(new Vector3(soot * 2f, soot * 2f, 1f)), WorldDamage.SootMat, layer, new Color(1f, 1f, 1f, he ? 0.8f : 0.5f));
             root.AddComponent<StickTo>().Bind(col.transform);
-            // the pieces: links are pin-jointed steel plates (pitch ~15 cm, the track's width); a wheel loses rim / rubber chips
+            // pieces: links are pin-jointed steel plates (pitch ~15 cm, track width), a wheel loses rim / rubber chips
             Bounds b = col.bounds;
             float width = Mathf.Clamp(Mathf.Min(b.size.x, b.size.z), 0.25f, 0.75f);
             int pieces = track ? (he ? Mathf.Clamp(Mathf.RoundToInt(2f * blast), 1, 5) : (pen ? 1 : 0)) : (he ? Mathf.Clamp(Mathf.RoundToInt(3f * blast), 2, 6) : 2);
@@ -354,7 +354,7 @@ namespace GHPCHitCam
 
         static readonly Dictionary<Unit, List<Collider>> _gear = new Dictionary<Unit, List<Collider>>();
 
-        /// The unit's track / wheel hit zones (the game's DestructibleComponent colliders for them, and wheel colliders).
+        /// unit's track / wheel hit zones (game's DestructibleComponent colliders for them, plus wheel colliders)
         static List<Collider> GearColliders(Unit u)
         {
             if (_gear.TryGetValue(u, out var l) && l.All(c => c != null)) return l;
@@ -370,9 +370,9 @@ namespace GHPCHitCam
             return l;
         }
 
-        /// A plate that lies behind the tracks or wheels (the lower hull side behind the road wheels) is not seen from
-        /// outside: the round met the running gear first on its way in, or the gear stands in front of the plate.
-        /// `gear` / `at`: the gear the round itself went through, if it did.
+        /// a plate behind the tracks or wheels (lower hull side behind the road wheels) can't be seen from outside: round hit
+        /// the running gear first on the way in, or the gear stands in front of the plate
+        /// `gear` / `at`: the gear the round itself went through, if any
         public static bool BehindGear(Unit u, Collider struck, Vector3 point, Vector3 dir, Vector3 normal, out Collider gear, out Vector3 at, out Vector3 atNormal)
         {
             gear = null; at = point; atNormal = normal;
@@ -408,7 +408,7 @@ namespace GHPCHitCam
             return string.Join("/", parts);
         }
 
-        /// Writes the unit's renderers, colliders, modules, guns, flammables and a GPU read-back test to UserData/HitCam (self-test only).
+        /// dumps the unit's renderers, colliders, modules, guns, flammables and a GPU read-back test to UserData/HitCam (self-test only)
         static bool _dumpedAll;
 
         public static void Dump(Unit u)
@@ -416,7 +416,7 @@ namespace GHPCHitCam
             if (!AutoTest.Opt("dump", true) || u == null) return;   // dump=false: timing runs (it writes every vehicle to disk)
             if (!_dumpedAll)
             {
-                // the first time: every vehicle and aircraft in the scene
+                // first time: every vehicle and aircraft in the scene
                 _dumpedAll = true;
                 try { foreach (var x in SceneUnitsManager.Instance.AllUnitsInScene.OfType<Unit>().ToList()) if (x != null && x.Type != UnitType.Infantry) DumpOne(x); }
                 catch (Exception e) { HitCamMod.Log.Warning("World modules dump (all): " + e.Message); }
@@ -459,7 +459,7 @@ namespace GHPCHitCam
                     foreach (var ws in root.GetComponentsInChildren<WeaponSystem>(true))
                         sb.AppendLine($"  GUN {ws.name} barrel '{ws.BarrelHitZone?.Name}' {(ws.BarrelHitZone?.ComponentCollision != null ? "c" + ws.BarrelHitZone.ComponentCollision.bounds.center + " s" + ws.BarrelHitZone.ComponentCollision.bounds.size : "")} breech '{ws.BreechHitZone?.Name}' muzzle {(ws.MuzzleIdentity != null ? Path(ws.MuzzleIdentity, root) + " " + ws.MuzzleIdentity.position : "-")}");
                 }
-                // can a non-readable mesh be read back from the GPU (for cutting a barrel / a tail boom into pieces)?
+                // can a non-readable mesh be read back from the GPU (to cut a barrel / tail boom into pieces)?
                 var probe = roots.SelectMany(r => r.GetComponentsInChildren<MeshFilter>(false)).FirstOrDefault(f => f.sharedMesh != null && !f.sharedMesh.isReadable);
                 if (probe != null) sb.AppendLine("READBACK " + probe.sharedMesh.name + ": " + MeshReadback.Test(probe.sharedMesh));
                 string file = System.IO.Path.Combine(HitCamMod.DataDir, "unitdump_" + string.Concat(Recorder.SafeName(u).Where(ch => char.IsLetterOrDigit(ch) || ch == '-')) + ".txt");
@@ -470,8 +470,8 @@ namespace GHPCHitCam
         }
     }
 
-    /// Reading a mesh the game keeps on the GPU only (non-readable) back into a CPU copy: its vertex streams through
-    /// Mesh.GetVertexBuffer and its index buffer, decoded per attribute format.
+    /// reads a GPU-only (non-readable) game mesh back into a CPU copy: vertex streams via Mesh.GetVertexBuffer plus the
+    /// index buffer, decoded per attribute format
     internal static class MeshReadback
     {
         public static string Test(Mesh m)

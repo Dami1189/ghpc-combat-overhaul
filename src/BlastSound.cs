@@ -19,27 +19,27 @@ using StudioEventEmitter = FMODUnity.StudioEventEmitter;
 
 namespace GHPCHitCam
 {
-    /// Explosions as loud as their TNT. GHPC plays every blast through FMOD with one event per kind of round (a 0.2 kg and a
-    /// 4 kg HE shell sound the same), mixes them all within a few dB (measured: its vehicle detonation comes out under a
-    /// small HE shell) and lets them fall off very little with distance.
-    ///  - every detonation comes from the game's own Explosions.RegisterExplosion (point + TNT); a rack is the compartment's
-    ///    call, which hands BlastEffectManager the same point and TNT in the same frame with a 0.3 fragment factor
-    ///  - the game's explosion one-shots (FmodGenericAudioManager.StartOneShot*, StudioEventEmitter) are matched to their
-    ///    detonation by position. Each event stands for a reference charge Wr (RefCharge: its rounds, and its measured level
-    ///    in the game's mix); the charge that went off, W, scales it by the ratio of the peak overpressures at the listener,
-    ///    P(W,d) / P(Wr,d) (Kingery-Bulmash, surface burst), and its audible range by (W/Wr)^(1/3) (Hopkinson-Cranz).
-    ///    Times ExplosionLoudness. The game's distance curve stays as it is.
-    ///  - a rack also gets a synthesised low boom (BoomSynth: N-wave of the blast's own length, ground thump, terrain echoes,
-    ///    a rolling tail, low-passed by air absorption with distance), as does any charge of 10 kg and more; and if the game
-    ///    played no explosion event for it, its own vehicle detonation event, pitched down by the same scaling
-    ///  - all of it starts when the front arrives (distance / the game's speed of sound), with a camera kick (ShockKick)
+    /// explosions as loud as their TNT. GHPC plays every blast through FMOD with one event per round type (a 0.2 kg and a
+    /// 4 kg HE shell sound the same), mixes them all within a few dB (measured: its vehicle detonation is quieter than a
+    /// small HE shell) and barely lets them fall off with distance
+    ///  - every detonation comes from the game's Explosions.RegisterExplosion (point + TNT); a rack is the compartment's
+    ///    call, gives BlastEffectManager the same point and TNT in the same frame with 0.3 fragment factor
+    ///  - the game's explosion one-shots (FmodGenericAudioManager.StartOneShot*, StudioEventEmitter) get matched to their
+    ///    detonation by position. each event stands for a reference charge Wr (RefCharge: its rounds + its measured level
+    ///    in the game mix); the real charge W scales it by the peak overpressure ratio at the listener,
+    ///    P(W,d) / P(Wr,d) (Kingery-Bulmash, surface burst), and its audible range by (W/Wr)^(1/3) (Hopkinson-Cranz),
+    ///    times ExplosionLoudness. game's distance curve stays as is
+    ///  - racks also get a synthesised low boom (BoomSynth: N-wave as long as the blast, ground thump, terrain echoes,
+    ///    rolling tail, low-passed by air absorption over distance), same for any charge 10 kg+; and if the game played
+    ///    no explosion event for it, its own vehicle detonation event pitched down by the same scaling
+    ///  - all of it starts when the front arrives (distance / game's speed of sound), with a camera kick (ShockKick)
     internal static class BlastSound
     {
-        /// Share of a rack's TNT that reaches the open air as blast (the hull confines it; work goes into the hull and turret).
+        /// share of a rack's TNT that gets out as open-air blast (hull confines it, work goes into hull and turret)
         const float HullFactor = 0.7f;
-        /// Non-rack charges from this size get the boom layer too (big bombs, heavy artillery).
+        /// non-rack charges this big get the boom layer too (big bombs, heavy artillery)
         const float BoomMinKg = 10f;
-        /// What the vehicle detonation event stands for if the measured mix table (MixDb) misses it, in open-air TNT.
+        /// open-air TNT the vehicle detonation event stands for if the measured mix table (MixDb) misses it
         const float VehicleDetRef = 0.9f;
 
         internal class Det
@@ -47,8 +47,7 @@ namespace GHPCHitCam
             public Vector3 Pos;
             public float Tnt, T, Delay, Dist;
             public bool Rack, Started, FollowUp, TurretOff;
-            /// The game's events matched to this blast (a rack's): their volume is set again once it is known whether the
-            /// vehicle blew apart.
+            /// game events matched to this (rack) blast: volume gets set again once we know if the vehicle blew apart
             public readonly List<(EventInstance inst, EvInfo info, string via, float pitch)> Events = new List<(EventInstance, EvInfo, string, float)>();
             public int Frame, Parts = 1, GameEvents;
             public string Name = "";
@@ -69,21 +68,21 @@ namespace GHPCHitCam
         static readonly Dictionary<IntPtr, EvInfo> _info = new Dictionary<IntPtr, EvInfo>();
         static readonly List<Pending> _pending = new List<Pending>();
         static Dictionary<string, (float kg, string from)> _ref;
-        /// Racks that went off lately (where, when): the first one on a vehicle is the big blast; the rest of its rounds
-        /// going off after it are a fraction of it (most of the charge has gone), so they come out this much quieter.
+        /// racks that went off lately (where, when): first one on a vehicle is the big blast, the rest of its rounds
+        /// after that are a fraction of it (most of the charge is gone) so they come out this much quieter
         static readonly List<(Vector3 p, float t)> _racks = new List<(Vector3, float)>();
         const float FollowUpWindow = 60f;
-        /// How loud a follow-up is next to the first blast, and how hard it shakes the camera (the player's setting).
+        /// how loud a follow-up is vs the first blast and how hard it shakes the camera (player setting)
         internal static float FollowUps => Mathf.Clamp01(Settings.ExplosionFollowUps.Value);
-        /// Parts the game threw off (turrets): where, when. The blast that does it is the vehicle's catastrophic explosion.
+        /// parts the game threw off (turrets): where, when. the blast that does it is the vehicle's catastrophic explosion
         static readonly List<(Vector3 p, float t)> _detaches = new List<(Vector3, float)>();
-        /// A rack's sound waits this long at least, so a turret thrown off in the frames after the detonation is known.
+        /// rack sound waits at least this long so a turret thrown off in the frames after the detonation is known
         const float RackDecide = 0.12f;
 
-        /// How big a blast is made to sound: (cap and gain on the game event's physical boost, its range factor, the
-        /// synthesised boom's level and tail length). The huge one is kept for the vehicle that blows apart (its turret
-        /// thrown off: the game's catastrophic explosion). A rack going off under a turret that stays on is a solid boom,
-        /// about +6 dB over the game's own sound at most, half the low boom, a shorter tail. A vehicle's later blasts: less again.
+        /// how big a blast sounds: (cap and gain on the game event's physical boost, range factor, synth boom level, tail
+        /// length). the huge one is only for a vehicle that blows apart (turret thrown off = game's catastrophic explosion).
+        /// a rack under a turret that stays on is a solid boom, ~+6 dB over the game's own sound max, half the low boom,
+        /// shorter tail. a vehicle's later blasts: less again
         internal static (float cap, float gain, float kMax, float boom, float tail) Grade(Det d)
         {
             if (!d.Rack || d.TurretOff) return (8f, 1f, 6f, 1f, 1f);
@@ -93,8 +92,8 @@ namespace GHPCHitCam
 
         static string GradeName(Det d) => !d.Rack ? "detonation" : d.TurretOff ? "CATASTROPHIC (turret off)" : d.FollowUp ? "follow-up rack" : "rack, turret stays on";
 
-        /// The game threw a part off (Recorder's detach hook): the blast that did it is the big one. One that is already
-        /// playing gets its events turned up and the full boom on top.
+        /// game threw a part off (Recorder's detach hook): that blast is the big one. if it's already playing its events
+        /// get turned up and the full boom goes on top
         internal static void OnDetach(Vector3 p)
         {
             float now = Time.time;
@@ -188,8 +187,8 @@ namespace GHPCHitCam
         static float _blastTnt, _blastFrag = 1f;
         static int _blastFrame = -1;
 
-        /// The compartment calls this right before it registers a rack's detonation (same point, same TNT, frag factor 0.3);
-        /// a round calls it right after registering its own.
+        /// compartment calls this right before it registers a rack detonation (same point, same TNT, frag factor 0.3),
+        /// a round calls it right after registering its own
         static void BlastPrefix(Vector3 blastWorldPos, float blastTntEquivalenceKg, float fragScalingOverride)
         {
             _blastAt = blastWorldPos;
@@ -212,7 +211,7 @@ namespace GHPCHitCam
             if (!ok) return;
             bool rack = _blastFrame == Time.frameCount && _blastFrag < 0.5f && Mathf.Abs(_blastTnt - tnt) < 1e-3f && (_blastAt - p).sqrMagnitude < 0.01f;
             if (rack)
-                // the clusters of one rack going off together are one blast (if its sound hasn't reached the camera yet)
+                // clusters of one rack going off together are one blast (if its sound hasn't reached the camera yet)
                 foreach (var d in _dets)
                     if (d.Rack && !d.Started && Time.time - d.T < 0.25f && (d.Pos - p).sqrMagnitude < 64f)
                     {
@@ -234,7 +233,7 @@ namespace GHPCHitCam
                 _racks.Add((p, now));
             }
             _dets.Add(det);
-            // game sounds that started before the detonation was registered this frame (an impact right at the camera)
+            // game sounds that started before the detonation got registered this frame (impact right at the camera)
             for (int i = _pending.Count - 1; i >= 0; i--)
             {
                 var q = _pending[i];
@@ -290,7 +289,7 @@ namespace GHPCHitCam
             BoomPlayer.Update();
         }
 
-        /// The blast front reaches the camera: kick, the vehicle detonation event and the boom.
+        /// blast front reaches the camera: kick, vehicle detonation event and the boom
         static void Arrive(Det d)
         {
             if (d.Rack && !d.TurretOff)
@@ -304,7 +303,7 @@ namespace GHPCHitCam
             float dist = Vector3.Distance(cam, d.Pos);
             float w = EffKg(d);
             float p = BlastPhysics.PeakPa(w, dist), tp = BlastPhysics.PositiveSeconds(w, dist), imp = BlastPhysics.Impulse(w, dist);
-            // a follow-up shakes the camera as much as it's heard (none at all at 0)
+            // a follow-up shakes the camera as much as it's heard (not at all at 0)
             float fu = d.FollowUp ? FollowUps : 1f;
             string kick = !Settings.ShockwaveShake.Value ? "shake off" : fu < 0.01f ? "follow-up, no shake" : ShockKick.Add(d.Pos, cam, p * fu, imp * fu, w, tp);
             bool big = d.Rack || d.Tnt >= BoomMinKg;
@@ -347,7 +346,7 @@ namespace GHPCHitCam
             catch (Exception e) { if (_warned++ < 5) HitCamMod.Log.Warning("Explosion sound: event hook: " + e.Message); }
         }
 
-        /// Self-test: what the game plays around a detonation (to see which events a cook-off uses).
+        /// self-test: what the game plays around a detonation (to see which events a cook-off uses)
         static void Probe(EvInfo info, Vector3 pos, string via)
         {
             if (_probeLines > 80) return;
@@ -393,7 +392,7 @@ namespace GHPCHitCam
         }
 
         static float _burstTriedAt = -99f;
-        /// The tables the first blast of a mission would otherwise read in its own frame (Warmup).
+        /// tables the first blast of a mission would otherwise read in its own frame (Warmup)
         internal static void Prewarm()
         {
             if (!Settings.ExplosionSound.Value) return;
@@ -404,7 +403,7 @@ namespace GHPCHitCam
 
         static string BurstPath()
         {
-            // the vehicle audio manager only exists in a mission: look again now and then until it does
+            // vehicle audio manager only exists in a mission, keep looking now and then until it does
             if (_burstPath != null || (_burstTried && Time.unscaledTime - _burstTriedAt < 5f)) return _burstPath;
             _burstTried = true;
             _burstTriedAt = Time.unscaledTime;
@@ -420,21 +419,21 @@ namespace GHPCHitCam
             return _burstPath;
         }
 
-        /// The game's explosion events, measured in the game (self-test cal:, 2026-10-20, two runs: each event's own FMOD
-        /// output, peak, at 1 km, against the HE event (HiEX_Small) at the same spot). GHPC mixes all of them within a few
-        /// dB: its vehicle detonation comes out 1.4 dB under a small HE shell, a 20 kg artillery shell 1.3 dB over it and a
-        /// 140 kg bomb 2.1 dB over it. Every event also has a limiter at 0 dBFS on its own output, so a boost can't clip.
+        /// the game's explosion events, measured in game (self-test cal:, 2026-10-20, two runs: each event's own FMOD output,
+        /// peak, at 1 km, vs the HE event (HiEX_Small) at the same spot). GHPC mixes all of them within a few dB: vehicle
+        /// detonation is 1.4 dB under a small HE shell, a 20 kg artillery shell 1.3 dB over it, a 140 kg bomb 2.1 dB over.
+        /// every event also has a limiter at 0 dBFS on its own output so a boost can't clip
         static readonly Dictionary<string, float> MixDb = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
         {
             { "Explosion_HiEX_Small", 0f }, { "Explosion_VehicleDet", -1.4f }, { "Explosion_Artillary", 1.3f }, { "Explosion_Bomb", 2.1f },
             { "Explosion_Missile", 1.8f }, { "Explosion_HiEX", 1.1f }, { "Explosion_Rockets", -1.2f }, { "Explosion_HEAT", -3.5f },
             { "Explosion_Mortar", -3.5f }, { "Explosion_AutoCanon", -3.8f },
         };
-        /// The HE event's own level vs distance (peak, dBFS), measured the same way: GHPC lets its explosions fall off only
-        /// ~5 dB from 150 m to 1 km and not at all beyond (physics: ~19 and ~10 dB; its 125 mm gun falls 12 and 8). Kept as
-        /// it is: only the charge is scaled.
+        /// HE event's own level vs distance (peak, dBFS), measured the same way: GHPC drops its explosions only ~5 dB from
+        /// 150 m to 1 km and not at all after (physics: ~19 and ~10 dB; its 125 mm gun falls 12 and 8). left as is, only
+        /// the charge gets scaled
         static readonly (float m, float db)[] AnchorCurve = { (150f, -0.5f), (300f, -2.0f), (1000f, -5.4f), (3000f, -5.8f) };
-        /// Charge the HE event stands for: the geometric mean of the game's rounds that play it (log), else this.
+        /// charge the HE event stands for: geometric mean of the game's rounds that play it (log), else this
         static float _anchorKg = 1.41f;
 
         static float AnchorDb(float dist)
@@ -449,12 +448,12 @@ namespace GHPCHitCam
 
         static string EventName(string path) { int i = path.LastIndexOf('/'); return i >= 0 ? path.Substring(i + 1) : path; }
 
-        /// The charge an event's level stands for. From the game's rounds: the geometric mean TNT of those that play it
-        /// (several impact types can share one event). From the game's mix: the charge whose overpressure, against the HE
-        /// event's rounds, matches the event's measured level against the HE event (far field, peak ~ W^0.37 at a given
-        /// distance), so one physical scale covers every event. The smaller of the two wins: physics only ever adds to the
-        /// game's own level for the rounds an event was made for (the autocannon event is mixed like a 0.4 kg charge; its
-        /// 20-50 g shells keep the game's level), and a vehicle detonation, which no round plays, is measured only.
+        /// the charge an event's level stands for. from the game's rounds: geometric mean TNT of the ones that play it
+        /// (several impact types can share an event). from the game's mix: the charge whose overpressure vs the HE event's
+        /// rounds matches the event's measured level vs the HE event (far field, peak ~ W^0.37 at a given distance), so one
+        /// physical scale covers every event. smaller of the two wins: physics only ever adds to the game's level for the
+        /// rounds an event was made for (autocannon event is mixed like a 0.4 kg charge, its 20-50 g shells keep the game's
+        /// level), and vehicle detonation, which no round plays, is measured only
         static (float, string) RefCharge(string path)
         {
             if (_ref == null) BuildRefs();
@@ -508,13 +507,13 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("Explosion sound: reference charges: " + e.Message); }
         }
 
-        /// Far-field exponent of peak overpressure in the charge at a fixed distance (beyond Z ~ 200: P ~ W^(1.1/3)).
+        /// far-field exponent of peak overpressure vs charge at fixed distance (past Z ~ 200: P ~ W^(1.1/3))
         const float FarExp = 1.1f / 3f;
-        /// One game event instance for this detonation. The event plays as it would for its reference charge Wr; the charge
-        /// that went off is W: gain = P(W, d) / P(Wr, d), the ratio of the two peak overpressures at the listener
-        /// (Kingery-Bulmash), times ExplosionLoudness. Its audible range (3D max distance) grows as k = (W/Wr)^(1/3)
-        /// (Hopkinson-Cranz); a smaller charge keeps the event's range. The event's own limiter (0 dBFS, measured) takes what
-        /// goes over: near, a big charge comes out at the game's loudest explosion level instead of clipping.
+        /// one game event instance for this detonation. it plays as it would for its reference charge Wr, the real charge
+        /// is W: gain = P(W, d) / P(Wr, d), ratio of the two peak overpressures at the listener (Kingery-Bulmash), times
+        /// ExplosionLoudness. audible range (3D max distance) grows as k = (W/Wr)^(1/3) (Hopkinson-Cranz), a smaller charge
+        /// keeps the event's range. the event's own limiter (0 dBFS, measured) eats the overshoot: up close a big charge comes
+        /// out at the game's loudest explosion level instead of clipping
         static void Apply(EventInstance inst, EvInfo info, Det det, string via, float pitch = 1f, bool again = false)
         {
             if (det.Rack && !again) det.Events.Add((inst, info, via, pitch));
@@ -529,10 +528,10 @@ namespace GHPCHitCam
             k = Mathf.Min(k, grade.kMax);
             float ev = EventLevel(info.Path, dist);
             float vol = phys * Loudness;
-            // near, a big boost only drives the event's limiter: its peak stays at full scale while its long recorded tail
-            // comes up by the whole boost (a close rack sounded like a long rolling roar). Up close the blast is one huge
-            // bang, the terrain's echoes far under it; far off the rolling tail is what you hear. So the drive into the
-            // limiter is held to +3 dB close and allowed up to +9 dB far.
+            // up close a big boost only drives the event's limiter: peak stays at full scale but the long recorded tail comes
+            // up by the whole boost (a close rack sounded like a long rolling roar). close up the blast is one huge bang with
+            // terrain echoes way under it, far off you hear the rolling tail. so drive into the limiter is capped at +3 dB
+            // close and up to +9 dB far
             float drive = Mathf.Pow(10f, Mathf.Lerp(3f, 9f, BoomSynth.Far(dist)) / 20f);
             vol = Mathf.Min(vol, Mathf.Max(drive / Mathf.Max(ev, 1e-3f), 1f));
             float level = ev * vol;    // its own output before its limiter
@@ -554,15 +553,15 @@ namespace GHPCHitCam
 
         static float Db(float a) => 20f * Mathf.Log10(Mathf.Max(a, 1e-6f));
 
-        /// An event's own output peak (full scale, before the master volume) at this distance, as measured.
+        /// event's own output peak (full scale, before master volume) at this distance, as measured
         internal static float EventLevel(string path, float dist) => Mathf.Pow(10f, (AnchorDb(dist) + (MixDb.TryGetValue(EventName(path), out float mdb) ? mdb : 0f)) / 20f);
 
-        /// The same physical scale for the boom: the HE event's level at this distance times the overpressure ratio.
+        /// same physical scale for the boom: HE event's level at this distance times the overpressure ratio
         internal static float AnchorLevel(float w, float dist) =>
             Mathf.Pow(10f, AnchorDb(dist) / 20f) * BlastPhysics.PeakPa(w, Mathf.Max(dist, 1f)) / BlastPhysics.PeakPa(_anchorKg, Mathf.Max(dist, 1f));
 
-        /// The game's own vehicle detonation event (else its biggest explosion) for a rack, which the game plays nothing for
-        /// beyond 300 m. Pitched down by the same scaling: a blast's length grows as W^(1/3), its pitch falls as W^(-1/3).
+        /// game's own vehicle detonation event (else its biggest explosion) for a rack, game plays nothing for it past
+        /// 300 m. pitched down by the same scaling: blast length grows as W^(1/3), pitch falls as W^(-1/3)
         static string PlayOwnEvent(Det d, float w, float dist)
         {
             string path = OwnEventPath();
@@ -572,7 +571,7 @@ namespace GHPCHitCam
             inst.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(d.Pos));
             var info = Describe(inst);
             float pitch = Mathf.Clamp(Mathf.Pow(info.Wr / Mathf.Max(w, 0.01f), 1f / 3f), 0.55f, 1f);
-            pitch = Mathf.Lerp(Mathf.Max(pitch, 0.85f), pitch, BoomSynth.Far(dist));   // pitching down stretches its tail: less of it close
+            pitch = Mathf.Lerp(Mathf.Max(pitch, 0.85f), pitch, BoomSynth.Far(dist));   // pitching down stretches its tail: less of it up close
             Apply(inst, info, d, "own", pitch);
             inst.start();
             inst.release();
@@ -594,7 +593,7 @@ namespace GHPCHitCam
             return _ownPath;
         }
 
-        /// Every event path in the loaded banks (and, in the self-test, a dump of them with their 3D distances).
+        /// every event path in the loaded banks (in self-test also a dump of them with their 3D distances)
         static List<string> AllEvents()
         {
             if (_allEvents != null) return _allEvents;
@@ -637,7 +636,7 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ self-test
 
-        /// near:<arsenal round>:<metres>: a round fired into the ground that far in front of the camera.
+        /// near:<arsenal round>:<metres>: a round fired into the ground that far in front of the camera
         public static IEnumerator NearShot(string[] spec, Unit player)
         {
             AllEvents();
@@ -671,11 +670,11 @@ namespace GHPCHitCam
             while (Time.realtimeSinceStartup - t0 < dist / 340f + 3.5f) yield return null;
         }
 
-        /// cal:<metres>[:<metres>...]: the game's 125 mm gun, its explosion events (as the game plays them and scaled for a
-        /// charge) and the boom, one after another at that distance in front of the camera. Each is measured on its own FMOD
-        /// channel group (post-fader, before the buses and the master volume) and on the master output (after everything,
-        /// minus what was playing just before); the boom on its Unity source (after the listener volume = master volume).
-        /// At the first distance also every other explosion event, for the mix table (MixDb).
+        /// cal:<metres>[:<metres>...]: game's 125 mm gun, its explosion events (as the game plays them and scaled for a
+        /// charge) and the boom, one after another at that distance in front of the camera. each measured on its own FMOD
+        /// channel group (post-fader, before buses and master volume) and on the master output (after everything, minus
+        /// what was playing just before); boom on its Unity source (after listener volume = master volume).
+        /// at the first distance also every other explosion event, for the mix table (MixDb)
         public static IEnumerator Calibrate(string[] spec)
         {
             AllEvents();
@@ -724,7 +723,7 @@ namespace GHPCHitCam
                     for (int rep = 0; rep < c.reps; rep++)
                     {
                         var det = new Det { Pos = pos, Tnt = Mathf.Max(c.kg, 0.01f), Rack = c.rack, T = Time.time, Frame = Time.frameCount, Dist = dist, Delay = 0f, Started = true };
-                        // what plays already (engines, wind): the master's level just before
+                        // what's already playing (engines, wind): master level just before
                         float baseline = 0f, t0 = Time.realtimeSinceStartup;
                         while (Time.realtimeSinceStartup - t0 < 0.4f)
                         {
@@ -787,13 +786,13 @@ namespace GHPCHitCam
 
         static float Dbfs(float a) => 20f * Mathf.Log10(Mathf.Max(a, 1e-7f));
 
-        /// One line for the end of the self-test.
+        /// one line for the end of the self-test
         public static string Summary() => $"explosion events scaled {ScaledEvents}, own detonation events {OwnEvents}, booms {Booms}, kicks {ShockKick.Count} (largest applied {ShockKick.MaxApplied:0.000} deg)";
     }
 
-    /// Peak overpressure and positive phase of a TNT surface burst (hemispherical, i.e. on the ground: the reflection is in
-    /// the fit). Kingery-Bulmash polynomials as simplified by Swisdak (1994), Z = R / W^(1/3) in m/kg^(1/3); beyond their range
-    /// (Z > 198.5) the weak shock falls a little faster than 1/R.
+    /// peak overpressure and positive phase of a TNT surface burst (hemispherical, on the ground, reflection is in the
+    /// fit). Kingery-Bulmash polynomials simplified by Swisdak (1994), Z = R / W^(1/3) in m/kg^(1/3); past their range
+    /// (Z > 198.5) the weak shock falls a bit faster than 1/R
     internal static class BlastPhysics
     {
         public static float PeakPa(float wKg, float rangeM)
@@ -817,8 +816,8 @@ namespace GHPCHitCam
             return Math.Exp(6.0536 - 1.4066 * l);
         }
 
-        /// Positive phase duration, s: ~4.8 ms per kg^(1/3) once the front has left the fireball (KB), lengthening slowly
-        /// as a weak shock travels on (N-wave stretching).
+        /// positive phase duration, s: ~4.8 ms per kg^(1/3) once the front left the fireball (KB), then slowly gets longer
+        /// as a weak shock travels on (N-wave stretching)
         public static float PositiveSeconds(float wKg, float rangeM)
         {
             float w3 = Mathf.Pow(Mathf.Max(wKg, 1e-4f), 1f / 3f);
@@ -828,41 +827,41 @@ namespace GHPCHitCam
             return ms * w3 / 1000f;
         }
 
-        /// Positive phase impulse, Pa*s (triangular pulse).
+        /// positive phase impulse, Pa*s (triangle pulse)
         public static float Impulse(float wKg, float rangeM) => 0.5f * PeakPa(wKg, rangeM) * PositiveSeconds(wKg, rangeM);
 
         public static float Db(float pa) => 20f * Mathf.Log10(Mathf.Max(pa, 1e-6f) / 20e-6f);
     }
 
-    /// The low boom of a detonation, synthesised (no recordings): the N-wave of the blast's own length (positive phase
-    /// ~ W^(1/3), so a rack's is several times a shell's), the ground and air column thumping at its fundamental, a handful
-    /// of terrain echoes, and a rolling low rumble that lasts longer the bigger and farther the blast. Air absorption and the
-    /// ground take the high end away with distance (two one-pole low-passes, cut-off falling with range).
+    /// synthesised low boom of a detonation (no recordings): N-wave as long as the blast (positive phase ~ W^(1/3), so a
+    /// rack's is several times a shell's), ground and air column thumping at its fundamental, a few terrain echoes,
+    /// and a low rolling rumble that lasts longer the bigger and farther the blast. air absorption and ground eat the
+    /// highs with distance (two one-pole low-passes, cut-off drops with range)
     internal static class BoomSynth
     {
-        /// 0 at the blast, 1 from ~2.5 km: how much of what you hear came back off the terrain rather than straight at you.
+        /// 0 at the blast, 1 from ~2.5 km: how much of what you hear bounced off terrain instead of coming straight at you
         public static float Far(float dist) => Mathf.Clamp01(Mathf.Log(1f + Mathf.Max(dist, 0f) / 120f) / Mathf.Log(1f + 2500f / 120f));
 
-        /// Pure arithmetic (no Unity objects): runs on a worker thread.
+        /// pure arithmetic (no Unity objects), runs on a worker thread
         public static float[] Make(float w, float dist, int rate, int seed, float tailScale, out float nwaveMs, out float cutoffHz, out float tailS)
         {
             float w3 = Mathf.Pow(Mathf.Max(w, 0.01f), 1f / 3f);
             float T = Mathf.Clamp(2f * BlastPhysics.PositiveSeconds(w, dist), 0.004f, 0.09f);
             nwaveMs = T * 1000f;
             cutoffHz = Mathf.Clamp(16000f / (1f + dist / 80f), 110f, 16000f);
-            // close: one huge bang and a short ring; far: the long rolling thunder of the echoes
+            // close: one huge bang and a short ring, far: long rolling thunder of the echoes
             float far = Far(dist);
             tailS = Mathf.Clamp((0.5f + 3.2f * far + 0.2f * w3 * (0.4f + 0.6f * far)) * tailScale, 0.5f, 4.5f);
-            // the direct blast falls off as 1/r, what comes back off the terrain has travelled hundreds of metres already:
-            // near, echoes and rumble are far under the bang (~-22 dB at 20 m), at a kilometre they are most of it
+            // direct blast falls off as 1/r, terrain echoes already travelled hundreds of metres: up close echoes and
+            // rumble are way under the bang (~-22 dB at 20 m), at a km they're most of it
             float refl = Mathf.Clamp(dist / (dist + 250f), 0.06f, 1f);
             int n = Mathf.CeilToInt((tailS + 0.35f) * rate);
             var x = new float[n];
             var rnd = new System.Random(seed);
-            int i0 = rate / 100;    // 10 ms lead-in: the filters settle before the front
+            int i0 = rate / 100;    // 10 ms lead-in so the filters settle before the front
             NWave(x, i0, T, 1f, rate);
-            // the thump: ground and air column ringing near the wave's fundamental (with its octave, so small speakers
-            // still give the low note), short decay
+            // thump: ground and air column ringing near the wave's fundamental (plus its octave so small speakers still
+            // give the low note), short decay
             float fb = Mathf.Clamp(1.5f / T, 45f, 120f), tb = 0.06f + 0.03f * w3;
             for (int i = i0; i < n; i++)
             {
@@ -871,7 +870,7 @@ namespace GHPCHitCam
                 x[i] += (0.5f * Mathf.Sin(2f * Mathf.PI * fb * t) * Mathf.Exp(-t / tb) + 0.25f * Mathf.Sin(4f * Mathf.PI * fb * t) * Mathf.Exp(-t / (tb * 0.7f)))
                       * (1f - Mathf.Exp(-t / 0.003f));
             }
-            // echoes off the terrain and tree lines: later, weaker, longer
+            // echoes off terrain and tree lines: later, weaker, longer
             int echoes = 4 + rnd.Next(4);
             for (int e = 0; e < echoes; e++)
             {
@@ -879,7 +878,7 @@ namespace GHPCHitCam
                 float a = 0.5f * refl * Mathf.Exp(-dl / (tailS * 0.45f)) * (0.5f + 0.5f * (float)rnd.NextDouble());
                 NWave(x, i0 + (int)(dl * rate), T * (1.3f + 0.8f * (float)rnd.NextDouble()), a, rate);
             }
-            // the rolling rumble: low band noise swelling after the front, fading over the tail
+            // rolling rumble: low band noise swelling after the front, fading over the tail
             var rum = new float[n];
             for (int i = 0; i < n; i++) rum[i] = (float)rnd.NextDouble() * 2f - 1f;
             float rc = Mathf.Min(cutoffHz, 300f);
@@ -896,7 +895,7 @@ namespace GHPCHitCam
                 x[i] += 0.32f * Mathf.Clamp(refl * 1.25f, 0.1f, 1f) * rum[i] / rms * env * roll;
             }
             LowPass(x, cutoffHz, rate); LowPass(x, cutoffHz, rate);
-            HighPass(x, 30f, rate); HighPass(x, 30f, rate);     // nothing a speaker can't play eats the headroom
+            HighPass(x, 30f, rate); HighPass(x, 30f, rate);     // stuff a speaker can't play would just eat headroom
             float peak = 1e-6f;
             for (int i = 0; i < n; i++) peak = Mathf.Max(peak, Mathf.Abs(x[i]));
             int fade = rate / 10;
@@ -927,18 +926,18 @@ namespace GHPCHitCam
         }
     }
 
-    /// Plays the booms through Unity audio (2D, panned toward the blast). GHPC sets AudioListener.volume to its master
-    /// volume and to 0 while paused or muted, so they follow the game's own volume.
+    /// plays the booms through Unity audio (2D, panned toward the blast). GHPC sets AudioListener.volume to its master
+    /// volume and to 0 while paused or muted, so they follow the game's volume
     internal static class BoomPlayer
     {
-        /// The boom's peak against the game's own explosion event for the same blast.
+        /// boom peak vs the game's own explosion event for the same blast
         const float BoomRel = 0.5f;
 
         class Voice { public AudioSource Src; public BoomMeter Meter; public float Until; public string Note; public bool Logged = true; }
         static readonly List<Voice> _voices = new List<Voice>();
 
-        /// A boom being synthesised on a worker thread (15-45 ms of arithmetic: done in the frame, it was a hitch on every
-        /// rack). Starts playing the frame it is ready (a frame or two after the front: nobody hears that).
+        /// boom gets synthesised on a worker thread (15-45 ms of math, doing it in the frame was a hitch on every rack).
+        /// starts playing the frame it's ready (a frame or two after the front, nobody hears that)
         class Job
         {
             public float W, Dist, Amp, Mv, Pan, Queued;
@@ -987,9 +986,9 @@ namespace GHPCHitCam
         {
             int rate = AudioSettings.outputSampleRate;
             if (rate < 8000) rate = 48000;
-            // level: on the same physical scale as the game's events (the HE event's level at this distance times the
-            // overpressure ratio), 6 dB under them; above the output ceiling (after the master volume) it is soft-clipped,
-            // as an ear or a microphone saturates. A rack's follow-up blasts: a fraction of the first.
+            // level: same physical scale as the game's events (HE event's level at this distance times overpressure ratio),
+            // 6 dB under them; above the output ceiling (after master volume) it gets soft-clipped like an ear or mic saturates.
+            // a rack's follow-up blasts: a fraction of the first
             float mv = Mathf.Max(AudioListener.volume, 0.05f);
             float amp = Mathf.Max(BoomRel * BlastSound.AnchorLevel(w, dist), 0.02f) * Mathf.Clamp(Settings.ExplosionLoudness.Value, 0.25f, 4f);
             var grade = BlastSound.Grade(d);
@@ -1008,7 +1007,7 @@ namespace GHPCHitCam
             return $"synth queued, level {amp:0.00} of full scale before the master volume{(job.Clipped ? " (soft-clipped to 0.9 at the output)" : "")}, x{grade.boom:0.00} and tail x{grade.tail:0.0} for this kind of blast, pan {job.Pan:+0.00;-0.00}";
         }
 
-        /// Worker thread: arithmetic only.
+        /// worker thread: arithmetic only
         static void Synth(Job j)
         {
             try
@@ -1074,7 +1073,7 @@ namespace GHPCHitCam
         }
     }
 
-    /// Records the loudest sample a boom source put out (self-test proof that it reached the mix).
+    /// loudest sample a boom source put out (self-test proof it reached the mix)
     internal class BoomMeter : MonoBehaviour
     {
         public volatile float Peak;

@@ -19,17 +19,17 @@ using Camera = UnityEngine.Camera;
 
 namespace GHPCHitCam
 {
-    /// Protection analysis mode (Insert), in the spirit of War Thunder's: any vehicle the game has, spawned passive on an empty
-    /// patch of the map, an orbit camera around its x-ray copy, a pen map of the whole visible armour for the chosen round
-    /// and range (PenProbe: the game's own LOS thickness and pen rules), and click to fire a real game round at that spot
-    /// from that direction. The hit cam then plays the result full screen; afterwards the vehicle respawns undamaged.
-    /// Only GHPC's own data: unit prefabs, armour colliders, IArmor thickness, ammo stats, the game's ballistics.
+    /// protection analysis mode (Insert), like War Thunder's: any vehicle the game has, spawned passive on an empty patch of
+    /// the map, orbit cam around its x-ray copy, pen map of all visible armour for the picked round and range (PenProbe: game's
+    /// own LOS thickness and pen rules), click to fire a real game round at that spot from that direction. hit cam then plays
+    /// it full screen, after that the vehicle respawns undamaged. only GHPC's own data: unit prefabs, armour colliders,
+    /// IArmor thickness, ammo stats, the game's ballistics
     internal static class ArmorSim
     {
         enum Phase { Off, Spawning, View, Firing, Replay }
         static Phase _phase = Phase.Off;
         public static bool Active => _phase != Phase.Off;
-        /// An Armor Sim shot is on its way or playing: the hit cam renders full screen and we draw its overlay.
+        /// an Armor Sim shot is on its way or playing: hit cam renders full screen and we draw its overlay
         public static bool FullScreenHitCam => _phase == Phase.Firing || _phase == Phase.Replay;
 
         static MelonPreferences_Entry<string> _keyPref;
@@ -43,21 +43,21 @@ namespace GHPCHitCam
         static float _range = 1000f;
         static bool _xray, _penMap = true, _autoRepair = true;
 
-        // the test vehicle and its x-ray copy
+        // test vehicle and its x-ray copy
         static Unit _unit;
         static Vector3 _spot;
         static Quaternion _spotRot = Quaternion.identity;
         static bool _haveSpot;
         static GhostSnapshot _snap;
         static Ghost _ghost;
-        static Vector3 _origin;          // ghost space = the vehicle's local space shifted to here
+        static Vector3 _origin;          // ghost space = vehicle's local space shifted to here
         static Camera _cam;
         static Transform _backdrop;
         static float _yaw = 35f, _pitch = 14f, _dist = -1f;
-        static int _gen;                 // bumps on every (re)spawn, stale coroutines stop
+        static int _gen;                 // bumped on every (re)spawn so stale coroutines stop
         static Playback _replay;
         static float _fireAt;
-        static LiveRound _round;   // the last round fired (for the log)
+        static LiveRound _round;   // last round fired (for the log)
         static string _msg;
         static float _msgUntil;
 
@@ -66,9 +66,9 @@ namespace GHPCHitCam
         static PenResult _aim;
         static Vector3 _aimOrigin, _aimDir;
         static float _aimNominal = -1f;
-        static Vector2? _testCursor;     // the self-test aims without a mouse
+        static Vector2? _testCursor;     // self-test aims without a mouse
 
-        // the last shot, for the result card
+        // last shot, for the result card
         static string _lastTitle, _lastAim;
         static Color _lastColor = Color.white;
         static readonly List<(string text, int sev)> _lastEvents = new List<(string, int)>();
@@ -78,7 +78,7 @@ namespace GHPCHitCam
         static CursorLockMode _savedLock;
         static MethodInfo _setGun, _setCam;
 
-        // LiveRound internals: a round fired just in front of the plate behaves as if it came from the chosen range
+        // LiveRound internals: a round fired just in front of the plate acts like it came from the picked range
         static AccessTools.FieldRef<LiveRound, Vector3> _trueInitRef, _initPosRef;
         static AccessTools.FieldRef<LiveRound, float> _timeRef;
         static readonly Dictionary<LiveRound, Vector3> _muzzles = new Dictionary<LiveRound, Vector3>();
@@ -105,15 +105,14 @@ namespace GHPCHitCam
                 h.Patch(start, postfix: new HarmonyMethod(typeof(ArmorSim).GetMethod(nameof(StartPostfix), BindingFlags.Static | BindingFlags.NonPublic)));
         }
 
-        /// A round fired just in front of its target that the game should treat as fired from `muzzle`, `range` m back
-        /// (the proving ground's shot lab).
+        /// round fired right in front of its target that the game treats as fired from `muzzle`, `range` m back (proving ground shot lab)
         internal static void VirtualMuzzle(LiveRound round, Vector3 muzzle, float range, AmmoType ammo)
         {
             _muzzles[round] = muzzle;
             if (_timeRef != null) _timeRef(round) = range / Mathf.Max(ammo.MuzzleVelocity, 1f);
         }
 
-        /// The round's Start() sets where it was fired from (fuze arming distance, the hit distance): our virtual muzzle.
+        /// round's Start() sets where it was fired from (fuze arming distance, hit distance): our virtual muzzle
         static void StartPostfix(LiveRound __instance)
         {
             if (_muzzles.Count == 0 || !_muzzles.TryGetValue(__instance, out var m)) return;
@@ -126,7 +125,7 @@ namespace GHPCHitCam
             catch { }
         }
 
-        /// The mission is gone: forget everything (the objects went with the scene).
+        /// mission is gone: forget everything (the objects went with the scene)
         public static void Reset()
         {
             if (Active) Exit("mission ended");
@@ -154,7 +153,7 @@ namespace GHPCHitCam
             Vis.Init();
             if (_vehicles.Count == 0) BuildVehicleList(sp);
             if (Ammo.Count == 0) { Say("no projectiles found"); return; }
-            // first: the M1IP, a vehicle of the game every install has and the vehicle mods leave alone
+            // first: the M1IP, every install has it and vehicle mods leave it alone
             if (_vehSel < 0 || _vehSel >= _vehicles.Count)
             {
                 _vehSel = _vehicles.FindIndex(v => v.Key == "M1IP");
@@ -172,12 +171,12 @@ namespace GHPCHitCam
         }
 
         public static bool ReadyForShots => _phase == Phase.View;
-        static bool _askLeave;   // the "back to main menu?" question is up
+        static bool _askLeave;   // "back to main menu?" question is up
 
-        /// The main menu's ARMOR SIM button: the mission is up, open the sim.
+        /// main menu's ARMOR SIM button: mission is up, open the sim
         public static void OpenFromMenu() => Enter();
 
-        /// Close, or (when the main menu button started this mission) ask whether to go back to the main menu.
+        /// close, or (when the main menu button started this mission) ask whether to go back to the main menu
         public static void RequestClose()
         {
             if (!Active) return;
@@ -219,7 +218,7 @@ namespace GHPCHitCam
             if (pi != null) { _savedGun = pi.SuspendGunnerInputs; _savedCam = pi.SuspendCameraInputs; _savedKb = pi.BlockKeyboardInput; }
             _savedCursor = Cursor.visible;
             _savedLock = Cursor.lockState;
-            // the hit cam has to record and play our shots even if the player switched it off
+            // hit cam still has to record and play our shots even if the player turned it off
             _forcedEnabled = !Settings.Enabled.Value;
             if (_forcedEnabled) Settings.Enabled.Value = true;
             _forcedAllShots = PlayerUnit == null && Settings.PlayerShotsOnly.Value;
@@ -227,14 +226,14 @@ namespace GHPCHitCam
             HoldGame();
         }
 
-        /// The game's pause menu is up: the sim steps aside (no drawing, no input) until it closes.
+        /// game's pause menu is up: sim steps aside until it closes
         static bool MenuOpen()
         {
             try { var pi = SceneUtil.Player; return pi != null && pi.IsMainMenuActive; }
             catch { return false; }
         }
 
-        /// Every frame: the tank's own gun / camera / driving inputs stay off and the cursor stays free.
+        /// every frame: tank's own gun / camera / driving inputs stay off and the cursor stays free
         static void HoldGame()
         {
             var pi = SceneUtil.Player;
@@ -275,7 +274,7 @@ namespace GHPCHitCam
             c == UnitClass.Tank || c == UnitClass.IFV || c == UnitClass.APC || c == UnitClass.Scout || c == UnitClass.Transport
             || c == UnitClass.FireSupport || c == UnitClass.Command || c == UnitClass.MobileArtillery || c == UnitClass.MobileAntiAir;
 
-        /// Every ground vehicle in the game's unit prefab table (the same keys UnitSpawner takes).
+        /// every ground vehicle in the game's unit prefab table (same keys UnitSpawner takes)
         static void BuildVehicleList(UnitSpawner sp)
         {
             _vehicles.Clear();
@@ -286,9 +285,9 @@ namespace GHPCHitCam
                     foreach (var m in all)
                     {
                         if (m == null || string.IsNullOrEmpty(m.Name) || !IsVehicleClass(m.Class)) continue;
-                        if (m.Name == "TC") continue;   // the easter-egg cheese
-                        if (!ModdedVehicles.Spawnable(m)) continue;   // a lookup-only entry (no prefab), e.g. FEP's binocular fix
-                        if (!ModdedVehicles.Released(m)) continue;   // the game's own mission customizer leaves it out
+                        if (m.Name == "TC") continue;   // easter-egg cheese
+                        if (!ModdedVehicles.Spawnable(m)) continue;   // lookup-only entry (no prefab), e.g. FEP's binocular fix
+                        if (!ModdedVehicles.Released(m)) continue;   // game's own mission customizer leaves it out
                         string army = "";
                         try { army = m.Army != null && m.Army.Info != null ? m.Army.Info.Abbreviation ?? "" : ""; } catch { }
                         _vehicles.Add(new VehicleEntry { Key = m.Name, Name = string.IsNullOrEmpty(m.FriendlyName) ? m.Name : m.FriendlyName, Army = army, Class = m.Class });
@@ -348,7 +347,7 @@ namespace GHPCHitCam
             yield return null;
             yield return null;
             if (gen != _gen || !Active) yield break;
-            // what vehicle mods make of it at a mission's start (their variants, ERA, armour)
+            // what vehicle mods make of it at mission start (their variants, ERA, armour)
             string stock = v.Name;
             yield return ModdedVehicles.Convert(u);
             if (gen != _gen || !Active || u == null) yield break;
@@ -356,7 +355,7 @@ namespace GHPCHitCam
             if (ModdedVehicles.LastFailures.Count > 0) Say($"{now}: {string.Join(", ", ModdedVehicles.LastFailures)} couldn't convert it here (that mod gets ready only for the mission's own vehicle types)", 8f);
             else if (ModdedVehicles.Any && now != stock && !string.IsNullOrEmpty(now)) Say($"{stock} -> {now} (a vehicle mod's conversion)", 6f);
             MakePassive(u);
-            // settle on the suspension (the x-ray copy and the colliders must agree)
+            // settle on the suspension (x-ray copy and colliders must agree)
             var rb = u.GetComponent<Rigidbody>() ?? u.GetComponentInChildren<Rigidbody>();
             float t0 = Time.time;
             while (Time.time - t0 < 4f && (Time.time - t0 < 1.2f || (rb != null && rb.velocity.sqrMagnitude > 0.004f)))
@@ -382,14 +381,17 @@ namespace GHPCHitCam
                     Name = key + " (armor sim)",
                     Position = pos,
                     Rotation = rot,
-                    // nobody's enemy: the game's target sensors skip neutral units, so no AI shoots at it
+                    // nobody's enemy: game's target sensors skip neutral units so no AI shoots at it
                     Allegiance = Faction.Neutral,
                     UnitType = UnitType.GroundVehicle,
                 };
-                var u = ModdedVehicles.Spawn(sp, key, md) as Unit;
+                var u = ModdedVehicles.Spawn(sp, key, md, sound: false) as Unit;
                 if (u == null) return null;
                 u.Targetable = true;
                 try { SceneUnitsManager.Instance.Meta?.UnimportantUnits?.Add(u); } catch { }   // never decides the mission
+                // keep the test vehicle quiet: game's vehicle audio started while a vehicle spawns mid-mission misses its wheels
+                // and then throws every frame (NullReferenceException in UpdateTracks)
+                try { var vac = u.GetComponent<GHPC.Audio.VehicleAudioController>(); if (vac != null) vac.enabled = false; } catch { }
                 HitCamMod.Log.Msg($"Armor Sim: spawned {key} at {pos} ({Recorder.SafeName(u)})");
                 return u;
             }
@@ -411,7 +413,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("Armor Sim: could not stop the AI of " + Recorder.SafeName(u) + ": " + e.Message); }
         }
 
-        /// Takes the unit out of the game's unit lists and destroys it with the parts that follow it (turrets, ...).
+        /// takes the unit out of the game's unit lists and destroys it with the parts that follow it (turrets, ...)
         internal static void Despawn(Unit u)
         {
             if (u == null) return;
@@ -425,9 +427,9 @@ namespace GHPCHitCam
                 {
                     (sum.AllUnitsInScene as List<Unit>)?.Remove(u);
                     try { sum.Meta?.UnimportantUnits?.Remove(u); } catch { }
-                    // parts registered for the game's own AAR replays (AarMiscPosableItem) never unregister: a destroyed one
-                    // left in this list makes ShotInfo.PopulateUnitPoses throw in every later LiveRound.Start, and that round
-                    // then never moves (no hit, no hit cam) for the rest of the mission
+                    // parts registered for the game's own AAR replays (AarMiscPosableItem) never unregister: a destroyed one left in
+                    // this list makes ShotInfo.PopulateUnitPoses throw in every later LiveRound.Start, and that round then never moves
+                    // (no hit, no hit cam) for the rest of the mission
                     var misc = sum.AllMiscPosablesInScene;
                     if (misc != null)
                     {
@@ -447,7 +449,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("Armor Sim: despawn failed: " + e.Message); }
         }
 
-        /// A flat open spot far from every unit of the mission (the fight goes on elsewhere).
+        /// flat open spot far from every unit of the mission (the fight goes on elsewhere)
         static bool FindSpot(out Vector3 pos, out Quaternion rot)
         {
             rot = Quaternion.identity;
@@ -491,7 +493,7 @@ namespace GHPCHitCam
 
         static float Flat(Vector3 d) => new Vector2(d.x, d.z).magnitude;
 
-        /// No trees, buildings or rocks within ~10 m (terrain trees show as a hit well above the ground).
+        /// no trees, buildings or rocks within ~10 m (terrain trees show as a hit well above the ground)
         static bool Clear(Vector3 p, Terrain t)
         {
             for (int k = 0; k < 13; k++)
@@ -520,7 +522,7 @@ namespace GHPCHitCam
             try
             {
                 _snap = GhostSnapshot.Capture(_unit);
-                // far from where the hit cam puts its own copy (350 m above the target), so they never share a picture
+                // far from where the hit cam puts its own copy (350 m above the target) so they never share a picture
                 _origin = _unit.transform.position + new Vector3(0f, 350f, -1200f);
                 _ghost = Ghost.Build(_snap, _origin);
                 PrepareLook();
@@ -528,8 +530,36 @@ namespace GHPCHitCam
                 if (_dist <= 0f) FrameCamera(35f, 14f);
                 ResetPenMap();
                 HitCamMod.Log.Msg($"Armor Sim: x-ray copy of {_snap.UnitName}: {_ghost.Hull.Count} hull parts, {_snap.Modules.Count} modules, {_snap.Crew.Count} crew, bounds {_snap.LocalBounds.size}");
+                FloatingBits();
             }
             catch (Exception e) { HitCamMod.Log.Error("Armor Sim: x-ray copy failed: " + e); }
+        }
+
+        static readonly HashSet<string> _floatChecked = new HashSet<string>();
+
+        /// anything in the copy floating clear of the vehicle, whatever part of the copy it is (once per vehicle, for the
+        /// log: a tester's Leopard 2KA3 had its rubber skirts 18 m off)
+        static void FloatingBits()
+        {
+            if (!_floatChecked.Add(_snap.UnitName)) return;
+            var b = _snap.LocalBounds;
+            b.Expand(0.6f);
+            var root = _ghost.Root.transform;
+            int n = 0;
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r == null || r.name.StartsWith("armorsim")) continue;
+                var wb = r.bounds;
+                var c = root.InverseTransformPoint(wb.center);
+                var lb = new Bounds(c, wb.size);
+                if (b.Intersects(lb)) continue;
+                string path = r.name;
+                for (var t = r.transform.parent; t != null && t != root; t = t.parent) path = t.name + "/" + path;
+                var mf = r.GetComponent<MeshFilter>();
+                if (path.EndsWith("/shell") || path.EndsWith("/skin")) continue;
+                HitCamMod.Log.Warning($"Armor Sim: the x-ray copy of {_snap.UnitName} has '{path}' floating clear of the vehicle at {c}, size {wb.size} (mesh {(mf != null && mf.sharedMesh != null ? mf.sharedMesh.name + "/" + mf.sharedMesh.vertexCount + "v" : "-")}). Please send this log.");
+                if (++n >= 6) break;
+            }
         }
 
         static void DestroyGhost()
@@ -541,7 +571,7 @@ namespace GHPCHitCam
             _aimOk = false;
         }
 
-        /// Solid view: the vehicle's own textures, lit; x-ray view: the hit cam's look (textures faint, internals on top).
+        /// solid view: vehicle's own textures, lit. x-ray view: hit cam look (textures faint, internals on top)
         static void PrepareLook()
         {
             _swaps.Clear();
@@ -556,7 +586,7 @@ namespace GHPCHitCam
                 if (target != null) _swaps.Add(new Swap { R = target, Orig = target.sharedMaterials, Lit = target.sharedMaterials.Select(m => Lit(m, diffuse)).ToArray() });
                 else _swaps.Add(new Swap { R = mr, Orig = mr.sharedMaterials, Lit = mr.sharedMaterials.Select(_ => _litGrey).ToArray() });
             }
-            // a soft shadow under the vehicle so it doesn't float
+            // soft shadow under the vehicle so it doesn't float
             var b = _snap.LocalBounds;
             _shadowMesh ??= ShadowDisc();
             _shadowMat ??= new Material(Vis.Alpha) { renderQueue = 1990, name = "ArmorSim shadow" };
@@ -566,11 +596,11 @@ namespace GHPCHitCam
 
         static Material Lit(Material m, Shader diffuse)
         {
-            var tex = m != null ? m.mainTexture : null;
+            var tex = m != null ? Vis.Albedo(m) : null;
             if (tex == null) return _litGrey;
             if (_litCache.TryGetValue(tex, out var lit) && lit != null) return lit;
             lit = new Material(diffuse) { mainTexture = tex, color = new Color(0.95f, 0.95f, 0.95f), renderQueue = 2002, name = "ArmorSim lit hull" };
-            try { lit.mainTextureScale = m.mainTextureScale; lit.mainTextureOffset = m.mainTextureOffset; } catch { }
+            if (m.HasProperty("_MainTex")) { lit.mainTextureScale = m.mainTextureScale; lit.mainTextureOffset = m.mainTextureOffset; }
             _litCache[tex] = lit;
             return lit;
         }
@@ -602,7 +632,7 @@ namespace GHPCHitCam
             _cam.allowHDR = false;
             _cam.allowMSAA = true;
             _cam.renderingPath = RenderingPath.Forward;
-            // a dark studio backdrop that follows the camera (drawn first, behind everything)
+            // dark studio backdrop that follows the camera (drawn first, behind everything)
             _backMesh ??= Backdrop();
             _backMat ??= new Material(Vis.Unlit) { renderQueue = 1000, name = "ArmorSim backdrop" };
             _backMat.SetInt("_ZWrite", 0);
@@ -611,7 +641,7 @@ namespace GHPCHitCam
             EnsureViewRT();
         }
 
-        /// The sim's picture: rendered off screen and drawn by our IMGUI pass, over the game's own canvases.
+        /// sim's picture: rendered off screen and drawn by our IMGUI pass, over the game's own canvases
         static RenderTexture _viewRT;
 
         static void EnsureViewRT()
@@ -667,7 +697,7 @@ namespace GHPCHitCam
         }
 
         static Vector3 Focus => _origin + (_snap != null ? _snap.LocalBounds.center : Vector3.up) + _pan;
-        static Vector3 _pan;          // the middle mouse button moves the view off the vehicle's middle
+        static Vector3 _pan;          // middle mouse button moves the view off the vehicle's middle
         static bool _panning;
         static float _lastMiddle = -9f;
 
@@ -677,12 +707,12 @@ namespace GHPCHitCam
             var off = new Vector3(Mathf.Sin(y) * Mathf.Cos(p), Mathf.Sin(p), Mathf.Cos(y) * Mathf.Cos(p));
             _cam.transform.position = Focus + off * _dist;
             _cam.transform.LookAt(Focus, Vector3.up);
-            _cam.cullingMask = 1 << Vis.Layer;    // the hit cam strips its layer from every enabled camera when it starts
+            _cam.cullingMask = 1 << Vis.Layer;    // hit cam strips its layer from every enabled camera when it starts
         }
 
         // ------------------------------------------------------------------ probing the real vehicle through the copy
 
-        /// A ray of our camera (ghost space) laid onto the real vehicle, started just outside its outline.
+        /// ray of our camera (ghost space) laid onto the real vehicle, started just outside its outline
         static bool ProbeView(Ray gr, out PenResult r, out Vector3 originW, out Vector3 dirW)
         {
             r = default;
@@ -711,7 +741,7 @@ namespace GHPCHitCam
             return -1f;
         }
 
-        // pen map: a cell grid over the screen, filled coarse to fine within a time budget per frame, cached per view
+        // pen map: cell grid over the screen, filled coarse to fine with a time budget per frame, cached per view
         static Texture2D _penTex;
         static Color32[] _penPix;
         static bool[] _penExact;
@@ -778,7 +808,7 @@ namespace GHPCHitCam
             if (PenMapDone) return;
             var sw = System.Diagnostics.Stopwatch.StartNew();
             double budget = Mathf.Clamp(_budgetPref.Value, 1f, 40f);
-            if (AutoTest.Active) budget = 25.0;   // the self-test just wants the picture
+            if (AutoTest.Active) budget = 25.0;   // self-test just wants the picture
             Bounds gb = _snap.LocalBounds;
             gb.Expand(3f);
             gb.center += _origin;
@@ -798,7 +828,7 @@ namespace GHPCHitCam
                     {
                         Color k = PenProbe.ColorOf(r.Verdict);
                         c = new Color32((byte)(k.r * 255), (byte)(k.g * 255), (byte)(k.b * 255), alpha);
-                        if (block == 1) _penCount[(int)r.Verdict]++;   // the finest pass: 3/4 of the cells, an even sample
+                        if (block == 1) _penCount[(int)r.Verdict]++;   // finest pass: 3/4 of the cells, an even sample
                     }
                 }
                 for (int by = cy; by < Math.Min(cy + block, _penH); by++)
@@ -873,8 +903,8 @@ namespace GHPCHitCam
 
         static void ViewInput()
         {
-            // the self-test drives the camera and fires on its own: a wheel or a click over the windowed game must not
-            // zoom its screenshots or fire an extra round
+            // self-test drives the camera and fires on its own: a wheel or click over the windowed game must not zoom its
+            // screenshots or fire an extra round
             if (AutoTest.Active || _askLeave || ConfigMenu.IsOpen) { _dragging = _panning = false; return; }
             Vector2 mouse = Input.mousePosition;
             Vector2 d = mouse - _lastMouse;
@@ -884,11 +914,11 @@ namespace GHPCHitCam
             if (Input.GetMouseButtonDown(2) && !OverUi(mouse))
             {
                 _panning = true;
-                if (Time.unscaledTime - _lastMiddle < 0.3f) _pan = Vector3.zero;   // a double click: back to the vehicle's middle
+                if (Time.unscaledTime - _lastMiddle < 0.3f) _pan = Vector3.zero;   // double click: back to the vehicle's middle
                 _lastMiddle = Time.unscaledTime;
             }
             if (!Input.GetMouseButton(2)) _panning = false;
-            // the game may hold the cursor still while a button is down: then the mouse's own movement
+            // game may hold the cursor still while a button is down, then use the mouse's own movement
             if ((_dragging || _panning) && d.sqrMagnitude < 0.01f)
                 try { d = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * 14f; } catch { }
             if (_dragging) { _yaw += d.x * 0.3f; _pitch -= d.y * 0.25f; }
@@ -911,7 +941,7 @@ namespace GHPCHitCam
             }
             _pitch = Mathf.Clamp(_pitch, -8f, 85f);
             _yaw = Mathf.Repeat(_yaw, 360f);
-            if (Input.GetMouseButtonDown(0) && !OverUi(mouse) && _picker != 0) _picker = 0;   // a click outside closes the list
+            if (Input.GetMouseButtonDown(0) && !OverUi(mouse) && _picker != 0) _picker = 0;   // click outside closes the list
             else if (Input.GetMouseButtonDown(0) && !OverUi(mouse))
             {
                 if (_aimOk) Fire();
@@ -943,10 +973,10 @@ namespace GHPCHitCam
             Arsenal.PrepareForFire(e);
             var ammo = e.Ammo;
             float range = e.Bomb ? 0f : _range;
-            // start in front of the first surface on the camera ray, so the round goes exactly where the probe looked
+            // start in front of the first surface on the camera ray so the round goes exactly where the probe looked
             Vector3 dir = _aimDir;
             float back = Mathf.Max(_aim.Distance, 1.5f);
-            // a longer run-up where the way back along the ray is clear: the hit cam shows the last metres of flight
+            // longer run-up where the way back along the ray is clear: hit cam shows the last metres of flight
             Vector3 o = _aim.Point - dir * back;
             if (!Physics.Raycast(o, -dir, out var block, 8f, ~(1 << Vis.Layer), QueryTriggerInteraction.Ignore)) back += 8f;
             else back += Mathf.Max(0f, block.distance - 0.5f);
@@ -969,7 +999,7 @@ namespace GHPCHitCam
                 round.transform.rotation = Quaternion.LookRotation(dir);
                 _muzzles[round] = start - dir * range;
                 bool arsenal = Arsenal.On;
-                Arsenal.On = false;   // the arsenal would swap the projectile of a round the player's tank "fires"
+                Arsenal.On = false;   // arsenal would swap the projectile of a round the player's tank "fires"
                 try { round.Init(null, _unit); }
                 finally { Arsenal.On = arsenal; }
                 // nutation (pen penalty over the first metres) and fuze timing see the flight from the virtual muzzle
@@ -1033,7 +1063,7 @@ namespace GHPCHitCam
         static readonly List<Rect> _uiRects = new List<Rect>();
         static int _picker;          // 0 none, 1 vehicles, 2 projectiles
 
-        /// Self-test: the vehicle list open (its mod tags), and the view moved off the middle as the middle button does.
+        /// self-test: vehicle list open (its mod tags) and the view moved off the middle like the middle button does
         internal static void TestPicker(bool on)
         {
             _picker = on ? 1 : 0;
@@ -1077,10 +1107,10 @@ namespace GHPCHitCam
             _ring.Apply();
         }
 
-        // the UI is laid out on a virtual screen of W x H (1080 px high or more, War Thunder's baseline) and scaled up by K
+        // UI is laid out on a virtual W x H screen (1080 px high or more, WT's baseline) and scaled up by K
         static float K = 1f, W = 1600f, H = 900f;
 
-        /// Screen pixels (y up) to UI coordinates.
+        /// screen pixels (y up) to UI coords
         static Vector2 ToUi(Vector2 screen) => new Vector2(screen.x / K, (Screen.height - screen.y) / K);
 
         public static void Draw()
@@ -1101,13 +1131,12 @@ namespace GHPCHitCam
             if (Event.current.type == EventType.Layout) _uiRects.Clear();
             if (_phase == Phase.Replay && _replay != null) { DrawReplay(_replay); return; }
 
-            // our own view, drawn by IMGUI: that comes after every canvas, so the game's HUD, map and loading screens stay
-            // under it untouched
+            // own view drawn by IMGUI, which comes after every canvas, so the game's HUD, map and loading screens stay untouched under it
             if (_viewRT != null) GUI.DrawTexture(new Rect(0, 0, W, H), _viewRT, ScaleMode.StretchToFill, false);
             if (_penMap && _penTex != null && _phase == Phase.View && _ghost != null)
                 GUI.DrawTexture(new Rect(0, 0, _penW * _penCell / K, _penH * _penCell / K), _penTex, ScaleMode.StretchToFill, true);
 
-            // the settings window open: only the view under it (its own panels would sit under the window)
+            // settings window open: only the view under it (its own panels would sit under the window)
             if (ConfigMenu.IsOpen) { _uiRects.Add(new Rect(0, 0, W, H)); return; }
             if (_aimOk && _phase == Phase.View) DrawAim();
             DrawPanel();
@@ -1319,7 +1348,7 @@ namespace GHPCHitCam
             }
         }
 
-        /// Leaving a sim the main menu started: back to the menu, or stay in the (quiet) mission.
+        /// leaving a sim the main menu started: back to the menu, or stay in the (quiet) mission
         static void DrawLeave()
         {
             float w = 440f, h = 140f;
@@ -1338,7 +1367,7 @@ namespace GHPCHitCam
 
         static readonly Color Olive = new Color32(0x90, 0x9E, 0x35, 255), Amber = new Color32(0xF6, 0xB2, 0x36, 255), WtRed = new Color32(0xFD, 0x00, 0x01, 255);
 
-        /// The hit cam, full screen: picture, verdict, module / crew row and the damage list.
+        /// hit cam full screen: picture, verdict, module / crew row and the damage list
         static void DrawReplay(Playback p)
         {
             var rt = HitCamPlayer.Texture;
@@ -1349,7 +1378,7 @@ namespace GHPCHitCam
             GUI.color = old;
             var rec = p.Latest;
 
-            // verdict banner (stays up: this is what the shot was for)
+            // verdict banner (stays up, it's what the shot was for)
             if (p.TitleWall >= 0f && p.T >= p.TitleWall)
             {
                 float ta = Mathf.Clamp01((p.T - p.TitleWall) / 0.15f);
@@ -1415,13 +1444,14 @@ namespace GHPCHitCam
 
         // ------------------------------------------------------------------ self-test
 
-        /// Opens the Armor Sim, picks a vehicle and a round, and for each aspect photographs the pen map, the aim tooltip,
-        /// fires at the hull and photographs the replay; then closes the mode and checks the test vehicle is gone.
+        /// opens the Armor Sim, picks a vehicle and a round, per aspect screenshots the pen map and aim tooltip, fires at the
+        /// hull and screenshots the replay, then closes the mode and checks the test vehicle is gone
         public static IEnumerator SelfTest(string vehicle, string ammo, string shots, string rangeText, string outDir, bool leaveOpen = false)
         {
             HitCamMod.Log.Msg($"ARMORSIM TEST: vehicle={vehicle} ammo={ammo} shots={shots} range={rangeText}");
             LogCanvases();
             Enter();
+            if (AutoTest.Opt("armorsim_keep", "false") == "true") _autoRepair = false;   // next shot hits the wreck
             float t0 = Time.realtimeSinceStartup;
             while (_phase != Phase.View && Time.realtimeSinceStartup - t0 < 30f) yield return null;
             if (_phase != Phase.View) { HitCamMod.Log.Warning("ARMORSIM TEST: the mode did not open"); Exit("test failed"); yield break; }
@@ -1459,7 +1489,7 @@ namespace GHPCHitCam
                 yield return null;
                 yield return null;
 
-                // aim at the hull: the middle of the vehicle at ~45 % of its height, else the nearest armour cell
+                // aim at the hull: vehicle's middle at ~45 % of its height, else the nearest armour cell
                 var b = _snap.LocalBounds;
                 Vector3 sp = _cam.WorldToScreenPoint(_origin + new Vector3(b.center.x, b.min.y + b.size.y * 0.42f, b.center.z));
                 _testCursor = new Vector2(sp.x, sp.y);
@@ -1567,7 +1597,7 @@ namespace GHPCHitCam
             catch { }
         }
 
-        /// Everything a real round meets along the aim ray (names, tags, armour, modules), for the log.
+        /// everything a real round meets along the aim ray (names, tags, armour, modules), for the log
         static void DumpRay(Vector3 o, Vector3 d)
         {
             try

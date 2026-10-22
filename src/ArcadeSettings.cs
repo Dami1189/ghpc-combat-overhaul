@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Arcade HUD settings (same [HitCam] section). Every aid has its own switch, because many GHPC players want none of them.
+    /// arcade HUD settings (same [HitCam] section), every aid has its own switch since lots of GHPC players want none of them
     internal static partial class Settings
     {
         public static MelonPreferences_Entry<bool> ArcadeHud;
@@ -78,7 +78,7 @@ namespace GHPCHitCam
             ConfigPauseGame = Cat.CreateEntry("ConfigPauseGame", true, description: "Pause the game while this window is open.");
             ArcadePenNumbers = Cat.CreateEntry("ArcadePenNumbers", false, description: "Also show the pen and armour in millimetres next to it.");
             ArcadeLayoutVersion = Cat.CreateEntry("ArcadeLayoutVersion", 0, is_hidden: true);
-            // 2026-10-20: War Thunder proportions (1080p baseline, smaller minimap). Move old defaults once, keep anything the player chose.
+            // 2026-10-20: WT proportions (1080p baseline, smaller minimap). move old defaults once, keep whatever the player picked
             if (ArcadeLayoutVersion.Value < 2)
             {
                 if (Mathf.Abs(MinimapSize.Value - 0.27f) < 0.001f) MinimapSize.Value = 0.21f;
@@ -86,7 +86,7 @@ namespace GHPCHitCam
             }
             if (ArcadeLayoutVersion.Value < 3)
             {
-                // the kill feed became War Thunder's battle log over the minimap; results moved to the top-centre stack
+                // kill feed is now WT's battle log over the minimap, results moved to the top-centre stack
                 if (KillFeedSide.Value == "Left") KillFeedSide.Value = "Right";
                 ArcadeLayoutVersion.Value = 3;
             }

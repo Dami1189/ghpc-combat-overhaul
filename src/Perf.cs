@@ -8,18 +8,18 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Self-profiler (setting Profiler; always on in the self-test). Times every Harmony hook of the mod (each of our
-    /// patch methods gets a timing prefix/postfix of its own) and the named sections of its per-frame work, and when a
-    /// frame takes much longer than the ones before it, logs what ran in that frame and whether the GC ran.
+    /// self-profiler (setting Profiler, always on in the self-test). times every Harmony hook of the mod (each of our
+    /// patch methods gets its own timing prefix/postfix) and the named sections of the per-frame work, and when a frame
+    /// takes way longer than the ones before, logs what ran in it and whether the GC ran
     internal static class Perf
     {
         public static bool On;
-        public static double LastFrameMod;     // the mod's own time in the frame before (self-test FpsProbe)
+        public static double LastFrameMod;     // mod's own time in the frame before (self-test FpsProbe)
 
         class Stat
         {
             public string Name;
-            public bool Child;          // a section inside another one: left out of the per-frame sum
+            public bool Child;          // section inside another one: left out of the per-frame sum
             public int Calls, FrameCalls;
             public double Total, Max, Frame;
         }
@@ -40,10 +40,10 @@ namespace GHPCHitCam
             public void Dispose() { if (_n != null) Add(_n, Stopwatch.GetTimestamp() - _t); }
         }
 
-        /// using (Perf.T("name")) { ... }   - a name with '/' is a part of another section
+        /// using (Perf.T("name")) { ... }   - a name with '/' is part of another section
         public static Scope T(string name) => On ? new Scope(name) : default;
 
-        /// Lap timer for the parts of one long method: long t = Perf.Now; ...; Perf.Lap("Part/a", ref t); ...
+        /// lap timer for the parts of one long method: long t = Perf.Now; ...; Perf.Lap("Part/a", ref t); ...
         public static long Now => Stopwatch.GetTimestamp();
         public static void Lap(string name, ref long t)
         {
@@ -65,7 +65,7 @@ namespace GHPCHitCam
             s.Frame += ms;
         }
 
-        /// Wraps every prefix / postfix / finalizer this mod put on the game's methods in a timer.
+        /// wraps every prefix / postfix / finalizer this mod put on the game's methods in a timer
         public static void InstrumentHooks(HarmonyLib.Harmony h)
         {
             if (!On) return;
@@ -100,7 +100,7 @@ namespace GHPCHitCam
             if (__originalMethod != null && _hookNames.TryGetValue(__originalMethod, out var name)) Add(name, Stopwatch.GetTimestamp() - __state);
         }
 
-        /// First thing in the mod's Update: closes the frame before (everything timed since the last call).
+        /// first thing in the mod's Update: closes the frame before (everything timed since the last call)
         public static void FrameStart()
         {
             if (!On) return;
@@ -137,7 +137,7 @@ namespace GHPCHitCam
             _touched.Clear();
         }
 
-        /// Every section's time so far (ms), for a difference over a stretch of frames.
+        /// every section's time so far (ms), to diff over a stretch of frames
         public static Dictionary<string, double> Totals() => _stats.ToDictionary(kv => kv.Key, kv => kv.Value.Total);
 
         public static string Report(int lines = 30)

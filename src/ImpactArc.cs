@@ -6,40 +6,40 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// The first thing the loaded round would hit, from its real flight.
+    /// first thing the loaded round would hit, from its real flight
     internal struct ArcResult
     {
-        public bool Hit;              // something within range
+        public bool Hit;              // something in range
         public Vector3 Point;         // where
-        public Vector3 Dir;           // the round's direction there
+        public Vector3 Dir;           // round's direction there
         public float Speed;           // m/s there
         public float Time;            // s of flight
         public float Path;            // m flown along the arc
         public float Pen;             // its pen rating there (LiveRound.CurrentPenRating rules)
         public bool Armed;            // HEAT: past its arming distance
         public PenResult Probe;       // what it met: armour (verdict) / ground / scenery / a friendly
-        public Unit Unit;             // the vehicle it hits (null: ground / scenery / nothing)
-        public bool Moving;           // hit worked out in that vehicle's moving frame (it travels during the flight)
+        public Unit Unit;             // vehicle it hits (null: ground / scenery / nothing)
+        public bool Moving;           // hit worked out in that vehicle's moving frame (it moves during the flight)
     }
 
-    /// Flies the loaded round the way the game does and finds where it lands:
-    /// - start: the muzzle, along the barrel (MuzzleIdentity.forward), velocity = MuzzleVelocity * forward + the vehicle's own
+    /// flies the loaded round like the game does and finds where it lands:
+    /// - start: the muzzle, along the barrel (MuzzleIdentity.forward), velocity = MuzzleVelocity * forward + vehicle's own
     ///   velocity, speed x (1 + 0.0004 (ammo temp F - 70)) (WeaponSystem.Fire + LiveRound.Init); so the gun's current
     ///   superelevation / zeroing is in it, whatever range the FCS is set to
     /// - flight: BallisticEvaluatorRK4's own step, a = g - Coeff * SectionalArea * AirDensity / Mass * v|v|
-    /// - each ~35 m step is raycast against what rounds hit (LiveRoundLayerMask plus the "Raycast Only Groups" boxes that
-    ///   switch a vehicle's armour colliders on); the first hit is read with PenProbe from just in front of it
-    /// - vehicles that move are left out of that march: for each one the arc is re-walked in its own moving frame
-    ///   (arc point - its velocity x time of flight), so the hit lands where it really would if fired now, shown on the
+    /// - each ~35 m step gets raycast against what rounds hit (LiveRoundLayerMask plus the "Raycast Only Groups" boxes
+    ///   that turn a vehicle's armour colliders on); first hit is read with PenProbe from just in front of it
+    /// - moving vehicles are left out of that march: for each one the arc is re-walked in its own moving frame
+    ///   (arc point - its velocity x flight time), so the hit lands where it really would if fired now, shown on the
     ///   vehicle where it is now
-    /// Plain raycasts for the march (cheap), the game's collider-group raycast only where something was hit. No allocations.
+    /// plain raycasts for the march (cheap), game's collider-group raycast only where something got hit. no allocations
     internal static class ImpactArc
     {
         const int MaxSteps = 240;
         static readonly Vector3[] _p = new Vector3[MaxSteps + 2];
         static readonly float[] _t = new float[MaxSteps + 2], _s = new float[MaxSteps + 2], _sp = new float[MaxSteps + 2];
         static int _n;
-        /// Vehicles moving faster than ~0.5 m/s (filled by the caller each update) and their velocities.
+        /// vehicles moving faster than ~0.5 m/s (caller fills it every update) and their velocities
         public static readonly List<Unit> Moving = new List<Unit>();
         public static readonly List<Vector3> MovingVel = new List<Vector3>();
         static float _vMax;
@@ -116,7 +116,7 @@ namespace GHPCHitCam
             return u != null && Moving.Contains(u);
         }
 
-        /// The arc walked in each moving vehicle's frame: q(t) = p(t) - v * t. The first one it meets (before `before`).
+        /// arc walked in each moving vehicle's frame: q(t) = p(t) - v * t. first one it meets (before `before`)
         static bool MovingHit(AmmoType a, Unit ignore, Faction side, float before, out ArcResult best)
         {
             best = default;
@@ -135,7 +135,7 @@ namespace GHPCHitCam
                     float len = seg.magnitude;
                     if (len < 1e-4f) continue;
                     Vector3 dir = seg / len;
-                    // only the stretch of the relative path that passes the vehicle
+                    // only the bit of the relative path that passes the vehicle
                     float along = Mathf.Clamp(Vector3.Dot(c - q0, dir), 0f, len);
                     if ((q0 + dir * along - c).sqrMagnitude > 12f * 12f) continue;
                     Vector3 o = q0;
@@ -162,8 +162,8 @@ namespace GHPCHitCam
             return best.Hit;
         }
 
-        /// Flight along a straight aim line: the time to reach `range` metres down it and how far the round has dropped
-        /// below the line by then (the game's RK4 + drag), for a weapon's lead.
+        /// flight along a straight aim line: time to reach `range` m down it and how far the round dropped below the line
+        /// by then (game's RK4 + drag), for a weapon's lead
         public static bool Flight(AmmoType a, Vector3 dir, Vector3 ownVel, float range, out float time, out float drop)
         {
             time = 0f; drop = 0f;
@@ -194,7 +194,7 @@ namespace GHPCHitCam
             return false;
         }
 
-        /// BallisticEvaluatorRK4.Integrate, step for step.
+        /// BallisticEvaluatorRK4.Integrate, step for step
         static void Step(ref Vector3 p, ref Vector3 v, float dt, float k, Vector3 g)
         {
             Vector3 a1 = Acc(v, k, g);
@@ -210,7 +210,7 @@ namespace GHPCHitCam
 
         static Vector3 Acc(Vector3 v, float k, Vector3 g) => g - k * v.magnitude * v;
 
-        /// The round's pen after `path` metres at speed `speed` (LiveRound.CurrentPenRating).
+        /// round's pen after `path` m at speed `speed` (LiveRound.CurrentPenRating)
         public static float PenAt(AmmoType a, float speed, float vMax, float path, out bool armed)
         {
             armed = a.Category != AmmoType.AmmoCategory.ShapedCharge || a.ArmingDistance <= 0f || path >= a.ArmingDistance;
@@ -255,12 +255,12 @@ namespace GHPCHitCam
                     frac = Mathf.Clamp01((at + Mathf.Max(pr.Distance - 0.3f, 0f)) / len);
                     return true;
                 }
-                // a vehicle's bounding box with nothing solid on this line: carry on through it
+                // vehicle bounding box with nothing solid on this line: keep going through it
             }
             return false;
         }
 
-        /// Where the last arc was when it had flown `path` metres (clamped to what was computed).
+        /// where the last arc was after flying `path` m (clamped to what was computed)
         public static bool PointAtPath(float path, out Vector3 p, out float time)
         {
             p = default; time = 0f;
@@ -277,7 +277,7 @@ namespace GHPCHitCam
             return false;
         }
 
-        /// Where the last arc crossed a sphere of `range` metres around `from` (the first time), and when.
+        /// where the last arc first crossed a sphere of `range` m around `from`, and when
         public static bool PointAtRange(Vector3 from, float range, out Vector3 p, out float time)
         {
             p = default; time = 0f;

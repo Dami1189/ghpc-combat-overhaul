@@ -7,10 +7,10 @@ using UnityEngine.Networking;
 
 namespace GHPCHitCam
 {
-    /// Arcade HUD sounds, synthesized at start (no game or War Thunder assets): a short tick when your round strikes a
-    /// vehicle, a metallic ring when it penetrates / does real damage, and a low boom with a rising two-note chime for a kill.
-    /// Your own files replace them: UserData/HitCam/sfx/hit|pen|kill .ogg / .wav / .mp3 (loaded once per game start).
-    /// Played through Unity audio (GHPC plays its music and crew voices that way too), 2D, volume ArcadeSfxVolume.
+    /// arcade HUD sounds, synthesized at start (no game or War Thunder assets): tick when our round hits a vehicle,
+    /// metal ring on pen / real damage, low boom + rising two-note chime on a kill
+    /// own files replace them: UserData/HitCam/sfx/hit|pen|kill .ogg/.wav/.mp3 (loaded once per game start)
+    /// played through Unity audio like GHPC's music and crew voices, 2D, volume ArcadeSfxVolume
     internal static class HudSfx
     {
         const int Rate = 44100;
@@ -39,7 +39,7 @@ namespace GHPCHitCam
             catch (Exception e) { HitCamMod.Log.Warning("HUD sound failed: " + e.Message); }
         }
 
-        /// Loudest sample Unity is putting out right now (self-test: proves the sound reaches the mix).
+        /// loudest sample Unity puts out right now (self-test: proves the sound reaches the mix)
         public static float OutputPeak()
         {
             try
@@ -58,7 +58,7 @@ namespace GHPCHitCam
         static bool _customTried;
         public static string CustomLoaded = "";
 
-        /// Looks for the player's own sounds once (UserData/HitCam/sfx), loading them in the background.
+        /// looks for the player's own sounds once (UserData/HitCam/sfx), loads them in the background
         public static void Preload()
         {
             if (_customTried) return;
@@ -135,18 +135,18 @@ namespace GHPCHitCam
             return clip;
         }
 
-        /// Loudest sample our own source has put out since the last reset (after its volume, before the game's master volume).
+        /// loudest sample our own source put out since last reset (after its volume, before the game's master volume)
         public static float MeterPeak => SfxMeter.Peak;
         public static void ResetMeter() => SfxMeter.Peak = 0f;
 
         static float Env(float t, float attack, float tau) => (t < attack ? t / attack : 1f) * Mathf.Exp(-Mathf.Max(t - attack, 0f) / tau);
 
-        // deterministic noise (no UnityEngine.Random state touched)
+        // deterministic noise, leaves UnityEngine.Random state alone
         static uint _seed = 1234567;
         static float Noise() { _seed = _seed * 1664525u + 1013904223u; return ((_seed >> 9) / 4194304f) - 1f; }
 
         static float _hp;
-        /// Tick: a bright click (high-passed noise + 2.6 kHz) over a tiny thump.
+        /// tick: bright click (high-passed noise + 2.6 kHz) over a tiny thump
         static float HitWave(float t)
         {
             if (t == 0f) { _hp = 0f; _seed = 99; }
@@ -157,7 +157,7 @@ namespace GHPCHitCam
                  + 0.45f * Mathf.Sin(2f * Mathf.PI * 520f * t) * Env(t, 0.001f, 0.012f);
         }
 
-        /// Penetration / real damage: a struck-steel ring (inharmonic partials) on a short low knock.
+        /// pen / real damage: struck-steel ring (inharmonic partials) on a short low knock
         static float PenWave(float t)
         {
             float ring = 0.55f * Mathf.Sin(2f * Mathf.PI * 1180f * t) * Env(t, 0.002f, 0.13f)
@@ -167,7 +167,7 @@ namespace GHPCHitCam
             return ring + knock;
         }
 
-        /// Kill: a falling low boom with a burst of noise, then two rising chime notes.
+        /// kill: falling low boom with a noise burst, then two rising chime notes
         static float KillWave(float t)
         {
             if (t == 0f) _seed = 4242;
@@ -179,7 +179,7 @@ namespace GHPCHitCam
         }
     }
 
-    /// Sits on the sound object: Unity hands it the source's samples on the audio thread (self-test: proves the clips play).
+    /// sits on the sound object: Unity hands it the source's samples on the audio thread (self-test: proves the clips play)
     internal class SfxMeter : MonoBehaviour
     {
         public static volatile float Peak;

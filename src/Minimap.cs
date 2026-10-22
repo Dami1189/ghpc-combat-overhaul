@@ -8,13 +8,12 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Corner map, War Thunder style: you (hull arrow, view cone, gun line), every unit as its class icon (MapIcons: light /
-    /// medium / heavy tank, tank destroyer, SPAA, IFV, truck, infantry, anti-tank team, emplacement, helicopter, plane), blue
-    /// friendly / red enemy / grey with a cross when destroyed. Enemies by MinimapEnemies (Spotted = Contacts' spotting,
-    /// Always, Off). The map is cut into 8 x 8 lettered squares (A-H from the north, 1-8 from the west), mission objectives
-    /// with a map marker are lettered circles. North-up or player-up (MinimapPlayerUp), zoom keys. Scale from the game's own
-    /// map bounds (GHPC.UI.TopoMapCamera.bounds), else the terrain tiles; under it a one-time top-down picture of the map
-    /// (MinimapTerrain). Drawn with GL into a small render texture; labels with IMGUI over it.
+    /// WT style corner map: you (hull arrow, view cone, gun line), every unit as its class icon (MapIcons: light / medium /
+    /// heavy tank, TD, SPAA, IFV, truck, infantry, AT team, emplacement, heli, plane), blue friendly / red enemy / grey with
+    /// a cross when dead. enemies by MinimapEnemies (Spotted = Contacts' spotting, Always, Off). map cut into 8 x 8 lettered
+    /// squares (A-H from the north, 1-8 from the west), objectives with a map marker are lettered circles. north-up or
+    /// player-up (MinimapPlayerUp), zoom keys. scale from the game's own map bounds (GHPC.UI.TopoMapCamera.bounds), else the
+    /// terrain tiles, under it a one-time top-down picture of the map (MinimapTerrain). GL into a small render texture, IMGUI labels on top
     internal static class Minimap
     {
         static RenderTexture _rt;
@@ -22,7 +21,7 @@ namespace GHPCHitCam
         static Material _lines, _tex;
         static Bounds _map;
         static bool _hasMap, _mapTried, _pg;
-        static readonly float[] Zooms = { 250f, 500f, 1000f, 2000f, 4000f };   // half-width in metres
+        static readonly float[] Zooms = { 250f, 500f, 1000f, 2000f, 4000f };   // half-width in m
         static int _zoom = 2;
         static float _nextRender;
         const int N = 320;
@@ -34,6 +33,7 @@ namespace GHPCHitCam
         {
             _hasMap = false;
             _mapTried = false;
+            _mapGen++;
             if (_terrain != null) UnityEngine.Object.Destroy(_terrain);
             _terrain = null;
         }
@@ -42,7 +42,7 @@ namespace GHPCHitCam
         {
             if (Hotkeys.Down(Settings.MinimapZoomInKey)) _zoom = Mathf.Max(0, _zoom - 1);
             if (Hotkeys.Down(Settings.MinimapZoomOutKey)) _zoom = Mathf.Min(Zooms.Length - 1, _zoom + 1);
-            // the proving ground's deck appears (or goes): picture the map again so the deck is on it
+            // proving ground deck shows up (or goes): picture the map again so the deck is on it
             if (ProvingGround.Active != _pg) { _pg = ProvingGround.Active; Reset(); }
             if (!_mapTried) { _mapTried = true; FindMap(); }
             if (Time.unscaledTime >= _nextObjectives) { _nextObjectives = Time.unscaledTime + 1f; FindObjectives(); }
@@ -61,8 +61,8 @@ namespace GHPCHitCam
         static bool _objReflectFailed;
         static string _objKey = "";
 
-        /// The mission's objectives that have a marker in the world (ObjectiveData.LinkedMarker, what the tactical map
-        /// centres on), with their state from the objective list (shown ones only).
+        /// mission objectives that have a marker in the world (ObjectiveData.LinkedMarker, what the tactical map centres on),
+        /// state from the objective list (shown ones only)
         static void FindObjectives()
         {
             Objectives.Clear();
@@ -115,7 +115,7 @@ namespace GHPCHitCam
                 if (topo != null && topo.bounds.size.x > 50f)
                 {
                     _map = topo.bounds;
-                    // the tactical map pans in +-extents around the origin
+                    // tactical map pans in +-extents around the origin
                     _map.center = new Vector3(0f, _map.center.y, 0f);
                     _hasMap = true;
                 }
@@ -133,10 +133,22 @@ namespace GHPCHitCam
                 }
             }
             HitCamMod.Log.Msg(_hasMap ? $"Minimap: map {(_map.center - _map.extents):F0} .. {(_map.center + _map.extents):F0}" : "Minimap: no map bounds, grid only");
-            if (_hasMap && Settings.MinimapTerrain.Value) BuildTerrain();
+            if (_hasMap && Settings.MinimapTerrain.Value) MelonLoader.MelonCoroutines.Start(TerrainLater(_mapGen));
         }
 
-        /// One top-down picture of the whole map: the terrain from far above, rendered once.
+        static int _mapGen;
+
+        /// picture a few seconds into the mission, at end of frame: rendered while the mission was still setting up, the extra
+        /// camera ran the game's instanced vegetation through its pre-cull while it was still registering groups
+        /// ("Collection was modified" from InstancedMeshRenderer, twice per mission start)
+        static System.Collections.IEnumerator TerrainLater(int gen)
+        {
+            yield return new WaitForSecondsRealtime(4f);
+            yield return new WaitForEndOfFrame();
+            if (gen == _mapGen && _hasMap && _terrain == null) BuildTerrain();
+        }
+
+        /// one top-down picture of the whole map: terrain from far above, rendered once
         static void BuildTerrain()
         {
             GameObject go = null;
@@ -177,7 +189,7 @@ namespace GHPCHitCam
                 tex.ReadPixels(new Rect(0, 0, size, size), 0, 0);
                 tex.Apply(true);
                 RenderTexture.active = prev;
-                // a flat picture (nothing drawn) is useless: keep the plain grid then
+                // flat picture (nothing drawn) is useless, keep the plain grid then
                 var px = tex.GetPixels32(4);
                 float min = 999f, max = -1f;
                 foreach (var p in px) { float l = p.r + p.g + p.b; min = Mathf.Min(min, l); max = Mathf.Max(max, l); }
@@ -212,7 +224,7 @@ namespace GHPCHitCam
         static Vector3 _c;
         static float _s, _cos = 1f, _sin;
 
-        /// World x/z to minimap pixels (y up, north up unless player-up).
+        /// world x/z to minimap pixels (y up, north up unless player-up)
         static Vector2 P(Vector3 w)
         {
             float x = w.x - _c.x, z = w.z - _c.z;
@@ -220,7 +232,7 @@ namespace GHPCHitCam
             return new Vector2(N * 0.5f + rx * _s, N * 0.5f + rz * _s);
         }
 
-        /// A world direction (x/z) rotated into the map.
+        /// world direction (x/z) rotated into the map
         static Vector2 D(Vector3 d)
         {
             float rx = d.x * _cos - d.z * _sin, rz = d.x * _sin + d.z * _cos;
@@ -243,7 +255,7 @@ namespace GHPCHitCam
             if (Settings.MinimapPlayerUp.Value)
             {
                 Vector3 f = player.transform.forward;
-                float yaw = Mathf.Atan2(f.x, f.z);           // clockwise from north; turning the map back by it puts the hull up
+                float yaw = Mathf.Atan2(f.x, f.z);           // clockwise from north, turning the map back by it puts the hull up
                 _sin = Mathf.Sin(yaw);
                 _cos = Mathf.Cos(yaw);
             }
@@ -255,7 +267,7 @@ namespace GHPCHitCam
             GL.LoadPixelMatrix(0, N, 0, N);
             GL.Clear(false, true, new Color(0.04f, 0.05f, 0.06f, 0.92f));
 
-            // terrain picture over the map's extent
+            // terrain picture over the map extent
             if (_terrain != null && _tex != null && _hasMap)
             {
                 _tex.mainTexture = _terrain;
@@ -268,7 +280,7 @@ namespace GHPCHitCam
             }
 
             _lines.SetPass(0);
-            // grid, world-aligned
+            // grid, world aligned
             float g = HalfWidth <= 300f ? 100f : HalfWidth <= 600f ? 250f : HalfWidth <= 1200f ? 500f : 1000f;
             float reach = HalfWidth * 1.5f;
             GL.Begin(GL.LINES);
@@ -277,7 +289,7 @@ namespace GHPCHitCam
                 Seg(new Vector3(x, 0, _c.z - reach), new Vector3(x, 0, _c.z + reach));
             for (float z = Mathf.Floor((_c.z - reach) / g) * g; z <= _c.z + reach; z += g)
                 Seg(new Vector3(_c.x - reach, 0, z), new Vector3(_c.x + reach, 0, z));
-            // the map's 8 x 8 lettered squares (War Thunder's grid), a little brighter
+            // map's 8 x 8 lettered squares (WT grid), a bit brighter
             if (_hasMap)
             {
                 float sq = Square;
@@ -300,7 +312,7 @@ namespace GHPCHitCam
                 Seg(new Vector3(mx.x, 0, mx.z), new Vector3(mn.x, 0, mx.z));
                 Seg(new Vector3(mn.x, 0, mx.z), new Vector3(mn.x, 0, mn.z));
             }
-            // where the gun points: a faint line to the aim point
+            // where the gun points: faint line to the aim point
             if (ArcadeHud.HasAim)
             {
                 GL.Color(new Color(1f, 1f, 1f, 0.35f));
@@ -310,7 +322,7 @@ namespace GHPCHitCam
 
             float u = Mathf.Max(N / 320f, 0.5f);
             Vector2 mid = new Vector2(N * 0.5f, N * 0.5f);
-            // your view: a faint cone along the camera
+            // your view: faint cone along the camera
             var cam = ArcadeHud.Cam;
             if (cam != null)
             {
@@ -410,7 +422,7 @@ namespace GHPCHitCam
 
         static readonly List<(Contacts.Contact c, Color col)> _drawn = new List<(Contacts.Contact, Color)>();
 
-        /// The side of one of the map's 8 x 8 squares, in metres.
+        /// side of one 8 x 8 square, in m
         static float Square => Mathf.Max(_map.extents.x, _map.extents.z) * 2f / 8f;
 
         static Vector2 Rot(Vector2 v, float a)
@@ -419,7 +431,7 @@ namespace GHPCHitCam
             return new Vector2(v.x * cs - v.y * sn, v.x * sn + v.y * cs);
         }
 
-        /// A class icon from the atlas, upright, centred on p (map pixels).
+        /// class icon from the atlas, upright, centred on p (map pixels)
         static void Icon(Vector2 p, float h, MapClass cls, Color c)
         {
             var uv = MapIcons.Uv(cls);
@@ -430,7 +442,7 @@ namespace GHPCHitCam
             GL.TexCoord2(uv.xMin, uv.yMax); GL.Vertex3(p.x - h, p.y + h, 0);
         }
 
-        /// Which of the 8 x 8 squares a point is in ("C4": rows A-H from the north, columns 1-8 from the west).
+        /// which 8 x 8 square a point is in ("C4": rows A-H from the north, columns 1-8 from the west)
         public static string SquareName(Vector3 w)
         {
             if (!_hasMap) return "";
@@ -457,7 +469,7 @@ namespace GHPCHitCam
             GL.TexCoord2(0, 1); GL.Vertex3(pd.x, pd.y, 0);
         }
 
-        /// A filled arrowhead at p pointing along d (map pixels).
+        /// filled arrowhead at p pointing along d (map pixels)
         static void Arrow(Vector2 p, Vector2 d, float r, Color c)
         {
             Vector2 side = new Vector2(-d.y, d.x);
@@ -503,7 +515,7 @@ namespace GHPCHitCam
             // map pixels -> screen
             Vector2 G(Vector2 pm) => new Vector2(x + pm.x / N * size, y + (N - pm.y) / N * size);
             var lf = HudGfx.Font(10f * k, TextAnchor.MiddleCenter, true);
-            // the squares' letters and numbers along the top and left edges (north-up only: they stay put)
+            // squares' letters and numbers along top and left edges (north-up only, there they stay put)
             if (_hasMap && !Settings.MinimapPlayerUp.Value)
             {
                 float sq = Square;

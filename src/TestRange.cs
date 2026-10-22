@@ -17,9 +17,9 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// Test range around the player: passive target vehicles in front, and helicopters flying loops overhead.
-    /// F7 spawns a wave (again = another wave). Uses the game's own UnitSpawner, so targets are real units
-    /// with real armor, modules and crew.
+    /// test range around the player: passive target vehicles in front, helis flying loops overhead.
+    /// F7 spawns a wave (again = another wave). uses the game's own UnitSpawner so targets are real units
+    /// with real armor, modules and crew
     internal static class TestRange
     {
         static readonly string[] Ground = { "T72M1", "T80B", "BMP2", "BTR70", "M113", "M1IP", "LEO2A3", "BRDM2" };
@@ -44,7 +44,7 @@ namespace GHPCHitCam
         public static void Update()
         {
             if (Hotkeys.Down(Settings.RangeKey) && !_busy) MelonCoroutines.Start(SpawnWave());
-            // helicopters only get their engine forced on for the first seconds; keep them on station afterwards
+            // helis only get the engine forced on for the first seconds, keep them on station after that
             for (int i = _flyers.Count - 1; i >= 0; i--)
                 if (_flyers[i].u == null || _flyers[i].u.Destroyed) _flyers.RemoveAt(i);
         }
@@ -72,7 +72,7 @@ namespace GHPCHitCam
             var newGround = new List<Unit>();
             for (int i = 0; i < Ground.Length; i++)
             {
-                // two rows; front row side-on (side shots), back row facing you (frontal armor)
+                // two rows: front row side-on (side shots), back row facing you (frontal armor)
                 bool back = i % 2 == 1;
                 Vector3 pos = p0 + fwd * (350f + lane + (back ? 150f : 0f)) + right * ((i / 2 - 1.5f) * 45f);
                 Quaternion rot = Quaternion.LookRotation(back ? -fwd : right);
@@ -99,7 +99,7 @@ namespace GHPCHitCam
             // let Start()/AI startup run before giving orders
             yield return null;
             yield return null;
-            foreach (var u in newGround) MakePassive(u);
+            foreach (var u in newGround) { MakePassive(u); ProvingGround.WakeAudio(u); }
             foreach (var h in newHelis)
             {
                 try { Fly(h.Item1, h.Item2, h.Item3, h.Item4, h.Item5); _flyers.Add(h); }
@@ -147,7 +147,7 @@ namespace GHPCHitCam
             catch (Exception e)
             {
                 HitCamMod.Log.Warning($"Test range: spawn {key} failed: {e.Message}");
-                if (_spawnErrs.Add(key)) HitCamMod.Log.Warning(e.ToString());   // the whole error once a vehicle
+                if (_spawnErrs.Add(key)) HitCamMod.Log.Warning(e.ToString());   // whole error once per vehicle
                 return null;
             }
         }
@@ -158,7 +158,7 @@ namespace GHPCHitCam
             return ok ? g.y : p.y;
         }
 
-        /// Range targets stand still and don't fight back.
+        /// range targets stand still and don't shoot back
         internal static void MakePassive(Unit u)
         {
             if (u == null) return;
@@ -221,7 +221,7 @@ namespace GHPCHitCam
             GUI.Label(new Rect(14, Screen.height * 0.32f - 52, 900, 24), _msg, _st);
         }
 
-        /// For the self-test: spawn a wave and wait until it is done.
+        /// for the self-test: spawn a wave and wait until it's done
         public static IEnumerator SpawnWaveAndWait()
         {
             yield return SpawnWave();

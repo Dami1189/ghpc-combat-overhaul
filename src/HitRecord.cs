@@ -9,23 +9,23 @@ namespace GHPCHitCam
 
     internal enum FragKind { Main, Spall }
 
-    /// VentFire / FireBurst / HatchBlown / TurretOff: what the game itself shows of a fire or a cook-off (flames out of
-    /// a hatch or a hole, a flame burst out of every open exit, a hatch blown open, the turret thrown off).
+    /// VentFire / FireBurst / HatchBlown / TurretOff: what the game itself shows of a fire or cook-off
+    /// (flames out of a hatch or hole, flame burst out of every open exit, hatch blown open, turret thrown off)
     internal enum EvKind { Story, ArmorPen, ArmorStop, Ricochet, Module, Crew, CrewHit, AmmoHit, Fire, AmmoFire, Explosion, Knockout, Kill, VentFire, FireBurst, HatchBlown, TurretOff, Breach }
 
-    /// One body-part hit (drives the ragdoll; not listed in the UI).
+    /// one body-part hit (drives the ragdoll, not listed in the UI)
     internal class CrewHitRef { public CrewInfo Crew; public GHPC.Equipment.DestructibleComponent Part; }
 
-    /// One recorded position of a round / fragment. Positions are in target-local space.
+    /// one recorded position of a round / fragment, in target-local space
     internal class PathPoint
     {
-        public Vector3 W;          // world position when recorded (debug only)
-        public Vector3 L;          // target-local position
+        public Vector3 W;          // world pos when recorded (debug only)
+        public Vector3 L;          // target-local pos
         public bool HasL;
         public float Speed;        // m/s, <= 0 if unknown
         public bool Impact;        // came from penCheck (hit something)
         public bool Jet;           // HEAT jet segment
-        public float Sim;          // synthesized simulation time (s), 0 = first impact on target
+        public float Sim;          // synthesized sim time (s), 0 = first impact on target
     }
 
     internal class Fragment
@@ -80,20 +80,20 @@ namespace GHPCHitCam
         public string Name;
         public Vector3 L, NormalL, DirL;
         public float Los, Nominal, Pen, Angle;
-        public float Energy;           // J delivered to the plate: rod 1/2 m v^2, HEAT jet ~ pen, HE coupled blast
+        public float Energy;           // J into the plate: rod 1/2 m v^2, HEAT jet ~ pen, HE coupled blast
         public float Speed;            // m/s at impact
         public float Caliber, RodRadius;   // m: shell diameter and the penetrator's own radius (sub-calibre rods)
         public float Tnt;              // kg TNT equivalent of the filler
         public bool Penetrated, Ricochet, Era, IsSpall, PreJet;
-        // the drawn surface at the hit (the armour colliders are boxes that only roughly follow the hull: a grazing round
-        // can strike the thin end face of a cover's box although it skims along the visible plate)
+        // drawn surface at the hit (armour colliders are boxes that only roughly follow the hull, a grazing round
+        // can hit the thin end face of a cover's box while it skims along the visible plate)
         public bool SurfDone, HasSurf;
         public Vector3 SurfPointL, SurfNormalL;
-        public float SurfAngle;        // degrees between the round's path and that surface (0 = grazing)
-        /// The struck armour piece itself, as the game models it (its collider mesh / box), in target-local space:
-        /// a flat list of triangle corners. This is the real plate: its outline, curvature and edges.
+        public float SurfAngle;        // deg between the round's path and that surface (0 = grazing)
+        /// the struck armour piece as the game models it (its collider mesh / box), target-local, flat list of triangle
+        /// corners. the real plate: outline, curvature, edges
         public Vector3[] PlateTris;
-        // that plate's struck face, worked out once (it was three times per plate: ~16 ms each on a big casting)
+        // that plate's struck face, worked out once (was 3x per plate, ~16 ms each on a big casting)
         public bool FaceDone;
         public System.Collections.Generic.List<Vector3> FaceTris;
         public Vector3 FaceN, FaceAt;
@@ -111,7 +111,7 @@ namespace GHPCHitCam
         public Vector3 L;
         public bool HasPos;
         public float RealT;        // Time.time when it happened
-        public float Sim = float.NaN; // filled by Timeline; PositiveInfinity = late event (aftermath)
+        public float Sim = float.NaN; // set by Timeline; PositiveInfinity = late event (aftermath)
         public float Before = -1, After = -1;
         public object Ref;         // DestructibleComponent / crew key / AmmoVisual / FlammableItem
         public int Severity;       // 0 info, 1 damage, 2 heavy, 3 critical/destroyed
@@ -127,6 +127,7 @@ namespace GHPCHitCam
         public int Id;
         public ShotInfo RootShot;
         public Unit Target;
+        public bool OnWreck;          // target was already knocked out when the round got there
         public string TargetName = "?";
         public string ShooterName = "?";
         public bool PlayerShot;
@@ -147,14 +148,14 @@ namespace GHPCHitCam
         public bool Saved;
         public bool CookOffShown;      // its rack cooked off after the hit cam closed and got a follow-up replay
         public float InteriorEnd = 0.004f;
-        public float CoreEnd = 0.003f;      // main round done inside the vehicle: gets most of the slow motion
+        public float CoreEnd = 0.003f;      // main round done inside the vehicle, gets most of the slow-mo
         public float ApproachStart = -0.004f;
         public Vector3 EntryL, EntryDirL;
         public bool HasEntry;
         public string Title = "HIT";
         public Color TitleColor = Color.white;
         public bool TargetKilled, TargetKnockedOut;
-        public float OutAt = -1f;       // Time.time it was first out of the fight (destroyed, knocked out, bailed out)
+        public float OutAt = -1f;       // Time.time it first went out of the fight (destroyed, knocked out, bailed out)
 
         public Vector3 ToLocal(Vector3 world)
         {
@@ -172,7 +173,7 @@ namespace GHPCHitCam
         {
             Events.Add(e);
             LastActivityReal = Time.time;
-            WorldVents.OnEvent(this, e);       // the hull's pressure in the world (flame out of the holes)
+            WorldVents.OnEvent(this, e);       // hull pressure out into the world (flame out of the holes)
         }
     }
 }
