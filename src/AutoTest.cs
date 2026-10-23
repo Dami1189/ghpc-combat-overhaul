@@ -994,7 +994,7 @@ namespace GHPCHitCam
                 if (shot == 0)
                     HitCamMod.Log.Msg($"AUTOTEST main camera '{main.name}' path={main.actualRenderingPath} hdr={main.allowHDR} clear={main.clearFlags} mask={main.cullingMask:X} comps: "
                         + string.Join(", ", main.GetComponents<Component>().Select(c => c.GetType().Name)));
-                go = UnityEngine.Object.Instantiate(main.gameObject);
+                go = ModuleTest.CloneMainCamera(main.gameObject);
                 foreach (Transform ch in go.transform) UnityEngine.Object.Destroy(ch.gameObject);
                 foreach (var mb in go.GetComponents<Behaviour>())
                 {

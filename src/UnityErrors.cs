@@ -4,13 +4,15 @@ using UnityEngine;
 
 namespace GHPCHitCam
 {
-    /// unity errors normally only end up in unity's log which melonloader doesn't show (a tester had "no logs"),
-    /// so they get copied into the melon log with whose code it was, a few times each
+    /// unity errors normally only end up in unity's log which melonloader doesn't show (a tester had "no logs"), so
+    /// they get copied into the melon log, a few times each: ours under our name, the game's and other mods' under
+    /// "Game or other mods, not Combat Overhaul"
     internal static class UnityErrors
     {
         static readonly Dictionary<string, int> _seen = new Dictionary<string, int>();
         static int _total;
         const int PerMessage = 3, Total = 60;
+        static MelonLoader.MelonLogger.Instance _others;
 
         public static void Install()
         {
@@ -31,10 +33,15 @@ namespace GHPCHitCam
                 _seen.TryGetValue(first, out int n);
                 _seen[first] = n + 1;
                 if (n >= PerMessage) return;
+                // ours under our name; the game's and the other mods' under a name of their own (they came out under
+                // ours and players took them for the mod's)
+                bool ours = !string.IsNullOrEmpty(stack) && stack.Contains("GHPCHitCam");
                 _total++;
                 string from = Owner(stack);
                 string where = Trim(stack);
-                HitCamMod.Log.Warning($"Unity {type} ({from}): {first}" + (where.Length > 0 ? "\n" + where : ""));
+                string text = $"Unity {type} ({from}): {first}" + (where.Length > 0 ? "\n" + where : "");
+                if (ours) HitCamMod.Log.Warning(text);
+                else (_others ??= new MelonLoader.MelonLogger.Instance("Game or other mods, not Combat Overhaul")).Msg(text);
             }
             catch { }
         }

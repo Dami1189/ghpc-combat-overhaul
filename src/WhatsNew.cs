@@ -26,6 +26,21 @@ namespace GHPCHitCam
         {
             new Notes
             {
+                Version = "1.1.3", Date = "October 2026",
+                New = new[]
+                {
+                    "Check for updates button. In the main menu box (where Update shows when there is one) and in Settings > Tools > Updates. It checks right away, no restart needed, and also works with the automatic check off. A version you skipped shows again when you check by hand.",
+                },
+                Fixes = new[]
+                {
+                    "\"Could not find prefab data for unique name M1IP Abrams\" (and other vehicles) in the log is gone. It was harmless noise from the vehicle mods support asking the game for names its unit table doesn't know.",
+                    "Start-up error on some MelonLoader versions (\"Method not found: BuildInfo.get_Version()\") fixed. It works on old and new MelonLoader builds again.",
+                    "Errors from the game and other mods no longer show up under Combat Overhaul's name in the log.",
+                    "The x-ray HEAT jet no longer thins out and flickers away far from the camera.",
+                },
+            },
+            new Notes
+            {
                 Version = "1.1.2", Date = "October 2026",
                 New = new[]
                 {
@@ -154,7 +169,7 @@ namespace GHPCHitCam
 
         static GameObject _root, _corner, _prompt, _page;
         static TextMeshProUGUI _cornerTitle, _cornerLine, _promptTitle, _promptBody, _pageText;
-        static GameObject _btnUpdateCorner, _btnPromptUpdate, _btnPromptNew, _btnPromptLater, _btnRestart, _btnRestartLater;
+        static GameObject _btnUpdateCorner, _btnCheckCorner, _btnPromptUpdate, _btnPromptNew, _btnPromptLater, _btnRestart, _btnRestartLater;
         static TMP_FontAsset _font;
         static Material _fontMat;
         static string _shown = "";
@@ -216,7 +231,7 @@ namespace GHPCHitCam
         static void Refresh()
         {
             var st = Updater.Now;
-            string key = $"{st}|{Open}|{_bannerOff}|{_restartOff}|{Updater.Latest}|{Updater.Error}";
+            string key = $"{st}|{Open}|{_bannerOff}|{_restartOff}|{Updater.Latest}|{Updater.Error}|{Updater.CanCheckNow}";
             if (key == _shown) return;
             _shown = key;
             bool available = st == Updater.State.Available;
@@ -230,6 +245,12 @@ namespace GHPCHitCam
                              : st == Updater.State.Skipped ? $"{Updater.Latest} is out (skipped)"
                              : st == Updater.State.Off ? "Update check off" : "";
             _btnUpdateCorner.SetActive(available || st == Updater.State.Skipped);
+            // stays put while a check runs or right after one (greyed out), so the box doesn't jump
+            _btnCheckCorner.SetActive(!available && st != Updater.State.Skipped && st != Updater.State.Downloading && st != Updater.State.Installed);
+            _btnCheckCorner.GetComponent<Button>().interactable = Updater.CanCheckNow;
+            var checkLabel = _btnCheckCorner.GetComponentInChildren<TextMeshProUGUI>();
+            checkLabel.text = st == Updater.State.Checking ? "CHECKING..." : "CHECK FOR UPDATES";
+            checkLabel.color = Updater.CanCheckNow ? Color.white : Dim;
             _btnUpdateCorner.GetComponentInChildren<TextMeshProUGUI>().text = $"UPDATE TO {Updater.Latest}";
 
             bool restart = st == Updater.State.Installed && !_restartOff;
@@ -346,6 +367,8 @@ namespace GHPCHitCam
             var row = Row(_corner.transform);
             Btn(row, "WHAT'S NEW", 150f, false, () => { Open = !Open; _shown = ""; });
             _btnUpdateCorner = Btn(row, "UPDATE", 190f, true, () => { Updater.StartInstall(); _shown = ""; });
+            // its place when there's no update: look again now, without a restart
+            _btnCheckCorner = Btn(row, "CHECK FOR UPDATES", 200f, false, () => { Updater.CheckNow(); _shown = ""; });
 
             // the note: new version, or restart now
             _prompt = Box(_root.transform, "prompt", new Vector2(0.62f, 0.76f), new Vector2(0.5f, 1f), Vector2.zero, 720f, 24f, accent: true);
@@ -473,6 +496,7 @@ namespace GHPCHitCam
             cb.highlightedColor = new Color(1f, 1f, 1f, 0.14f);
             cb.selectedColor = cb.normalColor;
             cb.pressedColor = new Color(1f, 1f, 1f, 0.28f);
+            cb.disabledColor = new Color(0f, 0f, 0f, 0.35f);
             cb.colorMultiplier = 1f;
             cb.fadeDuration = 0.08f;
             b.colors = cb;

@@ -28,6 +28,7 @@ namespace GHPCHitCam
         public static string Error { get; private set; } = "";
         static string _assetUrl;
         static bool _started;
+        static float _manualAt = -999f;
 
         public static Version Current => Norm(typeof(Updater).Assembly.GetName().Version);
         public static string CurrentText => $"{Current.Major}.{Current.Minor}.{Current.Build}";
@@ -47,7 +48,33 @@ namespace GHPCHitCam
             MelonCoroutines.Start(Check(mode.Equals("Auto", StringComparison.OrdinalIgnoreCase)));
         }
 
-        static IEnumerator Check(bool auto)
+        /// the check-for-updates buttons (menu box, F12 > Tools > Updates) can ask now: no check running, no update on its
+        /// way in, and 10 s since the last one (GitHub's 60 an hour)
+        public static bool CanCheckNow => Now != State.Checking && Now != State.Downloading && Now != State.Installed && Time.realtimeSinceStartup - _manualAt > 10f;
+
+        /// a check right now, asked for by hand: also with the update check off, and a version you skipped shows again
+        public static void CheckNow()
+        {
+            if (!CanCheckNow) return;
+            _manualAt = Time.realtimeSinceStartup;
+            _started = true;
+            HitCamMod.Log.Msg("Update check: asked for by hand");
+            MelonCoroutines.Start(Check(false, true));
+        }
+
+        /// what the last check said, one line (F12 > Tools > Updates)
+        public static string StatusText =>
+              Now == State.Available ? $"Version {Latest} is out"
+            : Now == State.Downloading ? $"Downloading {Latest}..."
+            : Now == State.Installed ? $"{Latest} installed: restart the game to use it"
+            : Now == State.Failed ? "Update: " + Error
+            : Now == State.Checking ? "Looking for updates..."
+            : Now == State.UpToDate ? $"Up to date ({CurrentText})"
+            : Now == State.Skipped ? $"{Latest} is out (skipped)"
+            : Now == State.Off ? "Update check off (the button still checks)"
+            : "Not checked yet (it checks in the main menu)";
+
+        static IEnumerator Check(bool auto, bool manual = false)
         {
             Now = State.Checking;
             string text = null, err = null, left = null, reset = null;
@@ -97,7 +124,7 @@ namespace GHPCHitCam
                 HitCamMod.Log.Msg($"Update check: {CurrentText} is the latest (GitHub has {Latest})");
                 yield break;
             }
-            if (!auto && Settings.SkippedVersion.Value == Latest) { Now = State.Skipped; HitCamMod.Log.Msg($"Update check: {Latest} is out, you skipped it"); yield break; }
+            if (!auto && !manual && Settings.SkippedVersion.Value == Latest) { Now = State.Skipped; HitCamMod.Log.Msg($"Update check: {Latest} is out, you skipped it"); yield break; }
             Now = State.Available;
             HitCamMod.Log.Info($"Update check: version {Latest} is out (you have {CurrentText}). Main menu: Combat Overhaul box > Update.");
             if (auto) yield return Install();

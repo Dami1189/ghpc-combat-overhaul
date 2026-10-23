@@ -159,6 +159,20 @@ namespace GHPCHitCam
         }
 
         /// camera like the game's main one (its render fx, not its scripts), drawing into a 1280x720 picture
+        static System.Reflection.MethodInfo _setFlir;
+
+        /// a copy of the game's main camera for a self-test picture. its child thermal camera wakes up in the copy and makes
+        /// itself the game's FLIR instance; the copy's children get destroyed, so the game's real one is put back (else the
+        /// next thermal sight throws on a destroyed camera)
+        internal static GameObject CloneMainCamera(GameObject main)
+        {
+            var flir = GHPC.Thermals.FLIRCamera.Instance;
+            var go = UnityEngine.Object.Instantiate(main);
+            if (flir != null && GHPC.Thermals.FLIRCamera.Instance != flir)
+                try { (_setFlir ??= HarmonyLib.AccessTools.PropertySetter(typeof(GHPC.Thermals.FLIRCamera), "Instance"))?.Invoke(null, new object[] { flir }); } catch { }
+            return go;
+        }
+
         static Camera NewCamera(out RenderTexture rt, int w = 1280, int h = 720)
         {
             Vis.Init();
@@ -166,7 +180,7 @@ namespace GHPCHitCam
             GameObject go;
             if (main != null)
             {
-                go = UnityEngine.Object.Instantiate(main.gameObject);
+                go = CloneMainCamera(main.gameObject);
                 foreach (Transform ch in go.transform) UnityEngine.Object.Destroy(ch.gameObject);
                 foreach (var mb in go.GetComponents<Behaviour>())
                 {

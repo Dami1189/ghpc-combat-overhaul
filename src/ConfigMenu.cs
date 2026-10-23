@@ -29,6 +29,9 @@ namespace GHPCHitCam
         /// self-test: a tab by its name
         internal static void TestTab(string name) { int i = Array.IndexOf(Tabs, name); if (i >= 0) { _tab = i; _scroll = Vector2.zero; } }
         static Vector2 _scroll;
+        /// self-test: where the check-for-updates button was drawn (window pixels from the top left) and the tab scrolled to its end
+        internal static Vector2 CheckButtonAt = new Vector2(-1f, -1f);
+        internal static void TestTabEnd(string name) { TestTab(name); _scroll = new Vector2(0f, 99999f); }
         static MelonPreferences_Entry _capturing;
         static string _status = "";
         static float _statusAt = -99f;
@@ -140,6 +143,23 @@ namespace GHPCHitCam
             { "CrewInAmmoExplosion", new[] { "Gone", "Outline", "Stay" } },
             { "UpdateCheck", new[] { "Ask", "Auto", "Off" } },
         };
+
+        /// Tools > Updates: what the last check said, a check right now, and the update when one is out
+        static void UpdatesRow()
+        {
+            GUILayout.BeginHorizontal(GUILayout.Height(28));
+            GUILayout.Label("Check now", _label, GUILayout.Width(250));
+            bool was = GUI.enabled;
+            GUI.enabled = Updater.CanCheckNow;
+            if (GUILayout.Button(Updater.Now == Updater.State.Checking ? "Checking..." : "Check for updates", GUILayout.Width(180))) Updater.CheckNow();
+            if (AutoTest.Active && Event.current.type == EventType.Repaint) CheckButtonAt = GUIUtility.GUIToScreenPoint(GUILayoutUtility.GetLastRect().center);
+            GUI.enabled = was;
+            if (Updater.Now == Updater.State.Available || Updater.Now == Updater.State.Skipped)
+                if (GUILayout.Button("Update to " + Updater.Latest, GUILayout.Width(150))) Updater.StartInstall();
+            GUILayout.Label(Updater.StatusText, _tip);
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+        }
 
         /// the mod's entries (its own category plus any other category with HitCam in the name)
         static readonly List<MelonPreferences_Entry> _entries = new List<MelonPreferences_Entry>();
@@ -365,6 +385,7 @@ namespace GHPCHitCam
                     if (tab != _tab) continue;
                     Section(title);
                     foreach (var e in rows) Row(e);
+                    if (title == "Updates") UpdatesRow();
                     shown++;
                 }
                 if (shown == 0) GUILayout.Label("Nothing here.", _tip);

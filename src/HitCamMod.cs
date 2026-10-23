@@ -3,7 +3,7 @@ using System.Linq;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(GHPCHitCam.HitCamMod), "GHPC Combat Overhaul", "1.1.2", "Damian")]
+[assembly: MelonInfo(typeof(GHPCHitCam.HitCamMod), "GHPC Combat Overhaul", "1.1.3", "Damian")]
 [assembly: MelonGame("Radian Simulations LLC", "GHPC")]
 
 namespace GHPCHitCam
@@ -22,9 +22,26 @@ namespace GHPCHitCam
                 var others = MelonLoader.MelonBase.RegisteredMelons.Where(m => m != null && m != this && m.Info != null)
                     .Select(m => m.Info.Name + " " + m.Info.Version).ToList();
                 Log.Msg($"Running with {others.Count} other mod(s): " + (others.Count > 0 ? string.Join(", ", others) : "none") +
-                        $"; MelonLoader {MelonLoader.BuildInfo.Version}, game build {Application.version}");
+                        $"; MelonLoader {MlVersion()}, game build {Application.version}");
             }
             catch (Exception e) { Log.Warning("mod list: " + e.Message); }
+        }
+
+        /// MelonLoader's version, read the long way round: it's a property in some MelonLoader versions and a const in
+        /// others, and asking for it directly blew up this whole startup step on the "wrong" one (a tester on an older
+        /// MelonLoader got MissingMethodException: BuildInfo.get_Version)
+        static string MlVersion()
+        {
+            try
+            {
+                var t = typeof(MelonBase).Assembly.GetType("MelonLoader.BuildInfo");
+                var p = t?.GetProperty("Version", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (p != null) return p.GetValue(null, null)?.ToString();
+                var f = t?.GetField("Version", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (f != null) return f.GetValue(null)?.ToString();
+            }
+            catch { }
+            return typeof(MelonBase).Assembly.GetName().Version?.ToString() ?? "?";
         }
 
         public override void OnInitializeMelon()
@@ -351,7 +368,7 @@ namespace GHPCHitCam
             HitCamAntiAliasing = Cat.CreateEntry("HitCamAntiAliasing", "2x", description: "Smooths jagged edges in the hit cam window.");
             DebugLog = Cat.CreateEntry("DebugLog", false, description: "Writes slow frames and what the mod did in them to the MelonLoader log. Only for reporting a lag problem.");
             ConfigVersion = Cat.CreateEntry("ConfigVersion", 0, description: "Settings layout version (internal).", is_hidden: true);
-            UpdateCheck = Cat.CreateEntry("UpdateCheck", "Ask", description: "Each time the game starts, looks on the mod's GitHub page (api.github.com) for a new version and offers it in the main menu. Auto: installs it by itself (it's used from the next start). Off: never looks.");
+            UpdateCheck = Cat.CreateEntry("UpdateCheck", "Ask", description: "Each time the game starts, looks on the mod's GitHub page (api.github.com) for a new version and offers it in the main menu. Auto: installs it by itself (it's used from the next start). Off: never looks by itself (Check for updates below still does).");
             LastSeenVersion = Cat.CreateEntry("LastSeenVersion", "", description: "The version that last ran (internal: What's new after an update).", is_hidden: true);
             SkippedVersion = Cat.CreateEntry("SkippedVersion", "", description: "A new version you chose to skip (internal).", is_hidden: true);
             AmmoExplosionKillsCrew = Cat.CreateEntry("AmmoExplosionKillsCrew", true, description: "When an ammo rack blows up inside a vehicle, the crew around it die (the game sometimes leaves one alive). This changes the game, not only the picture.");

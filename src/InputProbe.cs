@@ -180,6 +180,7 @@ namespace GHPCHitCam
                 case "uiclick": run = UiClick(spec[1]); return true;
                 case "failhook": FailHook(spec[1]); run = Nothing(); return true;
                 case "f12click": run = F12Click(spec[1]); return true;
+                case "f12updates": run = F12Updates(); return true;
                 case "unitclick": run = UnitClick(); return true;
                 case "endplanning":
                     run = EndPlanning();
@@ -223,6 +224,19 @@ namespace GHPCHitCam
         }
 
         /// real click in the settings window: f12click:close (Close button) or f12click:tab<n> (a tab), where ConfigMenu.Window puts them
+        /// f12updates: settings window on Tools, scrolled to Updates, real click on its check-for-updates button
+        static IEnumerator F12Updates()
+        {
+            if (!ConfigMenu.IsOpen) { Log("f12updates: the settings window isn't open"); yield break; }
+            ConfigMenu.TestTabEnd("Tools");
+            yield return new WaitForSecondsRealtime(0.5f);
+            var at = ConfigMenu.CheckButtonAt;
+            if (at.x < 0f) { Log("f12updates: the check-for-updates button wasn't drawn"); yield break; }
+            yield return ClickAt(at, "settings window check-for-updates button");
+            yield return new WaitForSecondsRealtime(0.3f);
+            Log($"f12updates: clicked at {at}; updater {Updater.Now}: {Updater.StatusText}");
+        }
+
         static IEnumerator F12Click(string what)
         {
             if (!ConfigMenu.IsOpen) { Log("f12click: the settings window isn't open"); yield break; }

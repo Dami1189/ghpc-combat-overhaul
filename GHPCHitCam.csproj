@@ -6,7 +6,7 @@
     <RootNamespace>GHPCHitCam</RootNamespace>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
-    <Version>1.1.2</Version>
+    <Version>1.1.3</Version>
     <!-- compile against the game's own Mono class libraries, not the .NET Framework targeting pack -->
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
     <NoStdLib>true</NoStdLib>

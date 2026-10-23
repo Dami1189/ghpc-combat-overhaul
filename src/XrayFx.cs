@@ -475,6 +475,8 @@ namespace GHPCHitCam
                 Vector3 mid = from + axis * 0.6f;
                 Vector3 side = Vector3.Cross(dir, (cam - mid).normalized);
                 side = side.sqrMagnitude > 1e-6f ? side.normalized : Vector3.up;
+                // a few mm of copper is under a pixel in the hit cam: never thinner than ~2 px at this distance
+                float wv = Mathf.Max(_w, Vector3.Distance(cam, mid) * 0.0011f);
                 // after break-up the stream is a string of particles with gaps
                 float broken = Mathf.Clamp01((age - _breakup) / (2f * _breakup));
                 for (int i = 0; i <= Segs; i++)
@@ -485,7 +487,7 @@ namespace GHPCHitCam
                     // each part's distance from the formation point grows with its own speed
                     float dA = len * Mathf.Lerp(TailRatio, 1f, fm - half), dB = len * Mathf.Lerp(TailRatio, 1f, fm + half);
                     Vector3 a = from + dir * dA, b = from + dir * dB;
-                    float w = _w * Mathf.Lerp(1.4f, 0.7f, fm);               // tail is thicker
+                    float w = wv * Mathf.Lerp(1.4f, 0.7f, fm);               // tail is thicker
                     Color core = fm > 0.9f ? Color.Lerp(new Color(1f, 0.85f, 0.55f), new Color(1f, 0.98f, 0.95f), (fm - 0.9f) / 0.1f)
                                : Color.Lerp(new Color(0.8f, 0.18f, 0.04f), new Color(1f, 0.7f, 0.25f), fm / 0.9f);
                     int k = i * 8;
@@ -505,7 +507,7 @@ namespace GHPCHitCam
                 _slug.enabled = true;
                 _slug.transform.localPosition = from + dir * (len * SlugRatio);
                 _slug.transform.localRotation = Quaternion.LookRotation(_slug.transform.localPosition - cam);
-                _slug.transform.localScale = Vector3.one * _w * 9f;
+                _slug.transform.localScale = Vector3.one * wv * 9f;
                 Vis.SetColor(_slug, new Color(1f, 0.45f, 0.1f) * 0.8f * fade);
             }
             // liner collapsing: white flash where the jet forms

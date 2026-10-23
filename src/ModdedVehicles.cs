@@ -417,6 +417,7 @@ namespace GHPCHitCam
             {
                 try
                 {
+                    if (!Known(sp, key)) continue;
                     _prefabRef = _prefabRef ?? AccessTools.Method(typeof(GHPC.Mission.UnitSpawner), "GetPrefabByUniqueName");
                     _loadedUnits = _loadedUnits ?? AccessTools.Field(typeof(GHPC.Mission.UnitSpawner), "_loadedUnits");
                     var r = _prefabRef?.Invoke(sp, new object[] { key });
@@ -436,6 +437,22 @@ namespace GHPCHitCam
 
         static MethodInfo _prefabRef;
         static FieldInfo _loadedUnits;
+        static readonly HashSet<string> _known = new HashSet<string>();
+        static UnityEngine.Object _knownFor;
+
+        /// the spawner's table has that key: asking it for one it doesn't know makes the GAME log "Could not find prefab
+        /// data for unique name ..." (a mission vehicle's own name, "M1IP Abrams", isn't always a key: testers saw it)
+        static bool Known(GHPC.Mission.UnitSpawner sp, string key)
+        {
+            if (sp == null || string.IsNullOrEmpty(key) || sp.PrefabLookup == null || sp.PrefabLookup.AllUnits == null) return false;
+            if (_knownFor != sp)
+            {
+                _knownFor = sp;
+                _known.Clear();
+                foreach (var m in sp.PrefabLookup.AllUnits) if (m != null && !string.IsNullOrEmpty(m.Name)) _known.Add(m.Name);
+            }
+            return _known.Contains(key);
+        }
 
         /// before we spawn `key`: a mod may have let go of that prefab while the game's spawner still counts it loaded
         /// (VanillaAssetUtil drops the prefabs it loaded "temporarily" once the mission is up, the same ones the spawner
@@ -444,7 +461,7 @@ namespace GHPCHitCam
         {
             try
             {
-                if (sp == null || string.IsNullOrEmpty(key)) return;
+                if (sp == null || string.IsNullOrEmpty(key) || !Known(sp, key)) return;
                 _prefabRef = _prefabRef ?? AccessTools.Method(typeof(GHPC.Mission.UnitSpawner), "GetPrefabByUniqueName");
                 _loadedUnits = _loadedUnits ?? AccessTools.Field(typeof(GHPC.Mission.UnitSpawner), "_loadedUnits");
                 var r = _prefabRef?.Invoke(sp, new object[] { key });
@@ -521,6 +538,7 @@ namespace GHPCHitCam
         {
             try
             {
+                if (!Known(sp, key)) return;
                 var r = sp.GetPrefabByUniqueName(key);
                 _loadedUnits = _loadedUnits ?? AccessTools.Field(typeof(GHPC.Mission.UnitSpawner), "_loadedUnits");
                 var loaded = _loadedUnits?.GetValue(sp) as List<AssetReference>;
@@ -701,7 +719,7 @@ namespace GHPCHitCam
                 {
                     if (!(x is Vehicle v) || v == null) continue;
                     string key = v.UniqueName;
-                    if (string.IsNullOrEmpty(key)) continue;
+                    if (string.IsNullOrEmpty(key) || !Known(sp, key)) continue;
                     var r = _prefabRef?.Invoke(sp, new object[] { key });
                     var prefab = r != null ? AccessTools.Property(r.GetType(), "Asset")?.GetValue(r) as GameObject : null;
                     var pv = prefab != null ? prefab.GetComponent<Vehicle>() : null;
