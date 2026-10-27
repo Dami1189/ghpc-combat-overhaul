@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/images/banner.jpg" width="100%" alt="GHPC Combat Overhaul">
+
 # GHPC Combat Overhaul
 
 **See what your round actually did.**
